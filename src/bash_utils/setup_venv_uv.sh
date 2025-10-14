@@ -68,7 +68,9 @@ if [[ -n "$SLURM_JOB_ID" ]];
 then
   echo "Running inside a SLURM job, creating the virtual environment in $SLURM_TMPDIR"
   cd "$SLURM_TMPDIR" || { echo "Failed to change directory to $SLURM_TMPDIR"; exit 1; }
-  uv --no-managed-python --no-python-downloads venv --seed ./$ENV_NAME
+
+  # extra precautions, so cvmfs python is used
+  uv --no-managed-python --no-python-downloads venv ./$ENV_NAME
 else
   echo "Creating the virtual environment in the current directory: $(pwd)"
   uv venv --seed ./$ENV_NAME
@@ -79,7 +81,8 @@ fi
 source "$ENV_NAME/bin/activate"
 
 # Install local module
-if ! uv pip install "$LOCAL_MODULE_PATH"; then
+cd "$LOCAL_MODULE_PATH" || { echo "Failed to change directory to $LOCAL_MODULE_PATH"; exit 1; }
+if ! uv pip install .; then # uses pyproject.toml
   echo "There was an error installing the local module."
   exit 1
 fi
