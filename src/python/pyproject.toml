@@ -14,11 +14,8 @@ requires-python = ">=3.8, <3.12"
 version = { file = "VERSION" }
 dependencies = { file = "requirements/req_core.in" }
 
-[[tool.uv.index]]
-name = "computecanada"
-url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse"
-
 [tool.uv.pip]
+index-strategy = "unsafe-first-match"
 only-binary = [
     "torch",
     "pytorch-lightning",
@@ -71,6 +68,47 @@ dev = [
     "pylint>=3.2, <4",
     "pre-commit>=3.5, <4",
 ]
+
+# # Custom indexes for Compute Canada
+# [[tool.uv.index]]
+# name = "computecanada"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse"
+
+# [[tool.uv.index]]
+# name = "computecanada-generic"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic"
+# format = "flat"
+
+# [[tool.uv.index]]
+# name = "computecanada-gentoo-generic"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo/generic"
+# format = "flat"
+
+# [[tool.uv.index]]
+# name = "computecanada-gentoo2020-generic"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2020/generic"
+# format = "flat"
+
+# [[tool.uv.index]]
+# name = "computecanada-gentoo2020-avx2"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2020/avx2"
+# format = "flat"
+
+# [[tool.uv.index]]
+# name = "computecanada-gentoo2023-generic"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/generic"
+# format = "flat"
+
+# [[tool.uv.index]]
+# name = "computecanada-gentoo2023-x86-64"
+# url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3"
+# format = "flat"
+
+# Fallback to PyPI
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple"
+
 
 # -- OTHER TOOLS CONFIGURATION --
 [tool.black]

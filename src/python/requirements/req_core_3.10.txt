@@ -6,7 +6,7 @@ aiohttp==3.13.0
     # via fsspec
 aiosignal==1.4.0
     # via aiohttp
-alembic==1.16.5
+alembic==1.17.0
     # via optuna
 async-timeout==5.0.1
     # via aiohttp
@@ -19,13 +19,13 @@ certifi==2025.10.5
     # via
     #   requests
     #   sentry-sdk
-charset-normalizer==3.4.3
+charset-normalizer==3.4.4
     # via requests
 cloudpickle==3.1.1
     # via shap
 colorlog==6.9.0
     # via optuna
-comet-ml==3.33.12
+comet-ml==3.35.4
     # via -r ../requirements/req_core.in
 configobj==5.0.9
     # via everett
@@ -33,7 +33,7 @@ contourpy==1.3.2
     # via matplotlib
 cycler==0.12.1
     # via matplotlib
-dulwich==0.24.2
+dulwich==0.24.4
     # via comet-ml
 everett==3.1.0
     # via comet-ml
@@ -54,17 +54,17 @@ fsspec==2025.9.0
     #   torch
 greenlet==3.2.4
     # via sqlalchemy
-h5py==3.14.0
+h5py==3.15.0
     # via -r ../requirements/req_core.in
 hf-xet==1.1.10
     # via huggingface-hub
 huggingface-hub==0.35.3
     # via skops
-idna==3.10
+idna==3.11
     # via
     #   requests
     #   yarl
-imbalanced-learn==0.14.0
+imbalanced-learn==0.12.4
     # via -r ../requirements/req_core.in
 jinja2==3.1.6
     # via torch
@@ -81,7 +81,7 @@ kaleido==0.1.0
     # via -r ../requirements/req_core.in
 kiwisolver==1.4.9
     # via matplotlib
-lightgbm==3.3.5
+lightgbm==4.0.0
     # via -r ../requirements/req_core.in
 lightning-utilities==0.15.2
     # via pytorch-lightning
@@ -95,7 +95,7 @@ markupsafe==3.0.3
     # via
     #   jinja2
     #   mako
-matplotlib==3.10.6
+matplotlib==3.10.7
     # via -r ../requirements/req_core.in
 mdurl==0.1.2
     # via markdown-it-py
@@ -163,7 +163,7 @@ nvidia-nvjitlink-cu12==12.8.93
     #   torch
 nvidia-nvtx-cu12==12.8.90
     # via torch
-optuna==3.5.1
+optuna==3.5.0
     # via -r ../requirements/req_core.in
 packaging==25.0
     # via
@@ -181,7 +181,7 @@ pandas==1.5.3
     #   shap
 pillow==11.3.0
     # via matplotlib
-propcache==0.3.2
+propcache==0.4.1
     # via
     #   aiohttp
     #   yarl
@@ -211,7 +211,7 @@ pyyaml==6.0.3
     #   optuna
     #   pyaml
     #   pytorch-lightning
-referencing==0.36.2
+referencing==0.37.0
     # via
     #   jsonschema
     #   jsonschema-specifications
@@ -230,11 +230,10 @@ rpds-py==0.27.1
     # via
     #   jsonschema
     #   referencing
-scikit-learn==1.5.2
+scikit-learn==1.2.1
     # via
     #   -r ../requirements/req_core.in
     #   imbalanced-learn
-    #   lightgbm
     #   scikit-optimize
     #   shap
     #   skops
@@ -250,13 +249,13 @@ scipy==1.15.3
     #   shap
 semantic-version==2.10.0
     # via comet-ml
-sentry-sdk==2.40.0
+sentry-sdk==2.41.0
     # via comet-ml
 setuptools==80.9.0
     # via
     #   lightning-utilities
     #   triton
-shap==0.42.1
+shap==0.41.0
     # via -r ../requirements/req_core.in
 simplejson==3.20.2
     # via comet-ml
@@ -268,7 +267,7 @@ skops==0.9.0
     # via -r ../requirements/req_core.in
 slicer==0.0.7
     # via shap
-sqlalchemy==2.0.43
+sqlalchemy==2.0.44
     # via
     #   alembic
     #   optuna
@@ -280,7 +279,7 @@ threadpoolctl==3.6.0
     # via
     #   imbalanced-learn
     #   scikit-learn
-tomli==2.2.1
+tomli==2.3.0
     # via alembic
 torch==2.8.0
     # via
@@ -322,8 +321,6 @@ urllib3==2.5.0
     #   sentry-sdk
 websocket-client==1.3.3
     # via comet-ml
-wheel==0.45.1
-    # via lightgbm
 wrapt==1.17.3
     # via comet-ml
 wurlitzer==3.1.1
