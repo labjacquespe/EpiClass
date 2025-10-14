@@ -30,9 +30,11 @@ compile python_version:
     echo "📄 Generated: ../requirements/req_core_${v}.txt"
 
 # Run tests for a specific Python version using pre-compiled requirements
-test python_version:
+# Optional: pass test_filter to select specific tests (e.g., just test 3.11 "test_foo")
+test python_version test_filter="":
     #!/usr/bin/env bash
     set -euo pipefail
+
     mkdir -p logs
     mkdir -p envs
 
@@ -40,6 +42,7 @@ test python_version:
     timestamp="{{_timestamp}}"
     venv_path="./envs/venv_test_${v}"
     req_file="../requirements/req_core_${v}.txt"
+    test_filter="{{test_filter}}"
 
     echo "🚀 Running tests for Python ${v}..."
     echo "📝 Logs will be saved with timestamp: ${timestamp}"
@@ -55,11 +58,16 @@ test python_version:
     # Install exact requirements first (what users will get)
     uv pip install -r "$req_file" >> logs/pytest-${v}_${timestamp}.log 2>&1
 
-    echo "📦 Installing package in editable mode with test dependencies..."
-    uv pip install -e ../.[test] >> logs/pytest-${v}_${timestamp}.log 2>&1
+    echo "📦 Installing package with test dependencies..."
+    uv pip install ../.[test] >> logs/pytest-${v}_${timestamp}.log 2>&1
 
     echo "🧪 Running pytest for Python ${v}..."
-    uv run --active pytest --tb=short ../tests/ >> logs/pytest-${v}_${timestamp}.log 2>&1 || true
+    if [ -n "$test_filter" ]; then
+        echo "🔍 Filtering tests with: -k '$test_filter'"
+        uv run --active pytest --tb=short -k "$test_filter" ../tests/ >> logs/pytest-${v}_${timestamp}.log 2>&1 || true
+    else
+        uv run --active pytest --tb=short ../tests/ >> logs/pytest-${v}_${timestamp}.log 2>&1 || true
+    fi
 
     echo "✅ Tests for Python ${v} completed - check logs/ directory for results"
 
@@ -72,23 +80,23 @@ compile-all: check-env
     @echo "✅ All requirements compiled"
 
 # Run tests for Python 3.10 and 3.11
-test-modern: check-env
-    just test 3.10
-    just test 3.11
+test-modern test_filter="": check-env
+    just test 3.10 "{{test_filter}}"
+    just test 3.11 "{{test_filter}}"
     @echo "✅ Modern Python tests completed"
 
 # Run tests for Python 3.8 and 3.9
-test-legacy: check-env
-    just test 3.8
-    just test 3.9
+test-legacy test_filter="": check-env
+    just test 3.8 "{{test_filter}}"
+    just test 3.9 "{{test_filter}}"
     @echo "✅ Legacy Python tests completed"
 
 # Run all tests
-test-all: check-env
-    just test 3.8
-    just test 3.9
-    just test 3.10
-    just test 3.11
+test-all test_filter="": check-env
+    just test 3.8 "{{test_filter}}"
+    just test 3.9 "{{test_filter}}"
+    just test 3.10 "{{test_filter}}"
+    just test 3.11 "{{test_filter}}"
     @echo "✅ All tests completed"
 
 # Clean up generated files (WARNING: deletes all logs!)
