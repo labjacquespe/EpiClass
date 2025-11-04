@@ -73,30 +73,18 @@ test python_version test_filter="":
 
 # Compile requirements for all Python versions
 compile-all: check-env
-    just compile 3.8
-    just compile 3.9
     just compile 3.10
     just compile 3.11
+    just compile 3.12
+    just compile 3.13
     @echo "✅ All requirements compiled"
-
-# Run tests for Python 3.10 and 3.11
-test-modern test_filter="": check-env
-    just test 3.10 "{{test_filter}}"
-    just test 3.11 "{{test_filter}}"
-    @echo "✅ Modern Python tests completed"
-
-# Run tests for Python 3.8 and 3.9
-test-legacy test_filter="": check-env
-    just test 3.8 "{{test_filter}}"
-    just test 3.9 "{{test_filter}}"
-    @echo "✅ Legacy Python tests completed"
 
 # Run all tests
 test-all test_filter="": check-env
-    just test 3.8 "{{test_filter}}"
-    just test 3.9 "{{test_filter}}"
     just test 3.10 "{{test_filter}}"
     just test 3.11 "{{test_filter}}"
+    just test 3.12 "{{test_filter}}"
+    just test 3.13 "{{test_filter}}"
     @echo "✅ All tests completed"
 
 # Clean up generated files (WARNING: deletes all logs!)
