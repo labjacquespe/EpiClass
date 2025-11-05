@@ -21,10 +21,13 @@ compile python_version:
     #!/usr/bin/env bash
     set -euo pipefail
     v="{{python_version}}"
+    timestamp="{{_timestamp}}"
+    log="logs/${timestamp}_compile_${v}.log"
     echo "📋 Compiling requirements for Python ${v}..."
 
-    # Ensure we generate exact, reproducible requirements
-    uv pip compile -p=${v} ../requirements/req_core.in > ../requirements/req_core_${v}.txt
+    # Ensure requirements are compatible with the specified Python version
+    # Will fail if not compatible
+    uv pip compile -p=${v} ../requirements/req_core.in &>> $log
 
     echo "✅ Requirements compiled for Python ${v}"
     echo "📄 Generated: ../requirements/req_core_${v}.txt"
@@ -58,12 +61,8 @@ test python_version test_filter="":
     uv venv --seed --clear -p=${v} "$venv_path"
     . "$venv_path/bin/activate"
 
-    echo "📦 Installing exact pinned dependencies from ${req_file}..."
-    # Install exact requirements first (what users will get)
-    uv pip install -r "$req_file" >> logs/pytest-${v}_${timestamp}.log 2>&1
-
     echo "📦 Installing package with test dependencies..."
-    uv pip install ../.[test] >> logs/pytest-${v}_${timestamp}.log 2>&1
+    python ../install.py test &>> $log_install
 
     echo "🧪 Running pytest for Python ${v}..."
     if [ -n "$test_filter" ]; then
