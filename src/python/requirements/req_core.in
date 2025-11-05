@@ -1,28 +1,28 @@
 # Core ML and data science packages
-numpy>=1.22.2,<2.0
+numpy<2
+pandas<2
 scipy>=1.8
 h5py>=3.6,<4.0
-pandas>=1.4.1,<2.0
 
 # Machine Learning
-scikit-learn==1.2.1
+scikit-learn==1.6
 imbalanced-learn==0.12.4
 lightgbm==4.0.0
+
+# PyTorch
+# You need to use the install script to install torch with the appropriate CUDA version and avoid unecessary packages (e.g. cpu only).
+torch==2.6.0
+torchmetrics>=0.7.2,<0.8
 pytorch-lightning==1.9.5
-torch==1.10.0; python_version >= "3.8" and python_version < "3.10"
-torch>=1.11.0; python_version >= "3.10"
+torchinfo>=1.6.3,<1.7
 
 # Model interpretation and optimization
-shap==0.41.0
+shap==0.49.1 # last version supporting Python 3.10, 0.45 has breaking changes
 optuna==3.5.0
 scikit-optimize @ git+https://github.com/QuentinSoubeyran/scikit-optimize.git@3f92bf42d947efb4ece3d89595d67dc56591c7c3
 
-# PyTorch utilities
-torchinfo>=1.6.3,<1.7
-torchmetrics>=0.7.2,<0.8
-
 # Model serialization and deployment
-skops>=0.9.0,<0.10
+skops==0.11 # First version supporting Python 3.12 is 0.10, 0.11 has scikit-learn 1.6 support
 
 # Visualization and plotting
 matplotlib>=3.7,<3.11

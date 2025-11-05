@@ -85,7 +85,6 @@ compile-all: check-env
     just compile 3.10
     just compile 3.11
     just compile 3.12
-    just compile 3.13
     @echo "✅ All requirements compiled"
 
 # Run all tests
@@ -93,7 +92,6 @@ test-all test_filter="": check-env
     just test 3.10 "{{test_filter}}"
     just test 3.11 "{{test_filter}}"
     just test 3.12 "{{test_filter}}"
-    just test 3.13 "{{test_filter}}"
     @echo "✅ All tests completed"
 
 # Clean up generated files (WARNING: deletes all logs!)

@@ -8,7 +8,7 @@ name = "EpiClass"
 dynamic = ["version", "dependencies"]
 description = "Apply machine learning to epigenomic data classification."
 authors = [{ name = "Joanny Raby", email = "Joanny.Raby@usherbrooke.ca" }]
-requires-python = ">=3.10"
+requires-python = ">=3.10, <3.13"
 
 [tool.setuptools.dynamic]
 version = { file = "VERSION" }

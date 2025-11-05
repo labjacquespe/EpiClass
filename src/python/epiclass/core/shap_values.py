@@ -1,19 +1,33 @@
 """Module containing shap values related code (e.g. handling computation, analysing results)."""
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
+
+import multiprocessing
+
+# ---------------------------------------------------------------------
+# Set the start method to 'spawn' for multiprocessing.
+# This is crucial for PyTorch and CUDA to avoid deadlocks when using
+# ProcessPoolExecutor. 'fork' (the default on Linux) can cause hangs
+# by incorrectly sharing CUDA context with child processes.
+# 'force=True' is needed because pytest might initialize the context.
+try:
+    multiprocessing.set_start_method("spawn", force=True)
+    print("--- Multiprocessing start method set to 'spawn' ---")
+except RuntimeError:
+    # This can happen if the context is already set and cannot be changed.
+    # In most cases, the try block will succeed.
+    pass
+# ---------------------------------------------------------------------
 
 import concurrent.futures
 import copy
 from pathlib import Path
 from typing import List, Tuple
 
-import matplotlib
-
-matplotlib.use("Agg")
 import numpy as np
 import pandas as pd
 import shap
 import torch
-import torch.nn.functional as F
 from lightgbm import LGBMClassifier
 from numpy.typing import ArrayLike
 from sklearn.pipeline import Pipeline
@@ -92,15 +106,18 @@ class NN_SHAP_Handler:
         save=True,
         name="",
         num_workers: int = 4,
-    ) -> Tuple[shap.DeepExplainer, List[np.ndarray]]:
+    ) -> Tuple[shap.DeepExplainer, np.ndarray]:
         """Compute shap values of deep learning model on evaluation dataset
         by creating an explainer with background dataset.
 
-        Returns explainer and shap values (as a list of matrix per class)
+        Returns:
+            Tuple of (explainer, shap_values) where shap_values is np.ndarray of shape:
+                (#samples, #features, #classes)
         """
-        explainer = shap.DeepExplainer(
-            model=self.model, data=torch.from_numpy(background_dset.signals).float()
-        )
+        model = self.model
+        data = torch.from_numpy(background_dset.signals).float()
+        explainer = shap.DeepExplainer(model=model, data=data)
+
         if save:
             self.saver.save_to_npz(
                 name=name + "_explainer_background",
@@ -111,7 +128,10 @@ class NN_SHAP_Handler:
 
         signals = torch.from_numpy(evaluation_dset.signals).float()
         shap_values = NN_SHAP_Handler._compute_shap_values_parallel(
-            explainer, signals, num_workers
+            model=model,
+            background_data=data,
+            signals=signals,
+            num_workers=num_workers,
         )
 
         if save:
@@ -125,35 +145,37 @@ class NN_SHAP_Handler:
         return explainer, shap_values  # type: ignore
 
     @staticmethod
+    def _nn_shap_worker(
+        args: Tuple[LightningDenseClassifier, torch.Tensor, torch.Tensor]
+    ) -> np.ndarray:
+        """
+        Static worker function for parallel SHAP computation. Can be pickled.
+        """
+        model, background_data, signal_chunk = args
+        model.eval()
+        local_explainer = shap.DeepExplainer(model, background_data)
+        return local_explainer.shap_values(signal_chunk)  # type: ignore
+
+    # Can't define _nn_shap_worker as inner function because it needs to be picklable for ProcessPoolExecutor
+    @staticmethod
     def _compute_shap_values_parallel(
-        explainer: shap.DeepExplainer,
+        model: LightningDenseClassifier,
+        background_data: torch.Tensor,
         signals: torch.Tensor,
         num_workers: int,
-    ) -> List[np.ndarray]:
-        """Compute SHAP values in parallel using a ThreadPoolExecutor.
+    ) -> np.ndarray:
+        """Compute SHAP values in parallel using a ProcessPoolExecutor."""
+        model.to(torch.device("cpu"))
 
-        Args:
-            explainer (shap.DeepExplainer): The SHAP explainer object used for computing SHAP values.
-            signals (torch.Tensor): The evaluation dataset samples as a torch Tensor of shape (#samples, #features).
-            num_workers (int): The number of parallel threads to use for computation.
-
-        Returns:
-            List[np.ndarray]: A list of SHAP values matrices (one per output class) of shape (#samples, #features).
-        """
         signal_chunks = torch.tensor_split(signals, num_workers)
+        tasks = [(model, background_data, chunk) for chunk in signal_chunks]
 
-        def worker(chunk: torch.Tensor) -> np.ndarray:
-            explainer_copy = copy.deepcopy(explainer)
-            return explainer_copy.shap_values(chunk)  # type: ignore
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+            shap_values_chunks = list(
+                executor.map(NN_SHAP_Handler._nn_shap_worker, tasks)
+            )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            shap_values_chunks = list(executor.map(worker, signal_chunks))
-
-        shap_values = [
-            np.concatenate([chunk[i] for chunk in shap_values_chunks], axis=0)
-            for i in range(len(shap_values_chunks[0]))
-        ]
-
+        shap_values = np.concatenate(shap_values_chunks, axis=0)
         return shap_values
 
 
@@ -187,10 +209,20 @@ class LGBM_SHAP_Handler:
         save=True,
         name="",
         num_workers: int = 4,
-    ) -> Tuple[List[np.ndarray], shap.TreeExplainer]:
+    ) -> Tuple[shap.TreeExplainer, np.ndarray]:
         """Compute shap values of lgbm model on evaluation dataset.
 
-        Returns shap values and explainer
+        Args:
+            background_dset: Background dataset for SHAP explainer.
+            evaluation_dset: Dataset to compute SHAP values for.
+            save: Whether to save the results.
+            name: Name prefix for saved files.
+            num_workers: Number of parallel workers.
+
+        Returns:
+            Tuple[explainer, shap_values] where shap_values is np.ndarray of shape:
+                - Binary classification: (#samples, #features)
+                - Multiclass: (#samples, #features, #classes)
         """
         explainer = shap.TreeExplainer(
             model=self.model,
@@ -222,107 +254,40 @@ class LGBM_SHAP_Handler:
                 classes=self.model_classes,
             )
 
-        return shap_values, explainer
+        return explainer, shap_values
 
     @staticmethod
     def _compute_shap_values_parallel(
         explainer: shap.TreeExplainer,
         signals: ArrayLike,
         num_workers: int,
-    ) -> List[np.ndarray]:
+    ) -> np.ndarray:
+        """Compute SHAP values in parallel using a ThreadPoolExecutor.
+
+        Args:
+            explainer: The SHAP TreeExplainer object.
+            signals: The evaluation dataset samples of shape (#samples, #features).
+            num_workers: The number of parallel threads to use.
+
+        Returns:
+            np.ndarray: SHAP values of shape:
+                - Binary classification: (#samples, #features)
+                - Multiclass: (#samples, #features, #classes)
+        """
         # Split the signals into chunks for parallel processing
         signal_chunks = np.array_split(signals, num_workers)
 
-        # Worker function
         def worker(chunk):
-            explainer_copy = copy.deepcopy(explainer)
-            return explainer_copy.shap_values(X=chunk)
+            """Compute shap values using an explainer copy."""
+            local_explainer = copy.deepcopy(explainer)  # Deep copy to avoid thread issues
+            return local_explainer.shap_values(X=chunk, check_additivity=True)
 
         # Use ThreadPoolExecutor to compute shap_values in parallel
+        # The C++ backend (of TreeExplainer) should release the GIL, so multi-core should still work.
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             shap_values_chunks = list(executor.map(worker, signal_chunks))
 
-        # Concatenate the chunks
-        if isinstance(shap_values_chunks[0], np.ndarray):  # binary case
-            shap_values = list(np.concatenate(shap_values_chunks, axis=0))
-        else:  # multiclass case
-            shap_values = [
-                np.concatenate([chunk[i] for chunk in shap_values_chunks], axis=0)
-                for i in range(len(shap_values_chunks[0]))
-            ]
+        # Concatenate along sample dimension (axis=0)
+        shap_values = np.concatenate(shap_values_chunks, axis=0)
 
         return shap_values
-
-
-class SHAP_Analyzer:
-    """SHAP_Analyzer class for analyzing SHAP values of a model.
-
-    Attributes:
-        model: The trained model.
-        explainer: The SHAP explainer object used to compute SHAP values.
-    """
-
-    def __init__(self, model: LightningDenseClassifier, explainer: shap.DeepExplainer):
-        self.model = model
-        self.explainer = explainer
-
-    def verify_shap_values_coherence(
-        self, shap_values: List, dset: SomeData, tolerance=1e-6  # type: ignore
-    ):
-        """Verify the coherence of SHAP values with the model's output probabilities.
-
-        Checks if the sum of SHAP values for each sample (across all classes) and the
-        base values is approximately equal to the model's output probabilities.
-
-        Args:
-            shap_values: List of SHAP values for each class.
-            dset: The dataset used to compute the SHAP values.
-                  The samples need to be in the same order as in list of shap values.
-            tolerance: The allowed tolerance for the difference between the sum of SHAP
-                values and the model's output probabilities (default is 1e-6).
-
-        Returns:
-            bool: True if the SHAP values are coherent, False otherwise.
-        """
-        num_classes = len(shap_values)
-        num_samples = shap_values[0].shape[0]
-        # Calculate the sum of SHAP values for each sample (across all classes) and add base values
-        shap_sum = np.zeros((num_samples, num_classes))
-        for i, shap_values_class in enumerate(shap_values):
-            # shap_values_class.sum(axis=1).shape = (n_samples,)
-            shap_sum[:, i] = (
-                shap_values_class.sum(axis=1) + self.explainer.expected_value[i]  # type: ignore
-            )
-
-        # Compute the model's output probabilities for the samples
-        signals = torch.from_numpy(dset.signals).float()
-        model_output_logits = self.model(signals).detach()
-        probs = F.softmax(model_output_logits, dim=1).detach().numpy()
-        shap_to_prob = (
-            F.softmax(torch.from_numpy(shap_sum).float(), dim=1)
-            .sum(dim=1)
-            .detach()
-            .numpy()
-        )
-        print(
-            f"Verifying model output: Sum close to 1? {np.all(1 - probs.sum(axis=1) <= tolerance)}"
-        )
-        print(
-            f"Verifying SHAP output: Sum close to 1 (w expected value)? {np.all(1 - shap_to_prob <= tolerance)}"
-        )
-        print(f"Shap sum shape, detailling all classes: {shap_sum.shape}")
-        total = shap_sum.sum(axis=1)
-        print(
-            f"Sum of all shap values across classes, for {total.shape} samples: {total}\n"
-        )
-        # Compare the sum of SHAP values with the model's output probabilities
-        diff = np.abs(shap_sum - model_output_logits.numpy())
-        coherent = np.all(diff <= tolerance)
-        print(
-            f"Detailled values for shap sum, model preds and diff:\n {shap_sum}\n{model_output_logits}\n{diff}"
-        )
-        if not coherent:
-            problematic_samples = np.argwhere(diff > tolerance)
-            print(f"SHAP values are not coherent for samples:\n {problematic_samples}")
-
-        return coherent

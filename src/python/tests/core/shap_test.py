@@ -1,9 +1,10 @@
 """Test SHAP related modules."""
+# pylint: disable=import-error
 from __future__ import annotations
 
 import itertools
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pytest
@@ -13,10 +14,7 @@ from sklearn.datasets import make_blobs
 
 from epiclass.core.data import DataSet, UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
-from epiclass.core.hdf5_loader import Hdf5Loader
-from epiclass.core.model_pytorch import LightningDenseClassifier
-from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler, SHAP_Analyzer
-from tests.epilap_test_data import FIXTURES_DIR
+from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
 
 
 class Test_NN_SHAP_Handler:
@@ -50,16 +48,39 @@ class Test_NN_SHAP_Handler:
     def test_compute_shaps(
         self, handler: NN_SHAP_Handler, test_epiatlas_dataset: DataSet
     ):
-        """Test shapes of return of compute_shaps method."""
+        """Test shapes of return of compute_shaps method.
+
+        With SHAP 0.45+, for models with one input and multiple outputs,
+        shap_values changed from list to np.ndarray:
+
+        Old format (< 0.45):
+            List of arrays, one per class: [array(n_samples, n_features), ...]
+
+        New format (>= 0.45):
+            Single array: (n_samples, n_features, n_classes)
+
+        Test validates that:
+            - Output is a numpy array (not list)
+            - Shape matches (n_samples, n_features, n_classes)
+            - Can access individual sample SHAP values via shap_values[i]
+        """
         dset = test_epiatlas_dataset
         _, shap_values = handler.compute_shaps(
-            background_dset=dset.train, evaluation_dset=dset.validation, save=False  # type: ignore
+            background_dset=dset.train, evaluation_dset=dset.validation, save=False
         )
-        print(f"len(shap_values) = {len(shap_values)}")
-        print(f"shap_values[0].shape = {shap_values[0].shape }")
 
-        n_signals, n_dims = dset.validation.signals.shape[:]
-        assert shap_values[0].shape == (n_signals, n_dims)
+        n_samples, n_features = dset.validation.signals.shape
+        n_classes = len(handler.model_classes)
+
+        # New SHAP 0.45+ format: single numpy array
+        assert isinstance(shap_values, np.ndarray)
+        assert shap_values.shape == (n_samples, n_features, n_classes)
+
+        # Accessing first sample gives SHAP values for all features and classes
+        assert shap_values[0].shape == (n_features, n_classes)
+
+        print(f"shap_values.shape = {shap_values.shape}")
+        print(f"shap_values[0].shape = {shap_values[0].shape}")
 
     def test_save_load_csv(self, handler: NN_SHAP_Handler, mock_shap_values, fake_ids):
         """Test pickle save/load methods."""
@@ -178,15 +199,29 @@ class Test_LGBM_SHAP_Handler:
         [("model2c", 1), ("model3c", 1), ("model2c", 2), ("model3c", 2)],
     )
     def test_compute_shaps(self, test_data, num_workers, tmp_path, request):
-        """
-        Tests the compute_shaps method of the LGBM_SHAP_Handler class. It checks if the SHAP values and expected values
-        are computed correctly and if they are saved correctly with the correct parameters.
+        """Tests the compute_shaps method of the LGBM_SHAP_Handler class.
+
+        With SHAP 0.45+, TreeExplainer return format changed for multiclass models:
+
+        Binary classification (one input, one output):
+            Returns: np.ndarray of shape (n_samples, n_features)
+            Contains SHAP values for the positive class only.
+
+        Multiclass classification (one input, multiple outputs):
+            Old format (< 0.45): List of arrays, one per class
+            New format (>= 0.45): Single array of shape (n_samples, n_features, n_classes)
+
+        This test verifies:
+            1. SHAP values are numpy arrays (not lists)
+            2. Shapes match the new SHAP 0.45+ conventions
+            3. Expected values from explainer are correctly formatted
+            4. Results are properly saved to disk
         """
         model_analyzer, evaluation_dset = request.getfixturevalue(test_data)
         handler = LGBM_SHAP_Handler(model_analyzer, tmp_path)
 
         # Test compute_shaps
-        shap_values, explainer = handler.compute_shaps(
+        explainer, shap_values = handler.compute_shaps(
             background_dset=evaluation_dset,
             evaluation_dset=evaluation_dset,
             save=True,
@@ -194,92 +229,22 @@ class Test_LGBM_SHAP_Handler:
             num_workers=num_workers,
         )
 
-        # Test output types
+        # Test output types - must be numpy array in SHAP 0.45+
         expected_value = explainer.expected_value
-        assert isinstance(shap_values, list)
-        assert isinstance(shap_values[0], np.ndarray)
-        assert isinstance(expected_value, (float, np.ndarray))
+        assert isinstance(shap_values, np.ndarray)
+        assert isinstance(expected_value, (float, np.ndarray, np.floating))
 
-        # # Test output shapes
+        # Test output shapes
         nb_samples = Test_LGBM_SHAP_Handler.N
         nb_classes = len(model_analyzer.classes)
         nb_features = evaluation_dset.signals.shape[1]
-        if isinstance(expected_value, np.ndarray):  # multiclass case
+
+        if nb_classes == 2:  # Binary classification
+            # Returns: (n_samples, n_features) for positive class only
+            assert shap_values.shape == (nb_samples, nb_features)
+            assert isinstance(expected_value, (float, np.floating))
+        else:  # Multiclass classification
+            # New format: (n_samples, n_features, n_classes)
+            assert shap_values.shape == (nb_samples, nb_features, nb_classes)
+            assert isinstance(expected_value, np.ndarray)
             assert expected_value.shape == (nb_classes,)
-            assert shap_values[0].shape == (nb_samples, nb_features)
-        else:  # binary case
-            assert len(shap_values) == nb_samples
-            assert shap_values[0].shape == (nb_features,)
-
-
-class Test_SHAP_Analyzer:
-    """Class to test SHAP_Analyzer class."""
-
-    @pytest.fixture
-    def test_folder(self, mk_logdir) -> Path:
-        """Return temp shap test folder."""
-        return mk_logdir("shap_test")
-
-    @pytest.fixture
-    def saccer3_dir(self) -> Path:
-        """saccer3 params dir"""
-        return FIXTURES_DIR / "saccer3"
-
-    @pytest.fixture
-    def saccer3_model(self, saccer3_dir: Path) -> LightningDenseClassifier:
-        """saccer3 test model"""
-        return LightningDenseClassifier.restore_model(saccer3_dir)
-
-    @pytest.fixture
-    def saccer3_signals(self, saccer3_dir: Path) -> Dict:
-        """saccer3 epigenetic signals"""
-        chrom_file = saccer3_dir / "saccer3.can.chrom.sizes"
-        hdf5_filelist = saccer3_dir / "hdf5_10kb_all_none.list"
-
-        hdf5_dir = FIXTURES_DIR / "saccer3" / "hdf5"
-
-        hdf5_loader = Hdf5Loader(chrom_file=chrom_file, normalization=True)
-        hdf5_loader.load_hdf5s(hdf5_filelist, strict=True, hdf5_dir=hdf5_dir)
-        return hdf5_loader.signals
-
-    @pytest.fixture
-    def test_dsets(self, saccer3_signals: Dict) -> Tuple[UnknownData, UnknownData]:
-        """Return background and evaluation datasets."""
-        background_signals = list(saccer3_signals.values())[0:12]
-        eval_signals = background_signals[10:12]
-
-        background_dset = UnknownData(
-            ids=range(len(background_signals)),
-            x=background_signals,
-            y=np.zeros(len(background_signals)),
-            y_str=["NA" for _ in range(len(background_signals))],
-        )
-
-        eval_dset = UnknownData(
-            ids=[-i for i in range(len(eval_signals))],
-            x=eval_signals,
-            y=np.zeros(len(eval_signals)),
-            y_str=["NA" for _ in range(len(eval_signals))],
-        )
-
-        return background_dset, eval_dset
-
-    def test_verify_shap_values_coherence(
-        self,
-        saccer3_model: LightningDenseClassifier,
-        test_folder: Path,
-        test_dsets: Tuple[UnknownData, UnknownData],
-    ):
-        """Test compute_shap_values method."""
-        NN_shap_handler = NN_SHAP_Handler(model=saccer3_model, logdir=test_folder)
-
-        explainer, shap_values = NN_shap_handler.compute_shaps(
-            background_dset=test_dsets[0],
-            evaluation_dset=test_dsets[1],
-            save=True,
-            name="test",
-        )
-
-        shap_analyzer = SHAP_Analyzer(saccer3_model, explainer)
-        shap_analyzer.verify_shap_values_coherence(shap_values, test_dsets[1])
-        assert True
