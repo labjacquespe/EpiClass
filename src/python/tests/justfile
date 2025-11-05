@@ -44,9 +44,13 @@ test python_version test_filter="":
     req_file="../requirements/req_core_${v}.txt"
     test_filter="{{test_filter}}"
 
+    log_install="logs/${timestamp}_install_${v}.log"
+    log_pytest="logs/${timestamp}_pytest_${v}.log"
+
     echo "🚀 Running tests for Python ${v}..."
     echo "📝 Logs will be saved with timestamp: ${timestamp}"
 
+    # Ensure requirements are compatible with the specified Python version
     just compile ${v}
 
     # Create fresh virtual environment (--clear removes existing one)
@@ -64,12 +68,18 @@ test python_version test_filter="":
     echo "🧪 Running pytest for Python ${v}..."
     if [ -n "$test_filter" ]; then
         echo "🔍 Filtering tests with: -k '$test_filter'"
-        uv run --active pytest --tb=short -k "$test_filter" ../tests/ >> logs/pytest-${v}_${timestamp}.log 2>&1 || true
+        pytest --tb=short -k "$test_filter" ../tests/ &>> $log_pytest || true
     else
-        uv run --active pytest --tb=short ../tests/ >> logs/pytest-${v}_${timestamp}.log 2>&1 || true
+        pytest --tb=short ../tests/ &>> $log_pytest || true
     fi
 
-    echo "✅ Tests for Python ${v} completed - check logs/ directory for results"
+    # Optionally filter out known benign warnings "i" for in-place edit
+    del_str="[LightGBM] [Warning] No further splits with positive gain, best gain: -inf"
+    sed -i "/$del_str/d" "$log_pytest" || true
+
+    echo "✅ Tests for Python ${v} completed"
+    grep -E '[0-9]+ (passed|failed|skipped)' $log_pytest || true
+    echo "check logs/ directory for detailled results."
 
 # Compile requirements for all Python versions
 compile-all: check-env
