@@ -22,7 +22,7 @@ compile python_version:
     set -euo pipefail
     v="{{python_version}}"
     timestamp="{{_timestamp}}"
-    log="logs/${timestamp}_compile_${v}.log"
+    log="logs/${timestamp}_py${v}_1-compile.log"
     echo "📋 Compiling requirements for Python ${v}..."
 
     # Ensure requirements are compatible with the specified Python version
@@ -41,16 +41,19 @@ test python_version test_filter="":
     mkdir -p logs
     mkdir -p envs
 
+    # parameters
     v="{{python_version}}"
-    timestamp="{{_timestamp}}"
-    venv_path="./envs/venv_test_${v}"
-    req_file="../requirements/req_core_${v}.txt"
     test_filter="{{test_filter}}"
 
-    log_install="logs/${timestamp}_install_${v}.log"
-    log_pytest="logs/${timestamp}_pytest_${v}.log"
+    # files
+    venv_path="./envs/venv_test_${v}"
+    req_file="../requirements/req_test_${v}.txt"
 
-    echo "🚀 Running tests for Python ${v}..."
+    timestamp="{{_timestamp}}"
+    log_install="logs/${timestamp}_py${v}_2-install.log"
+    log_pytest="logs/${timestamp}_py${v}_3-pytest.log"
+
+    echo "🚀 Starting test sequence for Python ${v}..."
     echo "📝 Logs will be saved with timestamp: ${timestamp}"
 
     # Ensure requirements are compatible with the specified Python version
@@ -62,7 +65,7 @@ test python_version test_filter="":
     . "$venv_path/bin/activate"
 
     echo "📦 Installing package with test dependencies..."
-    python ../install.py test &>> $log_install
+    python ../install.py test --freeze $req_file &>> $log_install
 
     echo "🧪 Running pytest for Python ${v}..."
     if [ -n "$test_filter" ]; then
@@ -87,12 +90,61 @@ compile-all: check-env
     just compile 3.12
     @echo "✅ All requirements compiled"
 
-# Run all tests
+# Run all tests in parallel for all Python versions
 test-all test_filter="": check-env
-    just test 3.10 "{{test_filter}}"
-    just test 3.11 "{{test_filter}}"
-    just test 3.12 "{{test_filter}}"
-    @echo "✅ All tests completed"
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    timestamp="{{_timestamp}}"
+    echo "🕒 Global run timestamp: ${timestamp}"
+    mkdir -p logs
+
+    versions=(3.10 3.11 3.12)
+    pids=()
+
+    for v in "${versions[@]}"; do
+        echo "▶ Starting tests for Python ${v} (no console output, check logs)..."
+        # Silence test output entirely except for the overview log
+        just test "$v" "{{test_filter}}" \
+            &> "logs/${timestamp}_py${v}_0-overview.log" &
+        pids+=($!)
+    done
+
+    echo "🏃 Running tests in parallel..."
+    exit_code=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            exit_code=1
+        fi
+    done
+
+    echo
+    echo "📊 Final summary"
+    echo "----------------------------------------"
+    for v in "${versions[@]}"; do
+        # find pytest log produced inside `just test`
+        log_file=$(ls logs/${timestamp}*${v}*pytest.log 2>/dev/null | sort | tail -n 1 || true)
+        if [ -n "$log_file" ]; then
+            summary=$(grep -E '[0-9]+ (passed|failed|skipped)' "$log_file" | tail -n 1 || true)
+            if [ -n "$summary" ]; then
+                printf "Python %-5s → %s\n" "$v" "$summary"
+            else
+                printf "Python %-5s → (no summary found, see %s)\n" "$v" "$log_file"
+            fi
+        else
+            printf "Python %-5s → (no pytest log found)\n" "$v"
+        fi
+    done
+    echo "----------------------------------------"
+    echo
+
+    if [ $exit_code -eq 0 ]; then
+        echo "✅ All test runs succeeded."
+    else
+        echo "❌ One or more test runs failed. Check logs/ for details."
+    fi
+
+    exit $exit_code
 
 # Clean up generated files (WARNING: deletes all logs!)
 clean:

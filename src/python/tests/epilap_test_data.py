@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import uuid
 from pathlib import Path
 from typing import List
 
@@ -31,6 +32,7 @@ class EpiAtlasTreatmentTestData:
 
     def __init__(self, metadata_path: Path, md5_list_path: Path, logdir: Path):
         self.hdf5_logdir = Path(logdir) / "hdf5"
+        print(f"Using hdf5 logdir: {self.hdf5_logdir}")
         self.hdf5_logdir.mkdir(exist_ok=True, parents=True)
 
         self.dir = FIXTURES_DIR.resolve()
@@ -94,6 +96,8 @@ class EpiAtlasTreatmentTestData:
 
     def write_mock_hdf5(self, path: Path, md5: str):
         """Write a hdf5 file to the given path with the expected general structure."""
+        if path.exists():
+            raise FileExistsError(f"Mock hdf5 already exists at '{path}'")
         with h5py.File(name=path, mode="w") as f:
             grp = f.create_group(md5)
             for chrom in self.chroms:
@@ -133,6 +137,8 @@ class EpiAtlasTreatmentTestData:
         md5_list = FIXTURES_DIR / f"{test_set}.md5"
         metadata_path = FIXTURES_DIR / f"{test_set}-metadata.json"
 
+        logdir = Path(logdir) / uuid.uuid4().hex
+        print(f"Creating test data in logdir: {logdir}")
         return cls(metadata_path, md5_list, logdir).get_ea_handler(label_category)
 
 

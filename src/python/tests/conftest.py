@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import uuid
 from pathlib import Path
 
 import pytest
@@ -10,11 +12,27 @@ import pytest
 from epiclass.core.data import DataSet
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier
-from tests.epilap_test_data import FIXTURES_DIR, EpiAtlasTreatmentTestData
+from tests.epilap_test_data import (
+    DEFAULT_TEST_LOGDIR,
+    FIXTURES_DIR,
+    EpiAtlasTreatmentTestData,
+)
 
 # def pytest_collection_modifyitems(session, config, items):
 #     """Ignore certain names from collection."""
 #     items[:] = [item for item in items if item.name != "test_logdir"]
+
+RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
+
+
+def pytest_addoption(parser):
+    """Add custom command line options to pytest."""
+    parser.addoption(
+        "--no-cleanup",
+        action="store_true",
+        default=False,
+        help="do not perform cleanup after tests",
+    )
 
 
 def pytest_exception_interact(node, call, report):
@@ -70,7 +88,7 @@ def make_specific_logdir(tmp_path_factory):
 @pytest.fixture(scope="session", name="test_epiatlas_data_handler")
 def fixture_epiatlas_data_handler() -> EpiAtlasFoldFactory:
     """Return mock data handler. (in /tmp)."""
-    return EpiAtlasTreatmentTestData.default_test_data()
+    return EpiAtlasTreatmentTestData.default_test_data(logdir=RUN_LOGDIR)
 
 
 @pytest.fixture(scope="session", name="test_epiatlas_dataset")
@@ -98,3 +116,17 @@ def fixture_NN_model(
         nb_layer=1,
         hl_units=100,
     )
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """
+    Called after whole test run finished, right before returning the exit status
+    to the system.
+    """
+    if session.config.getoption("--no-cleanup"):
+        print("Skipping cleanup as per --no-cleanup option.")
+        return
+
+    # Remove test logdir
+    if RUN_LOGDIR.exists():
+        shutil.rmtree(RUN_LOGDIR)
