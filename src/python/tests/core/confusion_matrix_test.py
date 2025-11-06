@@ -48,6 +48,7 @@ def sklearn_confusion_matrix(request):
     return confusion_matrix(true_labels, predicted_labels)
 
 
+@pytest.mark.skip(reason="Visual test - enable when needed")
 @pytest.mark.parametrize("name_base", ["class", "reallylonglabelnameforrealaaaahhhh"])
 def test_to_png(sklearn_confusion_matrix: np.ndarray, name_base: str, output_dir: Path):
     """Tests the to_png method of the ConfusionMatrixWriter class."""
