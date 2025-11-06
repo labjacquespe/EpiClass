@@ -17,7 +17,8 @@ Models trained on the EpiATLAS dataset and used for inference on other datasets 
 
 ## Setup
 
-The code was developed primarily with **Python 3.8**. Compatibility with other versions is not guaranteed. However, the test suite passed under python 3.9-3.11.
+The code was developed primarily with **Python 3.8**. Compatibility with other versions is not guaranteed.
+However, the code was modernized and the test suite passes under python 3.10-3.12.
 
 ### Installation for training
 
@@ -28,6 +29,9 @@ To install the environment for training:
 3. From the Python code root (where `pyproject.toml` is located), run:
 
 ```bash
+python install.py # torch cpu install by default, will detect nvidia gpu if available
+
+# or run the default installation command directly, which might install nvidia packages even on cpu-only systems
 pip install -e . # you can also use 'uv'
 ```
 
@@ -49,7 +53,12 @@ The available `extra_name` options are:
 
 The base requirements are listed in `src/python/requirements/req_core.in`. Additional dependencies (for `utils` and `test`) are defined in `pyproject.toml`.
 
-If you encounter issues installing or running the code, try using a Python version–specific requirements file. These files are located in `src/python/requirements/` and follow the naming pattern `req_core-pyX.Y.txt`, where `X` and `Y` are the major and minor Python version numbers (for example, `req_core-py3.8.txt` for Python 3.8).
+If you encounter issues installing or running the code, try using a Python version–specific requirements file. These files are located in `src/python/requirements/` and follow the naming pattern `req_test-pyX.Y.txt`, where `X` and `Y` are the major and minor Python version numbers (for example, `req_test-py3.11.txt` for Python 3.11). Install the requirements and then install EpiClass in editable mode:
+
+```bash
+pip install -r src/python/requirements/req_test-pyX.Y.txt
+pip install -e .
+```
 
 The test suite has been confirmed to pass with all of these fixed-dependency files.
 

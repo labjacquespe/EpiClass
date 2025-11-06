@@ -161,6 +161,10 @@ def main():
         with open(freeze_output, "w", encoding="utf8") as f:
             subprocess.check_call(freeze_cmd, stdout=f)
 
+        # Remove '-e' line
+        with open(freeze_output, "r", encoding="utf8") as f:
+            subprocess.check_call(["sed", "-i", r"/^-e .*/d", str(freeze_output)])
+
         print(f"Environment snapshot saved to {freeze_output}", flush=True)
 
     print("Installation complete.", flush=True)
