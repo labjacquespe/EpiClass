@@ -1,5 +1,5 @@
 """Model creation module"""
-# pylint: disable=unused-argument, arguments-differ
+# pylint: disable=unused-argument, arguments-differ, too-many-positional-arguments
 # pyright: reportPrivateImportUsage=false
 from __future__ import annotations
 
@@ -90,17 +90,17 @@ class LightningDenseClassifier(pl.LightningModule):
         # See the layers as matrix operations, as the weights, not the neurons.
 
         # input layer
-        layer_list.append(nn.Dropout(0.1))  # drop part of input
+        layer_list.append(nn.Dropout(0.1, inplace=False))  # drop part of input
         layer_list.append(nn.Linear(self._x_size, self._hl_size))
         layer_list.append(
             nn.Dropout(self.dropout_rate)
         )  # apply dropout to 1rst hidden layer
-        layer_list.append(nn.ReLU())  # relu on 1rst hidden layer
+        layer_list.append(nn.ReLU(inplace=False))  # relu on 1rst hidden layer
 
         # hidden layers
         for _ in range(0, self._nb_layer - 1):
             layer_list.append(nn.Linear(self._hl_size, self._hl_size))
-            layer_list.append(nn.ReLU())
+            layer_list.append(nn.ReLU(inplace=False))
             # in case of ReLU, dropout should be applied before for computational efficiency,
             # swapping them gives same result
             # https://sebastianraschka.com/faq/docs/dropout-activation.html
