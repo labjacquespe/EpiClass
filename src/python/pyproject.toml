@@ -1,6 +1,6 @@
 # -- PYTHON INSTALL SECTION --
 [build-system]
-requires = ["setuptools>=75,<81", "pip>=23", "wheel"]
+requires = ["setuptools>=75,<81", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,8 +11,11 @@ authors = [{ name = "Joanny Raby", email = "Joanny.Raby@usherbrooke.ca" }]
 requires-python = ">=3.10, <3.13"
 
 [tool.setuptools.dynamic]
-version = { file = "VERSION" }
 dependencies = { file = "requirements/req_core.in" }
+
+[tool.setuptools_scm]
+root = "../.." # git root is two levels above src/python
+write_to = "_version.py"
 
 [tool.uv.pip]
 only-binary = [

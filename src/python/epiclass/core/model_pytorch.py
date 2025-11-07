@@ -92,10 +92,8 @@ class LightningDenseClassifier(pl.LightningModule):
         # input layer
         layer_list.append(nn.Dropout(0.1, inplace=False))  # drop part of input
         layer_list.append(nn.Linear(self._x_size, self._hl_size))
-        layer_list.append(
-            nn.Dropout(self.dropout_rate)
-        )  # apply dropout to 1rst hidden layer
-        layer_list.append(nn.ReLU(inplace=False))  # relu on 1rst hidden layer
+        layer_list.append(nn.Dropout(self.dropout_rate, inplace=False))
+        layer_list.append(nn.ReLU(inplace=False))
 
         # hidden layers
         for _ in range(0, self._nb_layer - 1):
