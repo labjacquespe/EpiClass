@@ -12,9 +12,9 @@ lightgbm==4.0.0
 # PyTorch
 # You need to use the install script to install torch with the appropriate CUDA version and avoid unecessary packages (e.g. cpu only).
 torch==2.6.0
-torchmetrics>=0.7.2,<0.8
-pytorch-lightning==1.9.5
-torchinfo>=1.6.3,<1.7
+torchmetrics==1.8.2
+lightning==2.5.5 # pytorch-lightning
+torchinfo==1.8.0
 
 # Model interpretation and optimization
 shap==0.49.1 # last version supporting Python 3.10, 0.45 has breaking changes
@@ -29,7 +29,7 @@ matplotlib>=3.7,<3.11
 kaleido==0.1.0
 
 # Experiment tracking and monitoring
-comet-ml==3.35.4
+comet-ml==3.47.1
 
 # UI and display
 rich>=13.5.2,<14

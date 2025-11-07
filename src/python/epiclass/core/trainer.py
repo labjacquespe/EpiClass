@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import pytorch_lightning as pl
-import pytorch_lightning.callbacks as torch_callbacks
+import lightning as pl
+from lightning.pytorch import callbacks as pl_callbacks
 
 
 class MyTrainer(pl.Trainer):
@@ -50,22 +50,28 @@ class MyTrainer(pl.Trainer):
             print("No early stopping.")
 
 
-def define_callbacks(early_stop_limit: int | None, show_summary=True):
+def define_callbacks(
+    early_stop_limit: int | None, show_summary=True, show_progress_bar=True
+):
     """Returns list of PyTorch trainer callbacks.
-    RichModelSummary, EarlyStopping, ModelCheckpoint
+    RichProgressBar, RichModelSummary, EarlyStopping, ModelCheckpoint
 
     Will only save last epoch model if there is no early stopping.
     """
     callbacks = []
+
+    if show_progress_bar:
+        callbacks.append(pl_callbacks.RichProgressBar(leave=True))
+
     if show_summary:
-        callbacks.append(torch_callbacks.RichModelSummary(max_depth=3))
+        callbacks.append(pl_callbacks.RichModelSummary(max_depth=3))
 
     monitored_value = "valid_acc"  # have same name as TorchMetrics
     mode = "max"
 
     if early_stop_limit is not None:
         callbacks.append(
-            torch_callbacks.EarlyStopping(
+            pl_callbacks.EarlyStopping(
                 monitor=monitored_value,
                 mode=mode,
                 patience=early_stop_limit,
@@ -74,7 +80,7 @@ def define_callbacks(early_stop_limit: int | None, show_summary=True):
         )
 
         callbacks.append(
-            torch_callbacks.ModelCheckpoint(
+            pl_callbacks.ModelCheckpoint(
                 monitor=monitored_value,
                 mode=mode,
                 save_last=True,
@@ -86,8 +92,10 @@ def define_callbacks(early_stop_limit: int | None, show_summary=True):
         )
     else:
         callbacks.append(
-            torch_callbacks.ModelCheckpoint(
+            pl_callbacks.ModelCheckpoint(
                 monitor=None,
+                save_last=True,
+                save_top_k=0,
             )
         )
 

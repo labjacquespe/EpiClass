@@ -1,5 +1,5 @@
 """Main for training on EpiAtlas data without a validation set."""
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code, , ungrouped-imports
 
 from __future__ import annotations
 
@@ -15,10 +15,9 @@ warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import comet_ml  # needed because special snowflake # pylint: disable=unused-import
-import pytorch_lightning as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
-import pytorch_lightning.callbacks as torch_callbacks
+import lightning.pytorch as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
 import torch
-from pytorch_lightning import loggers as pl_loggers
+from lightning.pytorch import loggers as pl_loggers
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
@@ -170,16 +169,16 @@ def main():
 
     # --- Startup LOGGER ---
     # api key in config file
-    IsOffline = cli.offline  # additional logging fails with True
+    is_online = not cli.offline  # additional logging fails when offline
     logdir = Path(cli.logdir)
     create_dirs(logdir)
 
     exp_name = "-".join(cli.logdir.parts[-3:])
     comet_logger = pl_loggers.CometLogger(
-        project_name="EpiClass",
-        experiment_name=exp_name,
-        save_dir=logdir,  # type: ignore
-        offline=IsOffline,
+        project="EpiClass",
+        name=exp_name,
+        offline_directory=logdir,  # type: ignore
+        online=is_online,
         auto_metric_logging=False,
     )
 
@@ -250,7 +249,6 @@ def train_without_valid(
         callbacks = define_callbacks(early_stop_limit=None)
 
         before_train = time_now()
-
         if torch.cuda.device_count():
             trainer = MyTrainer(
                 general_log_dir=logger.save_dir,  # type: ignore
@@ -259,14 +257,11 @@ def train_without_valid(
                 check_val_every_n_epoch=hparams.get("measure_frequency", 1),
                 logger=logger,
                 callbacks=callbacks,
-                enable_model_summary=False,
                 accelerator="gpu",
                 devices=1,
                 precision=16,
-                enable_progress_bar=False,
             )
         else:
-            callbacks.append(torch_callbacks.RichProgressBar(leave=True))
             trainer = MyTrainer(
                 general_log_dir=logger.save_dir,  # type: ignore
                 model=my_model,
@@ -274,7 +269,6 @@ def train_without_valid(
                 check_val_every_n_epoch=hparams.get("measure_frequency", 1),
                 logger=logger,
                 callbacks=callbacks,
-                enable_model_summary=False,
                 accelerator="cpu",
                 devices=1,
             )
@@ -292,12 +286,12 @@ def train_without_valid(
         print(f"training time: {training_time}")
 
         # reload comet logger for further logging, will create new experience in offline mode
-        IsOffline = bool(type(logger.experiment).__name__ == "OfflineExperiment")
+        is_online = not bool(type(logger.experiment).__name__ == "OfflineExperiment")
 
         logger = pl_loggers.CometLogger(
             project_name="EpiClass",
             save_dir=logger.save_dir,  # type: ignore
-            offline=IsOffline,
+            online=is_online,
             auto_metric_logging=False,
             experiment_key=logger.experiment.get_key(),
         )

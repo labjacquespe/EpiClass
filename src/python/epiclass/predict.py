@@ -1,4 +1,5 @@
 """Like "main --predict mode", but for when no true label is available (cannot do certain analyses)."""
+# pylint: disable=wrong-import-position, ungrouped-imports
 import argparse
 import os
 import warnings
@@ -58,16 +59,17 @@ def main():
 
     # --- PARSE params ---
     cli = parse_arguments()
+    logdir = Path(cli.logdir)
+    exp_name = "-".join(cli.logdir.parts[-2:])
+    is_online = not cli.offline  # additional logging fails when offline
 
     # --- Startup LOGGER ---
     # api key in config file
-    IsOffline = cli.offline  # additional logging fails with True
-    exp_name = "-".join(cli.logdir.parts[-2:])
     comet_logger = pl_loggers.CometLogger(
-        project_name="EpiClass",
-        experiment_name=exp_name,
-        save_dir=cli.logdir,
-        offline=IsOffline,
+        project="EpiClass",
+        name=exp_name,
+        offline_directory=logdir,  # type: ignore
+        online=is_online,
         auto_metric_logging=False,
     )
     exp_key = comet_logger.experiment.get_key()

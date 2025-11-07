@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict, Tuple
 
-import pytorch_lightning as pl
+import lightning as pl
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
@@ -57,16 +57,20 @@ class LightningDenseClassifier(pl.LightningModule):
         # Used Metrics
         metrics = MetricCollection(
             [
-                Accuracy(num_classes=self._y_size, average="micro"),
-                Precision(num_classes=self._y_size, average="macro"),
-                Recall(num_classes=self._y_size, average="macro"),
-                F1Score(num_classes=self._y_size, average="macro"),
-                MatthewsCorrCoef(num_classes=self._y_size),
+                Accuracy(task="multiclass", num_classes=self._y_size, average="micro"),
+                Precision(task="multiclass", num_classes=self._y_size, average="macro"),
+                Recall(task="multiclass", num_classes=self._y_size, average="macro"),
+                F1Score(task="multiclass", num_classes=self._y_size, average="macro"),
+                MatthewsCorrCoef(task="multiclass", num_classes=self._y_size),
             ]
         )
         self.metrics = metrics
-        self.train_acc = Accuracy(num_classes=self._y_size, average="micro")
-        self.valid_acc = Accuracy(num_classes=self._y_size, average="micro")
+        self.train_acc = Accuracy(
+            task="multiclass", num_classes=self._y_size, average="micro"
+        )
+        self.valid_acc = Accuracy(
+            task="multiclass", num_classes=self._y_size, average="micro"
+        )
 
     @property
     def model(self) -> nn.Module:
@@ -125,18 +129,14 @@ class LightningDenseClassifier(pl.LightningModule):
 
     def predict_proba(self, x: Tensor) -> Tensor:
         """Return probabilities"""
-        self.eval()
-        with torch.no_grad():
-            logits = self(x)
-            probs = F.softmax(logits, dim=1)
+        logits = self(x)
+        probs = F.softmax(logits, dim=1)
         return probs
 
     def predict_class(self, x: Tensor) -> Tensor:
         """Return class"""
-        self.eval()
-        with torch.no_grad():
-            logits = self(x)
-            preds = torch.argmax(logits, dim=1)
+        logits = self(x)
+        preds = torch.argmax(logits, dim=1)
         return preds
 
     # --- Define how training and validation is done, what loss is used ---
@@ -151,19 +151,15 @@ class LightningDenseClassifier(pl.LightningModule):
             loss += self.l1_scale * l1_norm
 
         preds = torch.argmax(logits, dim=1)
-        return {"loss": loss, "preds": preds.detach(), "target": y}
 
-    def training_step_end(self, outputs):  # pylint: disable=arguments-renamed
-        """Update and log training metrics."""
-        self.train_acc(outputs["preds"], outputs["target"])
+        # Update metrics
+        self.train_acc(preds, y)
 
-        # changing "step" for x-axis change
-        metrics = {
-            "train_acc": self.train_acc,
-            "train_loss": outputs["loss"],
-            "step": self.current_epoch + 1.0,
-        }
-        self.log_dict(metrics, on_step=False, on_epoch=True)
+        # Log directly in training_step
+        self.log("train_loss", loss, on_step=False, on_epoch=True, prog_bar=False)
+        self.log("train_acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
+
+        return loss
 
     def validation_step(self, val_batch, batch_idx):
         """Return validation loss and co."""
@@ -171,19 +167,15 @@ class LightningDenseClassifier(pl.LightningModule):
         logits = self(x)
         loss = F.cross_entropy(logits, y)
         preds = torch.argmax(logits, dim=1)
-        return {"loss": loss, "preds": preds.detach(), "target": y}
 
-    def validation_step_end(self, outputs):
-        """Update and log validation metrics."""
-        self.valid_acc(outputs["preds"], outputs["target"])
+        # Update metrics
+        self.valid_acc(preds, y)
 
-        # changing "step" for x-axis change
-        metrics = {
-            "valid_acc": self.valid_acc,
-            "valid_loss": outputs["loss"],
-            "step": self.current_epoch + 1.0,
-        }
-        self.log_dict(metrics, on_step=False, on_epoch=True, prog_bar=True)
+        # Log directly in validation_step
+        self.log("valid_loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("valid_acc", self.valid_acc, on_step=False, on_epoch=True, prog_bar=True)
+
+        return loss
 
     # --- Other information functions ---
     def print_model_summary(self, batch_size=1):
@@ -233,4 +225,6 @@ class LightningDenseClassifier(pl.LightningModule):
 
         if verbose:
             print(f"Loading model from {ckpt_path}")
-        return LightningDenseClassifier.load_from_checkpoint(ckpt_path)
+        return LightningDenseClassifier.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+            checkpoint_path=ckpt_path
+        )

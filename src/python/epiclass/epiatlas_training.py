@@ -1,5 +1,5 @@
 """Main"""
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code, wrong-import-position, ungrouped-imports
 
 from __future__ import annotations
 
@@ -15,10 +15,9 @@ warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
 import comet_ml  # needed because special snowflake # pylint: disable=unused-import
-import pytorch_lightning as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
-import pytorch_lightning.callbacks as pl_callbacks
+import lightning.pytorch as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
 import torch
-from pytorch_lightning import loggers as pl_loggers
+from lightning.pytorch import loggers as pl_loggers
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
@@ -188,17 +187,16 @@ def main():
 
         # --- Startup LOGGER ---
         # api key in config file
-        IsOffline = cli.offline  # additional logging fails with True
-
-        logdir = Path(cli.logdir / f"split{i}")
+        is_online = not cli.offline  # additional logging fails when offline
+        logdir = Path(cli.logdir)
         create_dirs(logdir)
 
-        exp_name = "-".join(cli.logdir.parts[-3:]) + f"-split{i}"
+        exp_name = "-".join(cli.logdir.parts[-3:])
         comet_logger = pl_loggers.CometLogger(
-            project_name="EpiClass",
-            experiment_name=exp_name,
-            save_dir=logdir,  # type: ignore
-            offline=IsOffline,
+            project="EpiClass",
+            name=exp_name,
+            offline_directory=logdir,  # type: ignore
+            online=is_online,
             auto_metric_logging=False,
         )
 
@@ -266,21 +264,27 @@ def do_one_experiment(
 
         if split_nb == 0:
             print("--MODEL STRUCTURE--\n", my_model)
-            my_model.print_model_summary()
+            my_model.print_model_summary()  # torchinfo summary
+
+        gpu_available = torch.cuda.device_count() > 0
+        print(f"GPU available: {gpu_available}")
 
         # --- TRAIN the model ---
         if split_nb == 0:
             callbacks = define_callbacks(
-                early_stop_limit=hparams.get("early_stop_limit", 20), show_summary=True
+                early_stop_limit=hparams.get("early_stop_limit", 20),
+                show_summary=True,  # pytorch_lightning model summary
+                show_progress_bar=not gpu_available,  # Show progress bar only on CPU
             )
         else:
             callbacks = define_callbacks(
-                early_stop_limit=hparams.get("early_stop_limit", 20), show_summary=False
+                early_stop_limit=hparams.get("early_stop_limit", 20),
+                show_summary=False,
+                show_progress_bar=not gpu_available,
             )
 
         before_train = time_now()
-
-        if torch.cuda.device_count():
+        if gpu_available:
             trainer = MyTrainer(
                 general_log_dir=logger.save_dir,  # type: ignore
                 model=my_model,
@@ -288,14 +292,11 @@ def do_one_experiment(
                 check_val_every_n_epoch=hparams.get("measure_frequency", 1),
                 logger=logger,
                 callbacks=callbacks,
-                enable_model_summary=False,
                 accelerator="gpu",
                 devices=1,
                 precision=16,
-                enable_progress_bar=False,
             )
         else:
-            callbacks.append(pl_callbacks.RichProgressBar(leave=True))
             trainer = MyTrainer(
                 general_log_dir=logger.save_dir,  # type: ignore
                 model=my_model,
@@ -303,7 +304,6 @@ def do_one_experiment(
                 check_val_every_n_epoch=hparams.get("measure_frequency", 1),
                 logger=logger,
                 callbacks=callbacks,
-                enable_model_summary=False,
                 accelerator="cpu",
                 devices=1,
             )
@@ -331,12 +331,12 @@ def do_one_experiment(
         logger.experiment.end()
 
         # reload comet logger for further logging, will create new experience in offline mode
-        IsOffline = bool(type(logger.experiment).__name__ == "OfflineExperiment")
+        is_online = not bool(type(logger.experiment).__name__ == "OfflineExperiment")
 
         logger = pl_loggers.CometLogger(
-            project_name="EpiClass",
+            project="EpiClass",
             save_dir=logger.save_dir,  # type: ignore
-            offline=IsOffline,
+            online=is_online,
             auto_metric_logging=False,
             experiment_key=logger.experiment.get_key(),
         )
