@@ -9,13 +9,20 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore", message=".*nopython.*")
 
+try:
+    import shap  # pylint: disable=unused-import
+except ImportError as e:
+    raise ImportError(
+        "SHAP computation requires the `shap` package. "
+        "Install with: pip install .[shap]"
+    ) from e
+
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.data import UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
 from epiclass.core.hdf5_loader import Hdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
-from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -25,7 +32,9 @@ def parse_arguments() -> argparse.Namespace:
     Returns:
         argparse.Namespace: Namespace object with parsed arguments.
     """
-    arg_parser = ArgumentParser()
+    arg_parser = ArgumentParser(
+        description="Compute SHAP values for a given model. shap package is required, install with: pip install .[shap]. For LightGBM models, lightgbm package is also required, install with: pip install .[other_models]"
+    )
 
     # fmt: off
     gen_group = arg_parser.add_argument_group("General arguments")
@@ -61,7 +70,7 @@ def parse_arguments() -> argparse.Namespace:
 
 def compute_shap(
     cli: argparse.Namespace,
-    shap_computer: NN_SHAP_Handler | LGBM_SHAP_Handler,
+    shap_computer,
     output_name: str,
 ):
     """
@@ -124,14 +133,28 @@ def main():
             raise ValueError(
                 "Must provide a model directory for neural network models. See help."
             )
+
+        # pylint: disable-next=import-outside-toplevel
+        from epiclass.core.shap_values import NN_SHAP_Handler
+
         my_model = LightningDenseClassifier.restore_model(model_dir)
 
         shap_handler = NN_SHAP_Handler(model=my_model, logdir=logdir)
         compute_shap(cli, shap_handler, name)
 
-    elif model_name == "LGBM":
+    if model_name == "LGBM":
+        try:
+            # pylint: disable-next=import-outside-toplevel
+            from epiclass.core.shap_values import LGBM_SHAP_Handler
+        except ImportError as e:
+            raise ImportError(
+                "LightGBM SHAP computation requires `lightgbm`."
+                "Install with: pip install .[lgbm]"
+            ) from e
+
         if not cli.model_file:
             raise ValueError("Must provide a model file for LGBM models.")
+
         model_analyzer = EstimatorAnalyzer.restore_model_from_path(cli.model_file)
 
         shap_handler = LGBM_SHAP_Handler(model_analyzer=model_analyzer, logdir=logdir)
