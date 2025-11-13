@@ -3,10 +3,17 @@ import json
 import pickle
 from pathlib import Path
 
+try:
+    from lightgbm import log_evaluation
+except ImportError as e:
+    raise ImportError(
+        "LightGBM model required for tuning, regardless of whether LightGBM is used as estimator. "
+        "Install all models requirements with: pip install .[other_models]"
+    ) from e
+
 import optuna
 import optuna.integration.lightgbm as lgb
 import pandas as pd
-from lightgbm import log_evaluation
 
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 

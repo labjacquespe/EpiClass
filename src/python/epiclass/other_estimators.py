@@ -10,6 +10,16 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    import lightgbm  # pylint: disable=unused-import
+    import optuna  # pylint: disable=unused-import
+    import skopt  # pylint: disable=unused-import
+except ImportError as e:
+    raise ImportError(
+        "Missing dependencies for other_estimators.py. "
+        "Please install with 'pip install .[other_models]'"
+    ) from e
+
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import data, estimators, metadata
