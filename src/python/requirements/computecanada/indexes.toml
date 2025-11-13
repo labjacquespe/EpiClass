@@ -1,11 +1,12 @@
 # Add this to pyproject.toml when running on Alliance systems
+# OR copy contents to `$HOME/.config/uv/uv.toml`, with `[[index]] instead of `[[tool.uv.index]]`.
 
 # Custom indexes for Compute Canada StdEnv/2023
 # Taken from `pip config list` wheel.find-links value.
 [[tool.uv.index]]
 name = "computecanada-gentoo2023-x86-64"
 url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/gentoo2023/x86-64-v3"
-format = "flat"
+format = "flat" # `--find-links` equivalent
 
 [[tool.uv.index]]
 name = "computecanada-gentoo2023-generic"
@@ -18,12 +19,17 @@ url = "/cvmfs/soft.computecanada.ca/custom/python/wheelhouse/generic"
 format = "flat"
 
 # for scikit-optimize 0.9.0+unofficial
+# you have to expand the `~` to your home directory manually
 [[tool.uv.index]]
 name = "local-build"
 url = "~/wheelhouse"
 format = "flat"
 
 # Fallback to PyPI
+# This is fine when installing on the login nodes for tests, but on compute nodes, installation from PyPI may be blocked by firewalls.
+# To resolve this, point to a different config file with UV_CONFIG_FILE environment variable, where this index can be modified or removed.
+# This can be done in bashrc depending on whether in a compute job or not.
 [[tool.uv.index]]
 name = "pypi"
 url = "https://pypi.org/simple"
+default = true

@@ -21,7 +21,7 @@ write_to = "_version.py"
 only-binary = [
     "torch",
     "pytorch-lightning",
-    "lgbm",
+    "lightgbm",
     "llvmlite",
     "h5py",
     "numpy",
@@ -36,7 +36,7 @@ index-strategy = "unsafe-first-match"
 only-binary = [
     "torch",
     "pytorch-lightning",
-    "lgbm",
+    "lightgbm",
     "llvmlite",
     "h5py",
     "numpy",
@@ -62,9 +62,9 @@ utils = [
     "paramiko",
 ]
 other_models = [
-    "lightgbm==4.0.0",
+    "lightgbm==4.4.0", # first version supporting cp3.12
     "optuna==3.5.0",
-    "scikit-optimize @ git+https://github.com/QuentinSoubeyran/scikit-optimize.git@3f92bf42d947efb4ece3d89595d67dc56591c7c3", # 0.9.0+unofficial, adds support for multimetric scoring to `BayesSearchCV`
+    "scikit-optimize @ git+https://github.com/QuentinSoubeyran/scikit-optimize.git@3f92bf42d947efb4ece3d89595d67dc56591c7c3", #scikit-optimize==0.9.0+unofficial, adds support for multimetric scoring to `BayesSearchCV`
 ]
 shap = [
     "shap==0.49.1",  # last version supporting Python 3.10, 0.45 has breaking changes.
