@@ -229,7 +229,7 @@ def do_one_experiment(
 
     dsets_dict = create_torch_datasets(
         data=my_data,
-        bs=hparams.get("batch_size", 64),
+        batch_size=hparams.get("batch_size", 64),
     )
     train_dataset, train_dataloader = dsets_dict["training"]
     valid_dataset, valid_dataloader = dsets_dict["validation"]

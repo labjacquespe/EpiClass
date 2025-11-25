@@ -94,6 +94,8 @@ class LightningDenseClassifier(pl.LightningModule):
         # See the layers as matrix operations, as the weights, not the neurons.
 
         # input layer
+        # Note: inplace True can save some memory but is not compatible with SHAP computation
+        # https://github.com/shap/shap/issues/2204#issuecomment-933036857
         layer_list.append(nn.Dropout(0.1, inplace=False))  # drop part of input
         layer_list.append(nn.Linear(self._x_size, self._hl_size))
         layer_list.append(nn.Dropout(self.dropout_rate, inplace=False))

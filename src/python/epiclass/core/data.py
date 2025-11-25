@@ -1,5 +1,5 @@
 """Module to define data/datasets processing and representation classes."""
-# pylint: disable=unnecessary-lambda-assignment
+# pylint: disable=unnecessary-lambda-assignment, too-many-positional-arguments
 from __future__ import annotations
 
 import abc
@@ -128,11 +128,13 @@ class Data(abc.ABC):
 
     @abc.abstractmethod
     def subsample(self, idxs: List[int]):
+        """Abstact method, raises NotImplementedError."""
         raise NotImplementedError("This is an abstract method. Use child class.")
 
     @classmethod
     @abc.abstractmethod
     def empty_collection(cls):
+        """Abstact method, raises NotImplementedError."""
         raise NotImplementedError("This is an abstract class method. Use child class.")
 
 
@@ -193,8 +195,7 @@ class KnownData(Data):
             if len(self) == 0:
                 print("Empty Data object, cannot subsample.")
                 return self
-            else:
-                raise e
+            raise e
 
         return KnownData(new_ids, new_signals, new_targets, new_str_targets, new_meta)
 
@@ -235,8 +236,7 @@ class UnknownData(Data):
             if len(self) == 0:
                 print("Empty Data object, cannot subsample.")
                 return self
-            else:
-                raise e
+            raise e
 
         return UnknownData(new_ids, new_signals, new_targets, new_str_targets)
 
@@ -342,7 +342,7 @@ class DataSet(abc.ABC):
         return preprocessing.LabelEncoder().fit(labels)
 
 
-class DataSetFactory(object):
+class DataSetFactory:
     """Creation of DataSet from different sources."""
 
     @classmethod
@@ -372,7 +372,7 @@ class DataSetFactory(object):
         ).dataset
 
 
-class EpiData(object):
+class EpiData:
     """Used to load and preprocess epigenomic data. Data factory.
 
     Test ratio computed from validation ratio and test ratio. Be sure to set both correctly.
@@ -406,7 +406,7 @@ class EpiData(object):
 
         self._hdf5s = (
             Hdf5Loader(datasource.chromsize_file, normalization)
-            .load_hdf5s(datasource.hdf5_file, md5s=self._files.keys(), strict=True)
+            .load_hdf5s(datasource.hdf5_file, md5s=list(self._files.keys()), strict=True)
             .signals
         )
 
@@ -429,7 +429,7 @@ class EpiData(object):
             raise ValueError(
                 f"Validation and test ratios are bigger than 100%: {val_ratio} and {test_ratio}"
             )
-        elif verbose:
+        if verbose:
             print(
                 f"training/validation/test split: {train_ratio*100}%/{val_ratio*100}%/{test_ratio*100}%"
             )
@@ -478,16 +478,16 @@ class EpiData(object):
                 return [encoding[label] for label in labels]  # type: ignore
 
             return to_onehot
-        else:
-            encoding = preprocessing.LabelEncoder().fit(labels)  # int mapping
 
-            def to_int(labels):
-                if labels:
-                    return encoding.transform(labels)
-                else:
-                    return []
+        # else int mapping
+        encoding = preprocessing.LabelEncoder().fit(labels)
 
-            return to_int
+        def to_int(labels):
+            if labels:
+                return encoding.transform(labels)
+            return []
+
+        return to_int
 
     def _split_md5s(self, validation_ratio, test_ratio):
         """Return md5s for each set, according to given ratios."""
@@ -593,9 +593,12 @@ class EpiData(object):
 
 
 def create_torch_datasets(
-    data: DataSet, bs: int
+    data: DataSet, batch_size: int
 ) -> Dict[str, Tuple[TensorDataset, DataLoader]]:
-    """Return (dataset, DataLoader) pairs for non empty sets."""
+    """Return (dataset, DataLoader) pairs for non empty sets.
+
+    Warning: last batch dropped for training set to ensure consistent batch sizes.
+    """
     torch_dsets = []
     for data_split in [data.train, data.validation, data.test]:
         try:
@@ -611,7 +614,11 @@ def create_torch_datasets(
     train_dset = torch_dsets[0]
     if (train_dset is not None) and (len(train_dset) > 0):
         train_dataloader = DataLoader(
-            train_dset, batch_size=bs, shuffle=True, pin_memory=True, drop_last=True
+            train_dset,
+            batch_size=batch_size,
+            shuffle=True,
+            pin_memory=True,
+            drop_last=True,
         )
         datasets_pairs["training"] = (train_dset, train_dataloader)
 

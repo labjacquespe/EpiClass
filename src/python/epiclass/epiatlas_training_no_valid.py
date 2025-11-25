@@ -211,7 +211,7 @@ def train_without_valid(
 
     train_dataset, train_dataloader = create_torch_datasets(
         data=my_data,
-        bs=hparams.get("batch_size", 64),
+        batch_size=hparams.get("batch_size", 64),
     )["training"]
 
     if my_data.train.num_examples == 0:
