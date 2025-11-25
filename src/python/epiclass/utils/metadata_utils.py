@@ -7,7 +7,7 @@ from typing import Iterable, Tuple
 import numpy as np
 import pandas as pd
 
-from epiclass.core.data import KnownData
+from epiclass.core.data.data import KnownData
 from epiclass.core.metadata import Metadata
 
 EPIATLAS_CATS = set(

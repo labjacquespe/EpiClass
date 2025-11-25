@@ -10,6 +10,8 @@ import os
 import sys
 from pathlib import Path
 
+from epiclass.core.data import data
+
 try:
     import lightgbm  # pylint: disable=unused-import
     import optuna  # pylint: disable=unused-import
@@ -22,7 +24,7 @@ except ImportError as e:
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core import data, estimators, metadata
+from epiclass.core import estimators, metadata
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.lgbm import tune_lgbm

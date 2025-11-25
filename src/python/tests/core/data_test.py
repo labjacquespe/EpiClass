@@ -6,7 +6,8 @@ import copy
 import numpy as np
 import pytest
 
-from epiclass.core import data, metadata
+from epiclass.core import metadata
+from epiclass.core.data import data
 
 
 class TestData:

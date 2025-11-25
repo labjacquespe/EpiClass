@@ -36,7 +36,7 @@ warnings.filterwarnings("once", message=".*Cannot read file directly with.*")
 import numpy as np
 
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.data import Hdf5Loader
+from epiclass.core.data.data import Hdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:

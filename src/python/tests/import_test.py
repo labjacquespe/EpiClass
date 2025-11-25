@@ -2,6 +2,9 @@
 # pylint: disable=unused-import, import-outside-toplevel, consider-using-from-import, reimported
 
 
+from epiclass.core.data import data
+
+
 def test_imports() -> None:
     r"""Test that all core modules and main imports work together.
 
@@ -140,10 +143,10 @@ def test_imports() -> None:
         DefaultHelpParser as ArgumentParser,
     )
     from epiclass.argparseutils.directorychecker import DirectoryChecker
-    from epiclass.core import analysis, data, estimators, metadata
+    from epiclass.core import analysis, estimators, metadata
     from epiclass.core.analysis import write_pred_table
     from epiclass.core.confusion_matrix import ConfusionMatrixWriter
-    from epiclass.core.data import (
+    from epiclass.core.data.data import (
         DataSet,
         DataSetFactory,
         Hdf5Loader,

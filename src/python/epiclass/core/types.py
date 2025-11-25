@@ -4,7 +4,7 @@ from typing import TypeVar, Union
 from torch import Tensor
 from torch.utils.data import TensorDataset
 
-from .data import KnownData, UnknownData
+from .data.data import KnownData, UnknownData
 
 TensorData = TypeVar("TensorData", TensorDataset, Tensor)
 SomeData = Union[KnownData, UnknownData]

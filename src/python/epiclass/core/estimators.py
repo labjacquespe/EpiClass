@@ -28,7 +28,7 @@ from skopt.space import Categorical, Integer, Real
 from tabulate import tabulate
 
 from epiclass.core.analysis import write_pred_table
-from epiclass.core.data import DataSet
+from epiclass.core.data.data import DataSet
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.utils.check_dir import create_dirs
 from epiclass.utils.my_logging import log_dset_composition

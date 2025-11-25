@@ -12,7 +12,7 @@ import numpy.typing as npt
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
-from epiclass.core import data
+from epiclass.core.data import data
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.hdf5_loader import Hdf5Loader
 from epiclass.core.metadata import UUIDMetadata

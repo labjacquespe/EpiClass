@@ -4,7 +4,7 @@ from typing import Dict, Tuple
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from epiclass.core.data import DataSet
+from epiclass.core.data.data import DataSet
 
 
 def create_torch_datasets(

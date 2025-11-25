@@ -16,7 +16,7 @@ from torch.utils.data import TensorDataset
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
-from epiclass.core.data import DataSet, UnknownData
+from epiclass.core.data.data import DataSet, UnknownData
 from epiclass.core.hdf5_loader import Hdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.utils.time import time_now

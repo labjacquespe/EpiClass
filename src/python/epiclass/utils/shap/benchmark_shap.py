@@ -1,7 +1,7 @@
 """Benchmarking SHAP value computation functions."""
 from pathlib import Path
 
-from epiclass.core.data import DataSetFactory, KnownData
+from epiclass.core.data.data import DataSetFactory, KnownData
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.metadata import Metadata
 from epiclass.core.shap_values import NN_SHAP_Handler

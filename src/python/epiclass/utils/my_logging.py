@@ -8,7 +8,7 @@ from typing import Dict
 
 from pytorch_lightning import loggers as pl_loggers
 
-from epiclass.core.data import DataSet
+from epiclass.core.data.data import DataSet
 from epiclass.utils.general_utility import write_md5s_to_file
 from epiclass.utils.time import time_now_str
 

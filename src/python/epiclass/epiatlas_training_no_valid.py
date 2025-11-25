@@ -24,7 +24,7 @@ from lightning.pytorch import loggers as pl_loggers
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis, metadata
-from epiclass.core.data import DataSet
+from epiclass.core.data.data import DataSet
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier

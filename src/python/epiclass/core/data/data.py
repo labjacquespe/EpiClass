@@ -13,9 +13,9 @@ import numpy as np
 from imblearn.over_sampling import RandomOverSampler
 from sklearn import preprocessing
 
-from .data_source import EpiDataSource
-from .hdf5_loader import Hdf5Loader
-from .metadata import Metadata
+from ..data_source import EpiDataSource
+from ..hdf5_loader import Hdf5Loader
+from ..metadata import Metadata
 
 # Define a type variable that can be either KnownData or UnknownData
 DataType = TypeVar("DataType", bound="Data")

@@ -16,7 +16,7 @@ from torch import Tensor
 from torch.utils.data import TensorDataset
 
 from epiclass.core.confusion_matrix import ConfusionMatrixWriter
-from epiclass.core.data import DataSet
+from epiclass.core.data.data import DataSet
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.types import TensorData
 
