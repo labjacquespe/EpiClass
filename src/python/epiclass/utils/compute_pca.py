@@ -13,7 +13,7 @@ import numpy as np
 import skops.io as skio
 from sklearn.decomposition import IncrementalPCA
 
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:

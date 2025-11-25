@@ -2,9 +2,6 @@
 # pylint: disable=unused-import, import-outside-toplevel, consider-using-from-import, reimported
 
 
-from epiclass.core.data import data
-
-
 def test_imports() -> None:
     r"""Test that all core modules and main imports work together.
 
@@ -146,13 +143,8 @@ def test_imports() -> None:
     from epiclass.core import analysis, estimators, metadata
     from epiclass.core.analysis import write_pred_table
     from epiclass.core.confusion_matrix import ConfusionMatrixWriter
-    from epiclass.core.data.data import (
-        DataSet,
-        DataSetFactory,
-        Hdf5Loader,
-        KnownData,
-        UnknownData,
-    )
+    from epiclass.core.data.dataset import DataSet
+    from epiclass.core.data.eager import KnownData, UnknownData
     from epiclass.core.data_source import HDF5_RESOLUTION, EpiDataSource
     from epiclass.core.epiatlas_treatment import (
         ACCEPTED_TRACKS,
@@ -160,8 +152,9 @@ def test_imports() -> None:
         EpiAtlasFoldFactory,
     )
     from epiclass.core.estimators import EstimatorAnalyzer
-    from epiclass.core.hdf5_loader import Hdf5Loader
     from epiclass.core.lgbm import tune_lgbm
+    from epiclass.core.loaders.dataset_factory import DataSetFactory
+    from epiclass.core.loaders.hdf5_loader import Hdf5Loader
     from epiclass.core.metadata import Metadata, UUIDMetadata
     from epiclass.core.model_pytorch import LightningDenseClassifier
     from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler

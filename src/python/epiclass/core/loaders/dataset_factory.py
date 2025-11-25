@@ -1,5 +1,4 @@
-"""Module to define data/datasets processing and representation classes."""
-# pylint: disable=unnecessary-lambda-assignment, too-many-positional-arguments
+"""Module defining data factory classes, for preprocessing of samples and metadata."""
 from __future__ import annotations
 
 import collections
@@ -7,13 +6,12 @@ import math
 from typing import List
 
 import numpy as np
-from imblearn.over_sampling import RandomOverSampler
 from sklearn import preprocessing
 
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data.eager import KnownData
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.metadata import Metadata
 
 

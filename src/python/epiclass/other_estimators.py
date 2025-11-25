@@ -10,7 +10,7 @@ import os
 import sys
 from pathlib import Path
 
-from epiclass.core.data import data
+from epiclass.core.loaders import dataset_factory
 
 try:
     import lightgbm  # pylint: disable=unused-import
@@ -253,7 +253,7 @@ def main():
             to_load += glob.glob(pattern.format(log=cli.logdir, name=save_name))
 
         if to_load:
-            my_data = data.DataSetFactory.from_epidata(
+            my_data = dataset_factory.DataSetFactory.from_epidata(
                 my_datasource,
                 my_metadata,
                 category,

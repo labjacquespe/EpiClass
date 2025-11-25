@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from epiclass.core.data.data import DataSet
+from epiclass.core.data.dataset import DataSet
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from tests.epilap_test_data import (

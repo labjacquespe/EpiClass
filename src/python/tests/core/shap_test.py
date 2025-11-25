@@ -12,7 +12,8 @@ from lightgbm import LGBMClassifier
 from shap import TreeExplainer
 from sklearn.datasets import make_blobs
 
-from epiclass.core.data.data import DataSet, UnknownData
+from epiclass.core.data.dataset import DataSet
+from epiclass.core.data.eager import UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
 from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
 

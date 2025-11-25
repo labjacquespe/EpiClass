@@ -17,7 +17,7 @@ import numpy as np
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 
 # Setting up logging configuration
 logging.basicConfig(

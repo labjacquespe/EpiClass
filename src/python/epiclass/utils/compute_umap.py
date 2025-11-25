@@ -15,7 +15,7 @@ import numpy as np
 import umap
 from umap.umap_ import nearest_neighbors
 
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:

@@ -1,8 +1,9 @@
 """Benchmarking SHAP value computation functions."""
 from pathlib import Path
 
-from epiclass.core.data.data import DataSetFactory, KnownData
+from epiclass.core.data.eager import KnownData
 from epiclass.core.data_source import EpiDataSource
+from epiclass.core.loaders.dataset_factory import DataSetFactory
 from epiclass.core.metadata import Metadata
 from epiclass.core.shap_values import NN_SHAP_Handler
 from epiclass.utils.time import time_now

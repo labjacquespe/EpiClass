@@ -11,7 +11,7 @@ import h5py
 
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.metadata import Metadata
 
 DEFAULT_TEST_LOGDIR = Path("/tmp/pytest")

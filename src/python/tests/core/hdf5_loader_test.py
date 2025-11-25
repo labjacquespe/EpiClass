@@ -9,7 +9,7 @@ import h5py  # pylint: disable=unused-import # import to avoid weirdness
 import pytest
 
 from epiclass.core.epiatlas_treatment import EpiAtlasDataset
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from tests.epilap_test_data import EpiAtlasTreatmentTestData
 
 

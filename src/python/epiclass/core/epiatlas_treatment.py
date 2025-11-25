@@ -12,9 +12,10 @@ import numpy.typing as npt
 from imblearn.over_sampling import RandomOverSampler
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 
-from epiclass.core.data import data
+from epiclass.core.data import dataset
+from epiclass.core.data.eager import KnownData
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.metadata import UUIDMetadata
 
 TRACKS_MAPPING = {
@@ -101,7 +102,7 @@ class EpiAtlasDataset:
         md5s = list(self._signals.keys())
         labels = [self._metadata[md5][self._label_category] for md5 in md5s]
 
-        self._dataset: data.KnownData = data.KnownData(
+        self._dataset: KnownData = KnownData(
             ids=md5s,
             x=list(self._signals.values()),
             y_str=labels,
@@ -140,7 +141,7 @@ class EpiAtlasDataset:
         return self._signals
 
     @property
-    def dataset(self) -> data.KnownData:
+    def dataset(self) -> KnownData:
         """Return dataset."""
         return self._dataset
 
@@ -279,17 +280,19 @@ class EpiAtlasFoldFactory:
         return self._classes
 
     @property
-    def train_val_dset(self) -> data.KnownData:
+    def train_val_dset(self) -> KnownData:
         """Returns training dataset for cross-validation."""
         return self._train_val
 
     @property
-    def test_dset(self) -> data.KnownData:
+    def test_dset(self) -> KnownData:
         """Returns test dataset, not used in cross-validation."""
         return self._test
 
     @staticmethod
-    def _label_uuid(dset: data.KnownData) -> Tuple[NDArray, NDArray, NDArrayInt]:
+    def _label_uuid(
+        dset: KnownData,
+    ) -> Tuple[NDArray, NDArray, NDArrayInt]:
         """Return uuids, unique uuids and uuid to int mapping (for stratified group k-fold)
 
         Args:
@@ -305,11 +308,13 @@ class EpiAtlasFoldFactory:
         unique_uuids, uuid_to_int = np.unique(uuids, return_inverse=True)  # type: ignore
         return np.array(uuids), unique_uuids, uuid_to_int
 
-    def _reserve_test(self) -> Tuple[data.KnownData, data.KnownData]:
+    def _reserve_test(
+        self,
+    ) -> Tuple[KnownData, KnownData]:
         """Return training data from cross-validation and test data for final evaluation."""
         dset = self._epiatlas_dataset.dataset
         if self.test_ratio == 0:
-            return dset, data.KnownData.empty_collection()
+            return dset, KnownData.empty_collection()
 
         n_splits = int(1 / self.test_ratio)
         if self.epiatlas_dataset.target_category == "track_type":
@@ -319,8 +324,8 @@ class EpiAtlasFoldFactory:
         return train_val, test
 
     def _split_by_track_type(
-        self, dset: data.KnownData, n_splits: int
-    ) -> Generator[Tuple[data.KnownData, data.KnownData], None, None]:
+        self, dset: KnownData, n_splits: int
+    ) -> Generator[Tuple[KnownData, KnownData], None, None,]:
         """Split dataset by track_type. Oversampling not implemented."""
         _, _, uuids_inverse = self._label_uuid(dset)
 
@@ -337,8 +342,11 @@ class EpiAtlasFoldFactory:
             yield train_set, valid_set
 
     def _split_dataset(
-        self, dset: data.KnownData, n_splits: int, oversample: bool = False
-    ) -> Generator[Tuple[data.KnownData, data.KnownData], None, None]:
+        self,
+        dset: KnownData,
+        n_splits: int,
+        oversample: bool = False,
+    ) -> Generator[Tuple[KnownData, KnownData], None, None,]:
         # Convert the labels and groups (uuids) into numpy arrays
         uuids, uuids_unique, uuids_inverse = self._label_uuid(dset)
         labels_unique = [
@@ -377,7 +385,9 @@ class EpiAtlasFoldFactory:
 
             yield train_set, valid_set
 
-    def yield_split(self, oversample: bool = True) -> Generator[data.DataSet, None, None]:
+    def yield_split(
+        self, oversample: bool = True
+    ) -> Generator[dataset.DataSet, None, None]:
         """Yield train and valid tensor datasets for one split.
 
         Depends on given init parameters.
@@ -390,14 +400,14 @@ class EpiAtlasFoldFactory:
             generator = self._split_dataset(dset, self.k, oversample=oversample)
 
         for train_set, valid_set in generator:
-            yield data.DataSet(
+            yield dataset.DataSet(
                 training=train_set,
                 validation=valid_set,
-                test=data.KnownData.empty_collection(),
+                test=KnownData.empty_collection(),
                 sorted_classes=self.classes,
             )
 
-    def create_total_data(self, oversample: bool = True) -> data.KnownData:
+    def create_total_data(self, oversample: bool = True) -> KnownData:
         """Create a single dataset from the training and validation data.
 
         Will not oversample properly if all samples from the same UUID do not share target label.

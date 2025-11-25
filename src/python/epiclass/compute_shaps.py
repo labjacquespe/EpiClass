@@ -19,9 +19,9 @@ except ImportError as e:
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.data.data import UnknownData
+from epiclass.core.data.eager import UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 
 

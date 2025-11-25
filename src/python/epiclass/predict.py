@@ -5,6 +5,8 @@ import os
 import warnings
 from pathlib import Path
 
+from epiclass.core.data.eager import UnknownData
+
 warnings.simplefilter("ignore", category=FutureWarning)
 
 import comet_ml  # needed because special snowflake # pylint: disable=unused-import
@@ -16,8 +18,8 @@ from torch.utils.data import TensorDataset
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
-from epiclass.core.data.data import DataSet, UnknownData
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.data.dataset import DataSet
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.utils.time import time_now
 

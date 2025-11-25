@@ -13,7 +13,7 @@ from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as Argume
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import TRACKS_MAPPING
-from epiclass.core.hdf5_loader import Hdf5Loader
+from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 from epiclass.core.metadata import Metadata
 from epiclass.utils.metadata_utils import EPIATLAS_ASSAYS as epiatlas_assays
 
