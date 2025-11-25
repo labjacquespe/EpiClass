@@ -11,6 +11,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict
 
+from epiclass.utils.torch_data import create_torch_datasets
+
 warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -22,7 +24,7 @@ from lightning.pytorch import loggers as pl_loggers
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis, metadata
-from epiclass.core.data import DataSet, create_torch_datasets
+from epiclass.core.data import DataSet
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier

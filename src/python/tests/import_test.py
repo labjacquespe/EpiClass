@@ -149,7 +149,6 @@ def test_imports() -> None:
         Hdf5Loader,
         KnownData,
         UnknownData,
-        create_torch_datasets,
     )
     from epiclass.core.data_source import HDF5_RESOLUTION, EpiDataSource
     from epiclass.core.epiatlas_treatment import (
@@ -186,3 +185,4 @@ def test_imports() -> None:
     from epiclass.utils.shap.shap_analysis import feature_overlap_stats
     from epiclass.utils.shap.shap_utils import extract_shap_values_and_info
     from epiclass.utils.time import time_now, time_now_str
+    from epiclass.utils.torch_data import create_torch_datasets

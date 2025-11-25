@@ -7,13 +7,11 @@ import collections
 import copy
 import math
 import sys
-from typing import Dict, Generic, List, Tuple, Type, TypeVar
+from typing import Generic, List, Type, TypeVar
 
 import numpy as np
-import torch
 from imblearn.over_sampling import RandomOverSampler
 from sklearn import preprocessing
-from torch.utils.data import DataLoader, TensorDataset
 
 from .data_source import EpiDataSource
 from .hdf5_loader import Hdf5Loader
@@ -614,43 +612,3 @@ class EpiData:
         ros = RandomOverSampler(random_state=42)
         X_resampled, y_resampled = ros.fit_resample(X, y)  # type: ignore
         return X_resampled, y_resampled, ros.sample_indices_
-
-
-def create_torch_datasets(
-    data: DataSet, batch_size: int
-) -> Dict[str, Tuple[TensorDataset, DataLoader]]:
-    """Return (dataset, DataLoader) pairs for non empty sets.
-
-    Warning: last batch dropped for training set to ensure consistent batch sizes.
-    """
-    torch_dsets = []
-    for data_split in [data.train, data.validation, data.test]:
-        try:
-            dset = TensorDataset(
-                torch.from_numpy(data_split.signals).float(),
-                torch.from_numpy(data_split.encoded_labels),
-            )
-            torch_dsets.append(dset)
-        except AttributeError:
-            torch_dsets.append(None)
-
-    datasets_pairs = {}
-    train_dset = torch_dsets[0]
-    if (train_dset is not None) and (len(train_dset) > 0):
-        train_dataloader = DataLoader(
-            train_dset,
-            batch_size=batch_size,
-            shuffle=True,
-            pin_memory=True,
-            drop_last=True,
-        )
-        datasets_pairs["training"] = (train_dset, train_dataloader)
-
-    for name, torch_dset in zip(["validation", "test"], torch_dsets[1:]):
-        if (torch_dset is not None) and (len(torch_dset) > 0):
-            dataloader = DataLoader(
-                torch_dset, batch_size=len(torch_dset), pin_memory=True
-            )
-            datasets_pairs[name] = (torch_dset, dataloader)
-
-    return datasets_pairs
