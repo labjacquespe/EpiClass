@@ -6,7 +6,8 @@ import abc
 import collections
 import copy
 import math
-from typing import Dict, List, Tuple
+import sys
+from typing import Dict, Generic, List, Tuple, Type, TypeVar
 
 import numpy as np
 import torch
@@ -17,6 +18,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from .data_source import EpiDataSource
 from .hdf5_loader import Hdf5Loader
 from .metadata import Metadata
+
+# Define a type variable that can be either KnownData or UnknownData
+DataType = TypeVar("DataType", bound="Data")
 
 
 class Data(abc.ABC):
@@ -241,14 +245,14 @@ class UnknownData(Data):
         return UnknownData(new_ids, new_signals, new_targets, new_str_targets)
 
 
-class DataSet(abc.ABC):
+class DataSet(Generic[DataType], abc.ABC):
     """Contains training/valid/test Data objects."""
 
     def __init__(
         self,
-        training: KnownData | UnknownData,
-        validation: KnownData | UnknownData,
-        test: KnownData | UnknownData,
+        training: DataType,
+        validation: DataType,
+        test: DataType,
         sorted_classes: List[str],
     ):
         self._train = training
@@ -257,17 +261,17 @@ class DataSet(abc.ABC):
         self._sorted_classes = sorted_classes
 
     @property
-    def train(self) -> KnownData | UnknownData:
+    def train(self) -> DataType:
         """Training set"""
         return self._train
 
     @property
-    def validation(self) -> KnownData | UnknownData:
+    def validation(self) -> DataType:
         """Validation set"""
         return self._validation
 
     @property
-    def test(self) -> KnownData | UnknownData:
+    def test(self) -> DataType:
         """Test set"""
         return self._test
 
@@ -277,26 +281,46 @@ class DataSet(abc.ABC):
         return self._sorted_classes
 
     @classmethod
-    def empty_collection(cls):
-        """Returns an empty object"""
+    def empty_collection(
+        cls, data_class: Type[DataType] | None = None
+    ) -> "DataSet[DataType]":
+        """Returns an empty object.
+
+        Args:
+            data_class: The data class to use (KnownData, UnknownData, lazy versions.)
+        """
         obj = cls.__new__(cls)
-        obj._train = KnownData.empty_collection()
-        obj._validation = KnownData.empty_collection()
-        obj._test = KnownData.empty_collection()
+
+        # Narrow the type
+        if data_class is None:
+            data_class = KnownData  # type: ignore
+            print(
+                "Warning: data_class not provided, using KnownData.",
+                file=sys.stderr,
+            )
+        else:
+            if not issubclass(data_class, Data):
+                raise AssertionError("data_class must be a subclass of Data")
+
+        assert data_class is not None  # for pylance
+
+        obj._train = data_class.empty_collection()
+        obj._validation = data_class.empty_collection()
+        obj._test = data_class.empty_collection()
         obj._sorted_classes = []
         return obj
 
-    def set_train(self, dset: KnownData | UnknownData):
+    def set_train(self, dset: DataType):
         """Set training set."""
         self._train = dset
         self._reset_classes()
 
-    def set_validation(self, dset: KnownData | UnknownData):
+    def set_validation(self, dset: DataType):
         """Set validation set."""
         self._validation = dset
         self._reset_classes()
 
-    def set_test(self, dset: KnownData | UnknownData):
+    def set_test(self, dset: DataType):
         """Set testing set."""
         self._test = dset
         self._reset_classes()
