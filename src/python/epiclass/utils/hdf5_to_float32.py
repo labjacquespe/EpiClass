@@ -1,5 +1,6 @@
 """
-This module provides functionalities to copy HDF5 files to a new directory, convert their datasets to float32 data type, and repack them to reduce their sizes.
+This module provides a script to convert float64 datasets in HDF5 files to float32 and repack files to reduce size,
+while preserving all groups, attributes, and file structure.
 """
 from __future__ import annotations
 
@@ -9,15 +10,11 @@ import os
 import shutil
 import subprocess
 import traceback
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import h5py
 import numpy as np
-
-from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
-from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
 
 # Setting up logging configuration
 logging.basicConfig(
@@ -27,16 +24,20 @@ logging.basicConfig(
 
 def parse_arguments() -> argparse.Namespace:
     """argument parser for command line"""
-    arg_parser = ArgumentParser()
+    # fmt: off
+    arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument(
-        "hdf5_list", type=Path, help="A file with hdf5 filenames. Use absolute path!"
+        "hdf5_list",
+        type=Path,
+        help="File containing list of HDF5 file paths (absolute paths)."
     )
     arg_parser.add_argument(
         "output_dir",
-        type=DirectoryChecker(),
+        type=Path,
         help="Directory where to write the new hdf5 files.",
     )
     return arg_parser.parse_args()
+    # fmt: on
 
 
 def copy_hdf5_file(file_path: Path, logdir: Path) -> Path | None:
@@ -63,31 +64,49 @@ def cast_datasets_to_float32(file_path: Path) -> bool:
     modified = False
     with h5py.File(file_path, "r+") as f:
         for _, group in f.items():
+            if not isinstance(group, h5py.Group):
+                continue
+
             for dataset_name, dataset in list(group.items()):
                 # Cast the dataset to float32, remove the old dataset and save the new one
-                if dataset.dtype == np.float64:
-                    modified = True
-                    attrs = dict(dataset.attrs.items())
+                if not isinstance(dataset, h5py.Dataset):
+                    continue
+                if dataset.dtype != np.float64:
+                    continue
 
-                    og_dataset = dataset[:]
-                    casted_dataset = dataset.astype(np.float32)[:]
+                # Dataset needs casting
+                modified = True
+                attrs = dict(dataset.attrs.items())
 
-                    # Verify the difference between the original dataset and the casted dataset
-                    diff = np.abs(casted_dataset - og_dataset)
-                    max_diff = np.max(diff)
-                    if max_diff > max_casting_error:
-                        logging.warning(
-                            "Recasting max(diff)=%.5f > %.5f: %s",
-                            max_diff,
-                            max_casting_error,
-                            file_path,
-                        )
-                    del group[dataset_name]
+                og_arr = dataset[...]
+                casted_arr = og_arr.astype(np.float32)
 
-                    group.create_dataset(
-                        dataset_name, data=casted_dataset, dtype=np.float32
+                # Verify the difference between the original dataset and the casted dataset
+                diff = np.abs(casted_arr - og_arr)
+                diff = diff[np.isfinite(diff)]  # ignore NaN/Inf
+                max_diff = np.max(diff)
+
+                if max_diff > max_casting_error:
+                    logging.warning(
+                        "Biggest casting difference '%.5f' (on %s) exceeds threshold (%.5f) for: %s",
+                        max_diff,
+                        dataset_name,
+                        max_casting_error,
+                        file_path,
                     )
-                    group[dataset_name].attrs.update(attrs)
+
+                # Replace dataset
+                del group[dataset_name]
+                group.create_dataset(
+                    dataset_name,
+                    data=casted_arr,
+                    dtype="float32",
+                    compression="gzip",
+                    compression_opts=9,
+                    shuffle=True,  # improves gzip compression
+                    fletcher32=True,  # improves data integrity
+                )
+                group[dataset_name].attrs.update(attrs)
 
     return modified
 
@@ -101,8 +120,11 @@ def repack_hdf5_file(file_path: Path) -> None:
     try:
         subprocess.run(["h5repack", str(file_path), tmp_path], check=True)
         shutil.move(tmp_path, str(file_path))
-    except FileNotFoundError:
-        logging.error("'h5repack' command not found.")
+    except FileNotFoundError as e:
+        if "h5repack" in str(e):
+            logging.error("'h5repack' command not found: %s", e)
+        else:
+            logging.error("FileNotFoundError during repacking: %s", e)
 
 
 def process_file(hdf5_file: Path, logdir: Path) -> None:
@@ -124,6 +146,7 @@ def process_file(hdf5_file: Path, logdir: Path) -> None:
     Returns:
         None
     """
+    # First, copy the file to the new location with a modified name
     try:
         new_filepath = copy_hdf5_file(hdf5_file, logdir)
     except Exception as e:  # pylint: disable=broad-except
@@ -132,16 +155,18 @@ def process_file(hdf5_file: Path, logdir: Path) -> None:
         )
         return
 
-    if new_filepath:
-        modified = cast_datasets_to_float32(new_filepath)
-        if modified:
-            logging.info(
-                "Casting and verification successful. Repacking file %s", new_filepath
-            )
-            repack_hdf5_file(new_filepath)
-        else:
-            logging.info("File already existing or no casting needed. Skipping.")
-            new_filepath.unlink(missing_ok=True)
+    if new_filepath is None:
+        logging.info("File already exists. Skipping: %s", hdf5_file)
+        return
+
+    # Cast datasets to float32
+    modified = cast_datasets_to_float32(new_filepath)
+    if modified:
+        logging.info("Casting and verification successful. Repacking: %s", new_filepath)
+        repack_hdf5_file(new_filepath)
+    else:
+        logging.info("No casting needed. Skipping: %s", new_filepath)
+        new_filepath.unlink(missing_ok=True)
 
 
 def main():
@@ -151,16 +176,17 @@ def main():
     cli = parse_arguments()
 
     hdf5_list_path = cli.hdf5_list
-    logdir = cli.output_dir.resolve()
-    max_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "4"))
+    outdir = cli.output_dir.resolve()
+    max_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "8"))
 
     if shutil.which("h5repack") is None:
         raise FileNotFoundError("'h5repack' command not found.")
 
-    hdf5_files = list(Hdf5Loader.read_list(hdf5_list_path, adapt=True).values())
+    with open(hdf5_list_path, "r", encoding="utf8") as f:
+        hdf5_files = [Path(line.strip()) for line in f if line.strip()]
 
-    with ThreadPoolExecutor(max_workers) as executor:
-        executor.map(process_file, hdf5_files, [logdir] * len(hdf5_files))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        executor.map(process_file, hdf5_files, [outdir] * len(hdf5_files))
 
 
 if __name__ == "__main__":
