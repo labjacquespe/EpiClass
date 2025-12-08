@@ -28,9 +28,9 @@ compile python_version:
     # Ensure requirements are compatible with the specified Python version
     # Will fail if not compatible
     uv pip compile -p=${v} ../requirements/req_core.in &>> $log
+    uv pip compile -p=${v} ../pyproject.toml --extra=test &>> $log
 
-    echo "✅ Requirements compiled for Python ${v}"
-    echo "📄 Generated: ../requirements/req_core_${v}.txt"
+    echo "✅ Requirements compiled for Python ${v} - No conflict"
 
 # Run tests for a specific Python version using pre-compiled requirements
 # Optional: pass test_filter to select specific tests (e.g., just test 3.11 "test_foo")
@@ -133,6 +133,7 @@ test-all test_filter="": check-env
             fi
         else
             printf "Python %-5s → (no pytest log found)\n" "$v"
+            printf "Tried to find: logs/${timestamp}*${v}*pytest.log\n"
         fi
     done
     echo "----------------------------------------"
