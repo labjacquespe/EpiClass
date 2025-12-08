@@ -16,7 +16,7 @@ The module provides functions to:
 Please note:
 The function values_to_bedgraph() is not yet implemented and will raise a NotImplementedError when invoked.
 """
-
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
 
 import io
@@ -76,7 +76,10 @@ def values_to_bedgraph(values, chroms, resolution, bedgraph_path):
 
 
 def write_to_bed(
-    bed_ranges: List[Tuple[str, int, int]], bed_path: str | Path, verbose: bool = False
+    bed_ranges: List[Tuple[str, int, int]],
+    bed_path: str | Path,
+    verbose: bool = False,
+    sort: bool = False,
 ) -> None:
     """Writes the given bed ranges to a .bed file.
 
@@ -84,10 +87,15 @@ def write_to_bed(
         bed_ranges (List[Tuple[str, int, int]]): List of tuples, each containing
             (chromosome name, start position, end position).
         bed_path (str): The path where the .bed file should be written.
+        verbose (bool): If True, prints a message indicating the file has been written.
+        sort (bool): If True, sorts the bed ranges before writing.
 
     Note:
         The function doesn't return anything. It writes directly to a file.
     """
+    if sort:
+        bed_ranges.sort(key=lambda x: (x[0], x[1], x[2]))
+
     with open(bed_path, "w", encoding="utf8") as file:
         for bed_range in bed_ranges:
             file.write(f"{bed_range[0]}\t{bed_range[1]}\t{bed_range[2]}\n")
@@ -267,6 +275,7 @@ def create_new_random_bed(
     resolution: int,
     n_bed: int = 1,
     output_dir: Path = Path.cwd(),
+    sort: bool = False,
 ):
     """
     Create new random bed files.
@@ -275,6 +284,9 @@ def create_new_random_bed(
         hdf5_size (int): The total size of the HDF5 file (unique to each resolution).
         desired_size (int): The desired size of the random bed file.
         resolution (int): The resolution of each bed/hdf5 bins.
+        n_bed (int): The number of random bed files to create. Default is 1.
+        output_dir (Path): The directory where the bed files will be saved. Default is the current working directory.
+        sort (bool): If True, sorts the bed ranges before writing. Default is False.
 
     Returns:
         None
@@ -297,4 +309,5 @@ def create_new_random_bed(
         write_to_bed(
             ranges,
             output_dir / f"hg38.random_n{desired_size}_seed{seed}_{resolution_str}.bed",
+            sort=sort,
         )
