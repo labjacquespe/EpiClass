@@ -1372,11 +1372,11 @@ Collect subset of table for the five selected cell types.
 
 ```{python}
 #| label: subset-go-table
-table_5_ct = table.loc[go_terms_table, selected_cell_types].copy()
-assert table_5_ct.shape == (len(go_terms_graph), len(selected_cell_types))
+sub_table = table.loc[go_terms_table, selected_cell_types].copy()
+assert sub_table.shape == (len(go_terms_graph), len(selected_cell_types))
 
 # Rename index
-table_5_ct = pd.DataFrame(table_5_ct, index=go_terms_graph, columns=table_5_ct.columns)
+sub_table = sub_table.rename(index=dict(zip(go_terms_table, go_terms_graph)))
 ```
 
 Define graphing function `plot_go_heatmap`.
@@ -1430,8 +1430,8 @@ def plot_go_heatmap(table: pd.DataFrame, width: int, height: int, title: str|Non
         height=height,
         plot_bgcolor="black",
     )
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(showgrid=False)
+    fig.update_xaxes(showgrid=False, side="top")
+    fig.update_yaxes(showgrid=False, autorange="reversed")
 
     fig.show()
 ```
@@ -1442,7 +1442,7 @@ Graph GO for 5 cell types.
 #| label: plot-go-heatmap-5ct
 #| fig-align: center
 plot_go_heatmap(
-    table=table_5_ct,
+    table=sub_table,
     width=600,
     height=1000,
 )
