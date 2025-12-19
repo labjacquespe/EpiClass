@@ -10,8 +10,8 @@ Here are the figure pages:
 
 - Section 1: [EpiClass accurately predicts EpiATLAS assay and biospecimen metadata](./figs/fig1.html)
 - Section 2: [EpiClass reliably validates and augments other categories of EpiATLAS metadata](./figs/fig2.html)
+    - [Supplementary figures 5 to 7](./figs/fig2-supp.html)
 - Section 3: [Application of EpiClass on public epigenomic data](./figs/fig3.html)
-- [Supplementary figures 5 to 7](./figs/fig2-supp.html)
 
 ## Quarto
 

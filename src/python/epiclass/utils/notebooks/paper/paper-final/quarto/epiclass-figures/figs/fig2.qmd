@@ -578,7 +578,7 @@ with pd.option_context("display.float_format", "{:.2%}".format):
 
 Work done in another script:
 
-1. For each bigwig file, the chrY average value is computed with the pyBigWig module, in `chrY_bigwig_mean.py` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/chrY_bigwig_mean.py)).
+1. For each bigwig file, the chrY average value is computed with the pyBigWig module, in `chrY_bigwig_mean.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/chrY_bigwig_mean.py)).
 2. For each assay, the z-score distribution (of the mean chrY value) of the file group is computed.
     - Outputs `chrXY_all.csv`
     - Outputs `chrY_zscores.csv`
@@ -1243,7 +1243,7 @@ Supp. Fig. 5D: Distribution of the age prediction from GP-age for the 565 epigen
 
 ### G - Biospecimen classifier - ChromScore for high-SHAP regions {#sec-2G}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
 
 ::: {.text-center}
 <iframe
@@ -1258,7 +1258,7 @@ Fig 2G: Distribution of the average ChromScore values over the important Biospec
 
 ### H - Gene Ontology and SHAP values {#sec-2H}
 
-See `src/python/epiclass/utils/notebooks/profile_bed.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/profile_bed.ipynb)) for creation of gene ontology files.
+See `src/python/epiclass/utils/notebooks/profile_bed.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/profile_bed.ipynb)) for creation of gene ontology files.
 The code compares important SHAP values regions of different cell types with gene gff (using the gProfiler module)
 
 Define GO terms.
@@ -1502,7 +1502,7 @@ See [Annex A](./fig2.html#sec-annex-a) for a more detailled Epilogos color legen
 
 Note: The code uses the acronym CNV (Copy Number Variant/Variation) instead of CNA.
 
-See CNV_treatment.ipynb ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/CNV_treatment.ipynb)) for the creation of the CNA stats. The following figures represent the Z-scores of the signal within the top SHAP features (N=336) vs 200 random feature sets of same size, for signatures created using patients samples with cancer types similar to EpiAtlas content (see paper Methods).
+See CNV_treatment.ipynb ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/CNV_treatment.ipynb)) for the creation of the CNA stats. The following figures represent the Z-scores of the signal within the top SHAP features (N=336) vs 200 random feature sets of same size, for signatures created using patients samples with cancer types similar to EpiAtlas content (see paper Methods).
 \
 \
 Load z-scores.

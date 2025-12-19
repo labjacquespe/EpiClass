@@ -136,14 +136,14 @@ Additonally, for ENCODE, the `harmonized_sample_ontology_intermediate` model was
 | harmonized_sample_ontology_intermediate   |     16      | bb66b72ae83645d587e50b34aebb39c3      | 16379    |
 
 The metadata for ENCODE predictions was created using the FILE + EXPERIMENT + BIOSAMPLE accessions, starting from filenames.
-For the initial extraction process, see: `src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb)).
+For the initial extraction process, see: `src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb)).
 Final metadata file: `encode_full_metadata_2025-02_no_revoked.freeze1.csv(.xz)`
 
 ## Figure 3 and Supp Fig 8A,D - Public databases metrics {#sec-all-DB-metrics}
 
-ChIP-Atlas, ENCODE and recount3 metrics at various prediction score thresholds were generated using the `MetricsPerAssay` class, from `src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py)).
+ChIP-Atlas, ENCODE and recount3 metrics at various prediction score thresholds were generated using the `MetricsPerAssay` class, from `src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py)).
 
-([Folder permalink](https://github.com/rabyj/EpiClass/tree/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper))
+([Folder permalink](https://github.com/labjacquespe/EpiClass/tree/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper))
 - ChIP-Atlas: `src/python/epiclass/utils/notebooks/paper/c-a_pred_analysis.ipynb` (section `Summary metrics by assay`)
 - ENCODE: `src/python/epiclass/utils/notebooks/paper/encode_pred_analysis.ipynb` (section `All 5 tasks metrics summary`, run `Setup` section beforehand)
 - recount3: `src/python/epiclass/utils/notebooks/paper/recount3_pred_analysis.ipynb`
@@ -397,9 +397,9 @@ Supplementary Figure 8B: Proportion of non-core ChIP-Seq datasets from ENCODE cl
 
 ### C,F,I - PCAs
 
-PCAs were computed via `src/python/epiclass/utils/compute_pca.py` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/compute_pca.py)), using `IncrementalPCA` from `scikit-learn`.
+PCAs were computed via `src/python/epiclass/utils/compute_pca.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/compute_pca.py)), using `IncrementalPCA` from `scikit-learn`.
 
-Graphing was done using code similar to `src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb)), which uses the output of `compute_pca.py`.
+Graphing was done using code similar to `src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb)), which uses the output of `compute_pca.py`.
 
 
 ### E - UpsetPlot of assay labels provided in 4 DBs

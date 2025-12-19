@@ -8,7 +8,7 @@ folder_name=$(basename "$SCRIPT_DIR")
 if [ -z "$SCRIPT_DIR" ]; then
     echo "Could not determine script directory. Exiting."
     exit 1
-elif [ "$folder_name" != "epiclass-figurees" ]; then
+elif [ "$folder_name" != "epiclass-figures" ]; then
     echo "Script directory is incorrect: $SCRIPT_DIR"
     exit 1
 fi

@@ -513,7 +513,7 @@ Supp. Fig. 5F: Genome browser representation of the important regions shown in [
 
 ## Supplementary Figure 6 - Prediction score threshold impact {#sec-supp6}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 <!-- figure supposed to be 1000x900, but need some extra margin to not create scroll bar -->
 ::: {.column-screen-left}
@@ -529,7 +529,7 @@ Supplementary Figure 6: Impact of prediction score threshold on performance metr
 
 ## Supplementary Figure 7 - Biospecimen classifier - ChromScore for high-SHAP regions
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/94e0f352ec631eeab203f28e885ecd9fc72b2acc/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)).
 
 This is the breakdown per cell type of [Figure 2G](./fig2.html#sec-2G).
 

@@ -1888,7 +1888,7 @@ plot_prediction_scores_distribution(
 
 ### H,I - Prediction score thresholds
 
-For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/rabyj/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 <!-- figures are supposed to be 700x600, but need some extra margin to not create scroll bar -->
 ```{=html}
