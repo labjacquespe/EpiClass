@@ -1,6 +1,5 @@
 """Module for hdf5 loading handling."""
-
-# pylint: disable=unexpected-keyword-arg
+# pylint: disable=unexpected-keyword-arg, too-many-positional-arguments
 from __future__ import annotations
 
 import os
@@ -64,6 +63,7 @@ class Hdf5Loader:
         verbose=True,
         strict=False,
         hdf5_dir: Path | None = None,
+        adapt: bool = True,
     ) -> Hdf5Loader:
         """Load hdf5s from path list file, into self.signals
         If a list of md5s is given, load only the corresponding files.
@@ -79,7 +79,8 @@ class Hdf5Loader:
         """
         files = self.read_list(data_file)
 
-        files = Hdf5Loader.adapt_to_environment(files)
+        if adapt:
+            files = Hdf5Loader.adapt_to_environment(files)
 
         if hdf5_dir is not None:
             files = {md5: hdf5_dir / path.name for md5, path in files.items()}
