@@ -18,7 +18,7 @@ website:
       - about.qmd
     right:
       - text: "![GitHub](https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/icons/github.svg 'View source code on GitHub')"
-        href: https://github.com/rabyj/EpiClass/tree/master
+        href: https://github.com/labjacquespe/EpiClass/tree/master
         aria-label: View source code on GitHub
       - text: "![Model on HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/model-on-hf-sm.svg 'Access EpiClass models on HuggingFace')"
         href: https://huggingface.co/collections/KatLeChat/epiclass-models-68adb5ce65c8f2fb93322e59
