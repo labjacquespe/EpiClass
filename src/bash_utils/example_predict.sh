@@ -1,33 +1,48 @@
 #!/bin/bash
-#SBATCH --time=12:00:00
-#SBATCH --account=your-account
-#SBATCH --job-name=name-of-your-job
+#SBATCH --time=:::time::: # ex: 6:00:00
+#SBATCH --account=:::your-account:::
+#SBATCH --job-name==:::your-job-name:::
 #SBATCH --output=./slurm_files/%x-%j.out
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --mem=400G
-#SBATCH --mail-user=john.doe@domain.ca
+#SBATCH --cpus-per-task=1 #GPU not needed for inference
+#SBATCH --mem=:::memory::: # ex: 16G
+#SBATCH --mail-user=:::your-email:::
 #SBATCH --mail-type=END,FAIL
+# shellcheck disable=SC1091  # Don't warn about sourcing unreachable files
 
+# -- NOTE: The values above in between ':::' are to be replaced by the user --
 
-# AT LEAST MODIFY THE PATHS IN BETWEEN "--", e.g. gen_path and path-to-venv
+set -e # exit on error
 
 export PYTHONUNBUFFERED=TRUE
+# export UV_CONFIG_FILE="$HOME/.config/uv/compute.toml"
 
-if [ X"$SLURM_STEP_ID" = "X" -a X"$SLURM_PROCID" = "X"0 ]
-then
-  echo "print =========================================="
-  echo "print SLURM_JOB_ID = $SLURM_JOB_ID"
-  echo "print SLURM_JOB_NODELIST = $SLURM_JOB_NODELIST"
-  echo "print =========================================="
+# For HPC environments
+module purge
+ml StdEnv/2023 python/3.11
+ml httpproxy # for comet-ml
+
+if [[ -n "$SLURM_JOB_ID" ]]; then
+  echo "=========================================="
+  echo "SLURM_JOB_ID = $SLURM_JOB_ID"
+  echo "SLURM_JOB_NODELIST = $SLURM_JOB_NODELIST"
+  echo "=========================================="
 fi
 
-gen_path="/home/rabyj/--project-path--"
+gen_path="$HOME/:::project-path:::"
 input_path="${gen_path}/epilap/input"
 output_path="${gen_path}/epilap/output/logs"
+gen_program_path="${gen_path}/sources/epiclass" # MODIFY: git root
 
-# use correct environment
-source "--path-to-venv--/bin/activate"
+for path in ${gen_path} ${gen_program_path} ${input_path} ${output_path}; do
+  if [ ! -d ${path} ]; then
+    echo "${path} is not a directory. Please check the path."
+    exit 1
+  else
+    echo "Used directory: ${path}"
+  fi
+done
+
 
 # --- choose category + hparams + source files ---
 # MODIFY THINGS HERE
@@ -46,8 +61,12 @@ export NB_LAYER="1"
 # IMPORTANT # IMPORTANT # IMPORTANT
 base_log="${output_path}/${release}/${assembly}_${basename}_pearson/${category}_${NB_LAYER}l_${LAYER_SIZE}n"
 
-model="${base_log}/10fold/split0" # IMPORTANT
+model_dir="${base_log}/10fold/split0" # IMPORTANT
 log="${base_log}/predict_unknown" # IMPORTANT
+
+# last model checkpoint file
+checkpoint_file=$(cat "${model_dir}/best_checkpoint.list" | tail -n1 | cut -f1 -d " ")
+
 
 # --- Creating correct paths for epilap and launching ---
 
@@ -58,26 +77,48 @@ chromsizes="${input_path}/chromsizes/hg38.noy.chrom.sizes"
 out1="${log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.o"
 out2="${log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.e"
 
+for path in ${hdf5_list} ${chromsizes} ${checkpoint_file}; do
+  if [ ! -f ${path} ]; then
+    echo "${path} is not a file. Please check the path."
+    exit 1
+  else
+    echo "Input: ${path}"
+  fi
+done
+
+
+# --- use correct environment ---
+
 program_path="${gen_path}/sources/epiclass/src/python/epiclass"
 cd ${program_path}
 
+if [[ -n "$SLURM_JOB_ID" ]]; then
+  # create venv on the fly
+  cd $SLURM_TMPDIR
+  python -m venv epiclass_env
+  source epiclass_env/bin/activate
+  python ${gen_program_path}/install.py &> job${SLURM_JOB_ID}_venv_setup.log
+else
+  source /path/to/preinstalled/venv/bin/activate # MODIFY
+fi
 
-# set -e, in case check_dir fails, to stop bash script (not go to prediction)
-set -e
+
+# --- Pre-checks ---
 
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/utils/check_dir.py ${log}"
 python ${program_path}/utils/check_dir.py ${log}
 
 printf '\n%s\n' "Launching following command"
-printf '%s\n' "python ${program_path}/utils/check_dir.py --exists ${model}"
-python ${program_path}/utils/check_dir.py --exists ${model}
+printf '%s\n' "python ${program_path}/utils/check_dir.py --exists ${mmodel_dirl}"
+python ${program_path}/utils/check_dir.py --exists ${model_dir}
 
 
 # --- launch ---
+
 printf '\n%s\n' "Launching following command"
-printf '%s\n' "python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model} > ${out1} 2> ${out2}"
-python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model} > ${out1} 2> ${out2}
+printf '%s\n' "python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model_dir} > ${out1} 2> ${out2}"
+python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model_dir} > ${out1} 2> ${out2}
 
 
 # -- You could then augment the prediction file with new metadata if it is known --

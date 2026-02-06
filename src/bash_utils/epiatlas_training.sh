@@ -7,23 +7,30 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=:::memory::: # ex: 16G
-#SBATCH --mail-user=john.doe@domain.com
+#SBATCH --mail-user=:::your-email:::
 #SBATCH --mail-type=END,FAIL
-
-# NOTE: The values in between ':::' are to be replaced by the user
-
 # shellcheck disable=SC1091  # Don't warn about sourcing unreachable files
 
+# -- NOTE: The values above in between ':::' are to be replaced by the user --
+
+set -e # exit on error
+
 export PYTHONUNBUFFERED=TRUE
+# export UV_CONFIG_FILE="$HOME/.config/uv/compute.toml"
+
+# For HPC environments
+module purge
+ml StdEnv/2023 python/3.11
+ml httpproxy # for comet-ml
 
 if [[ -n "$SLURM_JOB_ID" ]]; then
-  echo "print =========================================="
-  echo "print SLURM_JOB_ID = $SLURM_JOB_ID"
-  echo "print SLURM_JOB_NODELIST = $SLURM_JOB_NODELIST"
-  echo "print =========================================="
+  echo "=========================================="
+  echo "SLURM_JOB_ID = $SLURM_JOB_ID"
+  echo "SLURM_JOB_NODELIST = $SLURM_JOB_NODELIST"
+  echo "=========================================="
 fi
 
-gen_path="/path/to/epiclass" # MODIFY, input/output directories
+gen_path="$HOME/:::project-path:::" # MODIFY, input/output directories
 input_path="${gen_path}/epiclass/input"
 output_path="${gen_path}/epiclass/output/logs"
 
@@ -40,18 +47,6 @@ for path in ${slurm_out_folder} ${gen_program_path} ${input_path} ${output_path}
     echo "Used directory: ${path}"
   fi
 done
-
-
-# --- use correct environment ---
-
-set -e
-if [[ -n "$SLURM_JOB_ID" ]]; then
-  cd $SLURM_TMPDIR
-  bash ${gen_program_path}/src/bash_utils/setup_venv.sh -r ${gen_program_path}/requirements/minimal_requirements.txt -s ${gen_program_path}/src/python &>${slurm_out_folder}/${SLURM_JOB_ID}_setup.log
-  source epiclass_env/bin/activate
-else
-  source /path/to/preinstalled/venv/bin/activate # MODIFY
-fi
 
 
 # --- choose category + hparams + source files ---
@@ -93,7 +88,6 @@ metadata="${input_path}/metadata/dfreeze-v2/hg38_2023-epiatlas-dfreeze-pospurge-
 out1="${log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.o"
 out2="${log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.e"
 
-set -e
 for path in ${hparams} ${hdf5_list} ${chroms} ${metadata}; do
   if [ ! -f ${path} ]; then
     echo "${path} is not a file. Please check the path."
@@ -104,10 +98,24 @@ for path in ${hparams} ${hdf5_list} ${chroms} ${metadata}; do
 done
 
 
+# --- use correct environment ---
+
+if [[ -n "$SLURM_JOB_ID" ]]; then
+  # create venv on the fly
+  cd $SLURM_TMPDIR
+  python -m venv epiclass_env
+  source epiclass_env/bin/activate
+  python ${gen_program_path}/install.py &> job${SLURM_JOB_ID}_venv_setup.log
+else
+  source /path/to/preinstalled/venv/bin/activate # MODIFY
+fi
+
+
 # --- Pre-checks ---
 
 cd ${program_path}
 
+# This script is particularly useful when working on HPC, because it sets sticky permissions properly, so new files stay within their project group.
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/utils/check_dir.py ${log}"
 python ${program_path}/utils/check_dir.py ${log}

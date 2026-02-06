@@ -11,7 +11,7 @@ usage() {
   echo "Setup a Python virtual environment using 'uv' and install a local module."
   echo "Usage: $0 [-e virtual_env_name] [-s local_module_path]"
   echo "Defaults: env='$ENV_NAME', module='$LOCAL_MODULE_PATH'"
-  exit 1
+  exit 0
 }
 
 # Parse command-line arguments
