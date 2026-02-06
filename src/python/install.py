@@ -18,6 +18,24 @@ from pathlib import Path
 DEFAULT_TORCH = "2.6.0"
 
 
+def find_package_root(repo_root: Path) -> Path:
+    """Find the package root by looking for pyproject.toml, starting from repo_root and searching recursively."""
+    ignore = {".venv", ".git", "build", "dist", "__pycache__", "envs", "venv"}
+
+    matches = []
+    for path in repo_root.rglob("pyproject.toml"):
+        if any(part in ignore for part in path.parts):
+            continue
+        matches.append(path)
+
+    if not matches:
+        raise RuntimeError(f"No pyproject.toml found under {repo_root}")
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple pyproject.toml files found: {matches}")
+
+    return matches[0].parent
+
+
 def main():
     """Main installation logic."""
     # ---------------------------
@@ -40,6 +58,14 @@ def main():
         return [sys.executable, "-m", "pip", "install"]
 
     install_cmd = installer_cmd()
+
+    # ---------------------------
+    # Change to package root, where pyproject.toml is.
+    # ---------------------------
+    REPO_ROOT = Path(__file__).resolve().parent
+    PACKAGE_ROOT = find_package_root(REPO_ROOT)
+
+    os.chdir(PACKAGE_ROOT)
 
     # ---------------------------
     # Argument parsing
@@ -73,10 +99,6 @@ def main():
     freeze_output = Path(freeze_output).resolve() if freeze_output else None
 
     torch_version = args.torch_version
-
-    # Change to the script's directory (where pyproject.toml is)
-    script_dir = Path(__file__).resolve().parent
-    os.chdir(script_dir)
 
     # ---------------------------
     # Detect NVIDIA GPU / system
@@ -162,8 +184,9 @@ def main():
             subprocess.check_call(freeze_cmd, stdout=f)
 
         # Remove '-e' line
-        with open(freeze_output, "r", encoding="utf8") as f:
-            subprocess.check_call(["sed", "-i", r"/^-e .*/d", str(freeze_output)])
+        lines = freeze_output.read_text(encoding="utf8").splitlines()
+        lines = [line for line in lines if not line.startswith("-e ")]
+        freeze_output.write_text("\n".join(lines) + "\n", encoding="utf8")
 
         print(f"Environment snapshot saved to {freeze_output}", flush=True)
 
