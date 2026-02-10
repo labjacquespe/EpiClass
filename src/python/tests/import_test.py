@@ -1,7 +1,9 @@
 """Test imports for all python files."""
 # pylint: disable=unused-import, import-outside-toplevel, consider-using-from-import, reimported
+import pytest
 
 
+@pytest.mark.slow
 def test_imports() -> None:
     r"""Test that all core modules and main imports work together.
 

@@ -46,6 +46,7 @@ class Test_NN_SHAP_Handler:
         num_signals = test_epiatlas_dataset.validation.num_examples
         return [f"id{i}" for i in range(num_signals)]
 
+    @pytest.mark.slow
     def test_compute_shaps(
         self, handler: NN_SHAP_Handler, test_epiatlas_dataset: DataSet
     ):
