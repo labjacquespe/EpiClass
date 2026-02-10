@@ -1,4 +1,10 @@
-"""Module containing result analysis code."""
+"""Module containing result analysis code.
+
+Logs results to an experiment logger (e.g. CometML) when available,
+and writes confusion matrices and prediction tables to files.
+All functionality works with logger=None (no remote logging).
+"""
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,20 +28,33 @@ from epiclass.core.types import TensorData
 
 
 class Analysis:
-    """Class containing main analysis methods desired."""
+    """Class containing main analysis methods desired.
+
+    Works with or without a logger. When logger is None, metrics are
+    printed but not logged, and assets are written to disk but not uploaded.
+    """
 
     def __init__(
         self,
         model: LightningDenseClassifier,
         datasets_info: DataSet,
-        logger: pl.loggers.CometLogger,  # type: ignore
+        logger: Optional[pl.loggers.CometLogger] = None,  # type: ignore
         train_dataset: Optional[TensorData] = None,
         val_dataset: Optional[TensorData] = None,
         test_dataset: Optional[TensorData] = None,
+        save_dir: Optional[Path] = None,
     ):
         self._model = model
         self._classes = sorted(list(self._model.mapping.values()))
         self._logger = logger
+
+        # Determine save directory: explicit > logger > None
+        if save_dir is not None:
+            self._save_dir = Path(save_dir)
+        elif self._logger is not None and hasattr(self._logger, "save_dir"):
+            self._save_dir = Path(self._logger.save_dir)
+        else:
+            self._save_dir = None
 
         # Original DataSet object (legacy)
         self.datasets = datasets_info
@@ -51,7 +70,9 @@ class Analysis:
         self._test = test_dataset
 
     def _log_metrics(self, metric_dict, prefix=""):
-        """Log metrics from TorchMetrics metrics dict object. (key: tensor(val))"""
+        """Log metrics to experiment logger. (key: tensor(val))"""
+        if self._logger is None:
+            return
         for metric, val in metric_dict.items():
             name = f"{prefix[0:3]}_{metric}"
             self._logger.experiment.log_metric(name, val.item())
@@ -94,18 +115,24 @@ class Analysis:
 
     def _generic_write_prediction(
         self, to_predict: TensorData | None, name, path, verbose=True
-    ):
+    ) -> Optional[Path]:
         """General treatment to write predictions
         Name can be {training, validation, test}.
+
+        Returns path to written file.
 
         to_predict: Object that contains samples to predict.
         """
         if path is None:
-            path = self._logger.save_dir / f"{name}_prediction.csv"
+            if self._save_dir is None:
+                raise ValueError(
+                    f"Cannot write {name} predictions: no path given and no save_dir available."
+                )
+            path = self._save_dir / f"{name}_prediction.csv"
 
         if to_predict is None:
             print(f"Cannot compute {name} predictions : No {name} dataset given")
-            return
+            return None
 
         if isinstance(to_predict, TensorDataset):
             preds, targets = self._model.compute_predictions_from_dataset(to_predict)
@@ -113,6 +140,10 @@ class Analysis:
         elif isinstance(to_predict, Tensor):
             preds = self._model.compute_predictions_from_features(to_predict)
             str_targets = ["Unknown" for _ in range(to_predict.size(dim=1))]
+        else:
+            raise ValueError(
+                f"Cannot compute {name} predictions : to_predict should be either TensorDataset or Tensor, but got {type(to_predict)}"
+            )
 
         write_pred_table(
             predictions=preds,
@@ -125,10 +156,15 @@ class Analysis:
             classes=self._classes,
             path=path,
         )
-        self._logger.experiment.log_asset(file_data=path, file_name=f"{name}_prediction")
+        if self._logger is not None:
+            self._logger.experiment.log_asset(
+                file_data=path, file_name=f"{name}_prediction"
+            )
 
         if verbose:
             print(f"'{path.name}' written to '{path.parent}'")
+
+        return path
 
     def write_training_prediction(self, path=None):
         """Compute and write training predictions to file."""
@@ -139,8 +175,15 @@ class Analysis:
         self._generic_write_prediction(self._val, name="validation", path=path)
 
     def write_test_prediction(self, path=None):
-        """Compute and write test predictions to file."""
-        self._generic_write_prediction(self._test, name="test", path=path)
+        """Compute and write test predictions to file.
+        Test predictions do not include any "True class" column, as the true labels are unknown.
+        """
+        pred_path = self._generic_write_prediction(self._test, name="test", path=path)
+        # Remove 'True class' which is just the first class repeated
+        if pred_path is not None:
+            df = pd.read_csv(pred_path, index_col=0)
+            df.drop(columns=["True class"], inplace=True)
+            df.to_csv(pred_path, encoding="utf8")
 
     def _generic_confusion_matrix(self, dataset: TensorData | None, name) -> np.ndarray:
         """General treatment to write confusion matrices."""
@@ -158,22 +201,31 @@ class Analysis:
         final_pred = torch.argmax(preds, dim=-1)
 
         mat = torchmetrics.functional.confusion_matrix(
-            final_pred, targets, num_classes=len(self._classes), normalize=None
+            preds=final_pred,
+            target=targets,
+            num_classes=len(self._classes),
+            normalize=None,
+            task="multiclass",
         )
         return mat.detach().cpu().numpy()
 
     def _save_matrix(self, mat: ConfusionMatrixWriter, set_name, path: Path | None):
         """Save matrix to files"""
         if path is None:
-            parent = Path(self._logger.save_dir)
+            if self._save_dir is None:
+                raise ValueError(
+                    f"Cannot save {set_name} confusion matrix: no path given and no save_dir available."
+                )
+            parent = self._save_dir
             name = f"{set_name}_confusion_matrix"
         else:
             parent = path.parent
             name = path.with_suffix("").name
         csv, csv_rel, png = mat.to_all_formats(logdir=parent, name=name)
-        self._logger.experiment.log_asset(file_data=csv, file_name=f"{csv.name}")
-        self._logger.experiment.log_asset(file_data=csv_rel, file_name=f"{csv_rel.name}")  # fmt: skip
-        self._logger.experiment.log_asset(file_data=png, file_name=f"{png.name}")
+        if self._logger is not None:
+            self._logger.experiment.log_asset(file_data=csv, file_name=f"{csv.name}")
+            self._logger.experiment.log_asset(file_data=csv_rel, file_name=f"{csv_rel.name}")  # fmt: skip
+            self._logger.experiment.log_asset(file_data=png, file_name=f"{png.name}")
 
     def train_confusion_matrix(self, path=None):
         """Compute and write train confusion matrix to file."""
