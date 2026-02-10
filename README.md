@@ -49,6 +49,22 @@ The available `extra_name` options are:
 - `test`: for running tests (includes `utils`)
 - `dev`: for development tools (includes all of the above)
 
+## Quick Start & Demo
+
+To verify your installation and see the training pipeline in action, we provide a `Makefile` for convenience.
+
+**Prerequisite:** Ensure you have installed the test dependencies (`pip install -e .[test]`).
+
+You can run a demonstration that trains a simple MLP classifier on sample *S. cerevisiae* (sacCer3) data. This runs on the CPU and typically completes in a few minutes:
+
+```bash
+cd src/python/tests
+tar -xf fixtures.tar.xz
+make demo-test
+```
+
+The output will specify where the trained model and predictions are saved, allowing you to inspect the results and understand the file structure immediately.
+
 ### Dependencies
 
 The base requirements are listed in `src/python/requirements/req_core.in`. Additional dependencies (for `utils` and `test`) are defined in `pyproject.toml`.
@@ -76,6 +92,7 @@ The test suite has been confirmed to pass with all of these fixed-dependency fil
 - `predict.py`: Uses a trained model to generate predictions on new data.
 - `compute_shaps.py`: Computes SHAP values using a trained model and a representative background set.
 - `other_estimators.py`: Trains and evaluates non-neural network models (e.g., Random Forest, LGBM, etc.).
+- `general_training.py`: A more general training script that can be used for non-EpiATLAS datasets.
 
 ## Metadata Handling
 
@@ -98,6 +115,29 @@ For more details, refer to the [documentation](https://labjacquespe.github.io/Ep
 For advanced metadata manipulation, use `pandas` directly.
 
 ## Command-Line Interfaces
+
+### `general_training.py`
+
+```text
+usage: general_training.py [-h] [--n_fold N_FOLD] [--hl_units HL_UNITS] [--nb_layer NB_LAYER] [--min_class_size MIN_CLASS_SIZE]
+                           category hyperparameters hdf5_list chromsize metadata logdir
+
+positional arguments:
+  category              The metadata category to classify (e.g. assay).
+  hyperparameters       JSON file with model hyperparameters.
+  hdf5_list             Text file containing absolute paths to HDF5 files.
+  chromsize             Chromosome sizes file.
+  metadata              Metadata JSON file.
+  logdir                Output directory.
+
+options:
+  -h, --help            show this help message and exit
+  --n_fold N_FOLD       Number of CV folds (default: 4).
+  --hl_units HL_UNITS   Hidden layer units (default: 1000).
+  --nb_layer NB_LAYER   Number of hidden layers (default: 1).
+  --min_class_size MIN_CLASS_SIZE
+                        Min samples per class (default: 10).
+```
 
 ### `epiatlas_training.py`
 

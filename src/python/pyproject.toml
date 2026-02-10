@@ -74,6 +74,7 @@ test = [
     "EpiClass[utils, other_models, shap]",
     "pytest-mock>=3.14, <3.15",
     "pytest>=8.3, <8.4",
+    "pytest-xdist",
 ]
 dev = [
     "EpiClass[utils,test]",

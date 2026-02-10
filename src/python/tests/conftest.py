@@ -2,10 +2,13 @@
 # pylint: disable=unused-argument
 from __future__ import annotations
 
+import os
 import re
 import shutil
+import tarfile
 import uuid
 from pathlib import Path
+from typing import Iterator
 
 import pytest
 
@@ -23,6 +26,8 @@ from tests.epilap_test_data import (
 #     items[:] = [item for item in items if item.name != "test_logdir"]
 
 RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
+
+SACCER3_DIR = FIXTURES_DIR / "saccer3"
 
 
 def pytest_addoption(parser):
@@ -66,6 +71,20 @@ def pytest_sessionstart(session):
             re.sub(r"THIS_FOLDER", str(checkpoint_file.parent), line) for line in lines
         ]
         checkpoint_file.write_text("\n".join(lines))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """
+    Called after whole test run finished, right before returning the exit status
+    to the system.
+    """
+    if session.config.getoption("--no-cleanup"):
+        print("Skipping cleanup as per --no-cleanup option.")
+        return
+
+    # Remove test logdir
+    if RUN_LOGDIR.exists():
+        shutil.rmtree(RUN_LOGDIR)
 
 
 def nottest(obj):
@@ -118,15 +137,43 @@ def fixture_NN_model(
     )
 
 
-def pytest_sessionfinish(session, exitstatus):
+@pytest.fixture(scope="session", name="extracted_hdf5_dir")
+def saccer3_extracted_hdf5_dir(tmp_path_factory) -> Iterator[Path]:
     """
-    Called after whole test run finished, right before returning the exit status
-    to the system.
+    Extract saccer3 HDF5 files once per pytest worker (xdist-safe).
+    Returns the directory containing extracted HDF5 files.
     """
-    if session.config.getoption("--no-cleanup"):
-        print("Skipping cleanup as per --no-cleanup option.")
-        return
+    # Assign one folder per worker
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    extract_root = tmp_path_factory.getbasetemp() / f"saccer3_{worker_id}"
+    extracted_dir = extract_root / "saccer3_2016-07"
 
-    # Remove test logdir
-    if RUN_LOGDIR.exists():
-        shutil.rmtree(RUN_LOGDIR)
+    if not extracted_dir.exists():
+        hdf5_dir = SACCER3_DIR / "hdf5"
+        archive = hdf5_dir / "saccer3_2016-07.tar.xz"
+        extract_root.mkdir(parents=True, exist_ok=True)
+
+        with tarfile.open(archive, "r:xz") as tar:
+            tar.extractall(path=extract_root)
+
+    yield extracted_dir
+
+    # Teardown using makefile to avoid issues when running in parallel
+
+
+@pytest.fixture(scope="function", name="saccer3_hdf5_file_list")
+def hdf5_file_list(
+    extracted_hdf5_dir: Path,
+    test_dir: Path,
+) -> Path:
+    """
+    Write a list of HDF5 files and return its path.
+    """
+    hdf5_files = sorted(extracted_hdf5_dir.glob("*.hdf5"))
+    file_list = test_dir / "hdf5_files.list"
+
+    with file_list.open("w") as f:
+        for hdf5_file in hdf5_files:
+            f.write(f"{hdf5_file}\n")
+
+    return file_list
