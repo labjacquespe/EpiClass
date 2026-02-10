@@ -10,7 +10,10 @@ list:
 # Generate timestamp for log files
 _timestamp := `date +"%Y%m%d_%H%M%S"`
 
-# Environment check - only runs when explicitly called
+# Do not use relative paths. Always resolve from git root to ensure consistent behavior regardless of where just is invoked.
+git_root := `git rev-parse --show-toplevel`
+
+# Environment check
 check-env:
     @echo "🔍 Checking environment..."
     @which uv > /dev/null || (echo "❌ uv not found" && exit 1)
@@ -22,13 +25,14 @@ compile python_version:
     set -euo pipefail
     v="{{python_version}}"
     timestamp="{{_timestamp}}"
+    git_root="{{git_root}}"
     log="logs/${timestamp}_py${v}_1-compile.log"
     echo "📋 Compiling requirements for Python ${v}..."
 
     # Ensure requirements are compatible with the specified Python version
     # Will fail if not compatible
-    uv pip compile -p=${v} ../requirements/req_core.in &>> $log
-    uv pip compile -p=${v} ../pyproject.toml --extra=test &>> $log
+    uv pip compile -p=${v} ${git_root}/src/python/requirements/req_core.in &>> $log
+    uv pip compile -p=${v} ${git_root}/src/python/pyproject.toml --extra=test &>> $log
 
     echo "✅ Requirements compiled for Python ${v} - No conflict"
 
@@ -41,13 +45,17 @@ test python_version test_filter="":
     mkdir -p logs
     mkdir -p envs
 
+    git_root="{{git_root}}"
+    python_dir="${git_root}/src/python"
+    test_dir="${python_dir}/tests"
+
     # parameters
     v="{{python_version}}"
     test_filter="{{test_filter}}"
 
     # files
     venv_path="./envs/venv_test_${v}"
-    req_file="../requirements/req_test_${v}.txt"
+    req_file="${python_dir}/requirements/req_test_${v}.txt"
 
     timestamp="{{_timestamp}}"
     log_install="logs/${timestamp}_py${v}_2-install.log"
@@ -65,14 +73,14 @@ test python_version test_filter="":
     . "$venv_path/bin/activate"
 
     echo "📦 Installing package with test dependencies..."
-    python ../install.py test --freeze $req_file &>> $log_install
+    python ${git_root}/install.py test --freeze $req_file &>> $log_install
 
     echo "🧪 Running pytest for Python ${v}..."
     if [ -n "$test_filter" ]; then
         echo "🔍 Filtering tests with: -k '$test_filter'"
-        pytest --tb=short -k "$test_filter" ../tests/ &>> $log_pytest || true
+        pytest --tb=short -k "$test_filter" ${test_dir} &>> $log_pytest || true
     else
-        pytest --tb=short ../tests/ &>> $log_pytest || true
+        pytest --tb=short ${test_dir} &>> $log_pytest || true
     fi
 
     # Optionally filter out known benign warnings "i" for in-place edit
