@@ -63,7 +63,11 @@ tar -xf fixtures.tar.xz
 make demo-test
 ```
 
+You should see a progress bar for two-fold cross-validation training, and multiple performance metrics on the training and validation set, once a fold has finished training.
+
 The output will specify where the trained model and predictions are saved, allowing you to inspect the results and understand the file structure immediately.
+
+The prediction files contain the file ID (the 'md5sum' entry from the metadata), the predicted class, and the probability scores (softmax) for each output class.
 
 ### Dependencies
 
