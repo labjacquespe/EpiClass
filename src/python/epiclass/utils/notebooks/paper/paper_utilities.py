@@ -1539,6 +1539,8 @@ def rename_columns(
                 if old in df.columns:
                     print(f"Renaming {old} to {new}")
                     df.rename(columns={old: new}, inplace=True)
+                else:
+                    print(f"Column {old} not found. Skipping.")
         else:
             df = df.rename(columns=remapper)
         return df
