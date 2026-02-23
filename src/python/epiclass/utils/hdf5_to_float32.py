@@ -95,9 +95,6 @@ def cast_datasets_to_float32(file_path: Path) -> bool:
                     dataset_name,
                     data=casted_arr,
                     dtype="float32",
-                    compression="gzip",
-                    compression_opts=9,
-                    shuffle=True,  # improves gzip compression
                     fletcher32=True,  # improves data integrity
                 )
                 group[dataset_name].attrs.update(attrs)
