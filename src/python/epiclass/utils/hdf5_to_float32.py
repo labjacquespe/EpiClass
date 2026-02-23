@@ -2,6 +2,7 @@
 This module provides a script to convert float64 datasets in HDF5 files to float32 and repack files to reduce size,
 while preserving all groups, attributes, and file structure.
 """
+# pylint: disable=broad-exception-caught
 from __future__ import annotations
 
 import argparse
@@ -59,8 +60,6 @@ def cast_datasets_to_float32(file_path: Path) -> bool:
     """
     Casts all the datasets in an HDF5 file to float32 data type.
     """
-    max_casting_error = 1e-5
-
     modified = False
     with h5py.File(file_path, "r+") as f:
         for _, group in f.items():
@@ -81,18 +80,13 @@ def cast_datasets_to_float32(file_path: Path) -> bool:
                 og_arr = dataset[...]
                 casted_arr = og_arr.astype(np.float32)
 
-                # Verify the difference between the original dataset and the casted dataset
-                diff = np.abs(casted_arr - og_arr)
-                diff = diff[np.isfinite(diff)]  # ignore NaN/Inf
-                max_diff = np.max(diff)
-
-                if max_diff > max_casting_error:
-                    logging.warning(
-                        "Biggest casting difference '%.5f' (on %s) exceeds threshold (%.5f) for: %s",
-                        max_diff,
-                        dataset_name,
-                        max_casting_error,
-                        file_path,
+                # Hard fail: finite values that became inf/nan
+                overflow_mask = np.isfinite(og_arr) & ~np.isfinite(casted_arr)
+                if np.any(overflow_mask):
+                    raise ValueError(
+                        f"Casting '{dataset_name}' in {file_path} would overflow float32 "
+                        f"({np.count_nonzero(overflow_mask)} values affected). "
+                        f"Example: {og_arr[overflow_mask][0]!r} → {casted_arr[overflow_mask][0]!r}"
                     )
 
                 # Replace dataset
@@ -146,10 +140,9 @@ def process_file(hdf5_file: Path, logdir: Path) -> None:
     Returns:
         None
     """
-    # First, copy the file to the new location with a modified name
     try:
         new_filepath = copy_hdf5_file(hdf5_file, logdir)
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:
         logging.error(
             "Error: %s. Skipping file %s\n%s", e, hdf5_file, traceback.format_exc()
         )
@@ -159,8 +152,15 @@ def process_file(hdf5_file: Path, logdir: Path) -> None:
         logging.info("File already exists. Skipping: %s", hdf5_file)
         return
 
-    # Cast datasets to float32
-    modified = cast_datasets_to_float32(new_filepath)
+    try:
+        modified = cast_datasets_to_float32(new_filepath)
+    except Exception as e:
+        logging.error(
+            "Error: %s. Skipping file %s\n%s", e, hdf5_file, traceback.format_exc()
+        )
+        new_filepath.unlink(missing_ok=True)  # clean up the broken copy
+        return
+
     if modified:
         logging.info("Casting and verification successful. Repacking: %s", new_filepath)
         repack_hdf5_file(new_filepath)
@@ -177,10 +177,16 @@ def main():
 
     hdf5_list_path = cli.hdf5_list
     outdir = cli.output_dir.resolve()
-    max_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "8"))
+
+    if not outdir.is_dir():
+        logging.error("Output directory does not exist: %s", outdir)
+        return 1
 
     if shutil.which("h5repack") is None:
-        raise FileNotFoundError("'h5repack' command not found.")
+        logging.error("'h5repack' command not found.")
+        return 1
+
+    max_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "8"))
 
     with open(hdf5_list_path, "r", encoding="utf8") as f:
         hdf5_files = [Path(line.strip()) for line in f if line.strip()]
@@ -188,6 +194,14 @@ def main():
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         executor.map(process_file, hdf5_files, [outdir] * len(hdf5_files))
 
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    import sys
+
+    try:
+        sys.exit(main())
+    except Exception:
+        logging.exception("Unhandled error")
+        sys.exit(1)
