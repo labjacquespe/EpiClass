@@ -1,6 +1,8 @@
 """
 This module provides a script to convert float64 datasets in HDF5 files to float32 and repack files to reduce size,
 while preserving all groups, attributes, and file structure.
+
+Note: Due to the nature of hdf5, no filesize can be gained without repacking the file, even after casting to float32.
 """
 # pylint: disable=broad-exception-caught
 from __future__ import annotations
@@ -59,6 +61,15 @@ def copy_hdf5_file(file_path: Path, logdir: Path) -> Path | None:
 def cast_datasets_to_float32(file_path: Path) -> bool:
     """
     Casts all the datasets in an HDF5 file to float32 data type.
+
+    The function iterates through all the groups and datasets in the file, checking if each dataset is of type float64.
+    If a dataset is of type float64, it is cast to float32. The original dataset is deleted and replaced with the new one.
+
+    Returns:
+        bool: True if any datasets were modified, False otherwise.
+
+    Raises:
+        ValueError: If any finite values in the original dataset become infinite or NaN in the casted dataset, indicating an overflow during the casting process.
     """
     modified = False
     with h5py.File(file_path, "r+") as f:
@@ -110,6 +121,7 @@ def repack_hdf5_file(file_path: Path) -> None:
     tmp_path = tmp_path + "_repacked.hdf5"
     try:
         subprocess.run(["h5repack", str(file_path), tmp_path], check=True)
+        # overwrite original file with repacked version
         shutil.move(tmp_path, str(file_path))
     except FileNotFoundError as e:
         if "h5repack" in str(e):
@@ -126,7 +138,7 @@ def process_file(hdf5_file: Path, logdir: Path) -> None:
     If the new file already exists, the function logs a warning and returns.
 
     If the new file is successfully created, the function casts all the datasets in the file to float32 data type,
-    and logs any big difference between the original and casted datasets. The function then repacks the file to reduce its size.
+    It then repacks the file to reduce its size.
 
     If any error occurs during the process, the function logs the error message and traceback, and skips the current file.
 
