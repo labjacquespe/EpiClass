@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 import pytest
 
-from epiclass.utils.clean_hdf5 import (
+from epiclass.utils.preprocessing.clean_hdf5 import (
     get_positions_to_treat,
     load_bed,
     main,
@@ -165,7 +165,8 @@ def test_main(tmpdir, mock_test_bed, test_hdf5, mocker):
 
     # Replace the original parse_arguments function with our mock
     mocker.patch(
-        "epiclass.utils.clean_hdf5.parse_arguments", side_effect=mock_parse_arguments
+        "epiclass.utils.preprocessing.clean_hdf5.parse_arguments",
+        side_effect=mock_parse_arguments,
     )
 
     # Run the main function

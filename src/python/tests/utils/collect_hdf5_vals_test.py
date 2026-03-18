@@ -7,7 +7,7 @@ from typing import List
 
 import pytest
 
-from epiclass.utils.collect_hdf5_vals import main as main_module
+from epiclass.utils.preprocessing.collect_hdf5_vals import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR
 
 

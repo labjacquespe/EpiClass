@@ -9,7 +9,7 @@ import h5py
 import numpy as np
 import pytest
 
-from epiclass.utils.hdf5_to_float32 import (
+from epiclass.utils.preprocessing.convert_hdf5_to_float32 import (
     cast_datasets_to_float32,
     copy_hdf5_file,
     repack_hdf5_file,

@@ -5,7 +5,7 @@ import h5py
 import numpy as np
 from scipy.stats import mstats
 
-from epiclass.utils.winsorize_hdf5 import main
+from epiclass.utils.preprocessing.winsorize_hdf5 import main
 
 
 def test_winsorization(tmp_path):

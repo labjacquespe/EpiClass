@@ -163,7 +163,6 @@ def test_imports() -> None:
     from epiclass.core.trainer import MyTrainer, define_callbacks
     from epiclass.core.types import SomeData, TensorData
     from epiclass.utils import modify_metadata
-    from epiclass.utils.augment_predict_file import add_coherence
     from epiclass.utils.bed_utils import bins_to_bed_ranges, write_to_bed
     from epiclass.utils.check_dir import create_dirs
     from epiclass.utils.general_utility import (
@@ -180,6 +179,7 @@ def test_imports() -> None:
         count_pairs,
     )
     from epiclass.utils.my_logging import log_dset_composition, log_pre_training
+    from epiclass.utils.postprocessing.augment_predict_file import add_coherence
     from epiclass.utils.shap.shap_analysis import feature_overlap_stats
     from epiclass.utils.shap.shap_utils import extract_shap_values_and_info
     from epiclass.utils.time import time_now, time_now_str
