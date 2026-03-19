@@ -142,5 +142,6 @@ def test_cast_datasets_overflow_raises(tmp_path):
         data = np.array([1.0, val_overflow], dtype=np.float64)
         g.create_dataset("warn_dataset", data=data)
 
-    with pytest.raises(ValueError, match="would overflow float32"):
-        cast_datasets_to_float32(test_file)
+    with pytest.warns(RuntimeWarning, match="overflow encountered in cast"):
+        with pytest.raises(ValueError, match="would overflow float32"):
+            cast_datasets_to_float32(test_file)
