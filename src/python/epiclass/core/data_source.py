@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from pathlib import Path
 from typing import List, Tuple
 
 import h5py
 
+logger = logging.getLogger(__name__)
+
 HDF5_RESOLUTION = {"1kb": 1000, "10kb": 10000, "100kb": 100000, "1mb": 1000000}
+
+
+class ResolutionFallbackWarning(UserWarning):
+    """Raised when resolution cannot be read from HDF5 and is inferred from filename."""
 
 
 class EpiDataSource:
@@ -50,20 +57,33 @@ class EpiDataSource:
             return [Path(line.rstrip("\n")) for line in my_file]
 
     def hdf5_resolution(self) -> int:
-        """Return resolution as an integer."""
+        """Return resolution as an integer, falling back to filename if needed."""
         with open(self.hdf5_file, "r", encoding="utf-8") as my_file:
-            first_path = Path(next(my_file).rstrip())
             try:
-                resolution = self.get_file_hdf5_resolution(first_path)
-            except (KeyError, FileNotFoundError) as err:
-                warnings.warn(f"{err}. Seeking resolution from filename.")
-                try:
-                    resolution = self.get_resolution_from_filename(first_path)
-                except KeyError as err2:
-                    raise KeyError(
-                        f"Filename does not contain resolution: {first_path}"
-                    ) from err2
-        return resolution
+                first_line = next(my_file)
+            except StopIteration as err:
+                raise ValueError(f"Empty HDF5 file list: {self.hdf5_file}") from err
+
+        first_path = Path(first_line.rstrip())
+
+        try:
+            return self.get_file_hdf5_resolution(first_path)
+        except (KeyError, FileNotFoundError):
+            warnings.warn(
+                "Resolution not found in HDF5; falling back to filename parsing",
+                ResolutionFallbackWarning,
+                stacklevel=2,
+            )
+            logger.debug(
+                "Resolution lookup failed for %s, falling back to filename parsing",
+                first_path,
+                exc_info=True,
+            )
+
+        try:
+            return self.get_resolution_from_filename(first_path)
+        except KeyError as err:
+            raise KeyError(f"Filename does not contain resolution: {first_path}") from err
 
     @staticmethod
     def get_resolution_from_filename(path: Path) -> int:
