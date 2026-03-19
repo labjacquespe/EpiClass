@@ -8,11 +8,11 @@ from typing import List
 
 import numpy as np
 import pytest
-from sklearn.model_selection import StratifiedKFold
 
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import (
     ACCEPTED_TRACKS,
+    EPIRR_LABEL,
     LEADER_TRACKS,
     OTHER_TRACKS,
     EpiAtlasFoldFactory,
@@ -111,7 +111,22 @@ class TestEpiAtlasFoldFactory:
 
             assert total_data.num_examples == len(trains_ids) + len(valid_ids)
 
-    # @pytest.mark.parametrize("splitter", ["test_data", "big_test_data"])
+            # No EpiRR leakage across folds
+            train_epirrs = {dset.train.metadata[md5][EPIRR_LABEL] for md5 in trains_ids}
+            valid_epirrs = {
+                dset.validation.metadata[md5][EPIRR_LABEL] for md5 in valid_ids
+            }
+            assert (
+                len(train_epirrs & valid_epirrs) == 0
+            ), f"EpiRR leakage: {train_epirrs & valid_epirrs}"
+
+            # No UUID leakage (implied by EpiRR grouping, but verify)
+            train_uuids = {dset.train.metadata[md5]["uuid"] for md5 in trains_ids}
+            valid_uuids = {dset.validation.metadata[md5]["uuid"] for md5 in valid_ids}
+            assert (
+                len(train_uuids & valid_uuids) == 0
+            ), f"UUID leakage: {train_uuids & valid_uuids}"
+
     def test_yield_correct_split_1(self, test_data: EpiAtlasFoldFactory):
         """Test that splits contain the correct number of training and validation samples."""
         ea_handler = test_data
@@ -127,8 +142,7 @@ class TestEpiAtlasFoldFactory:
         for handler in [ea_handler, ea_handler2]:
             TestEpiAtlasFoldFactory.assert_splits(handler)
 
-    # @pytest.mark.filterwarnings("ignore:.*Cannot read file directly.*")
-    @pytest.mark.skip(reason="Takes too long.")
+    @pytest.mark.slow
     def test_yield_correct_split_2(self, big_test_data: EpiAtlasFoldFactory):
         """Test that splits contain the correct number of training and validation samples, with real metadata."""
         TestEpiAtlasFoldFactory.assert_splits(big_test_data)
@@ -236,4 +250,36 @@ class TestEpiAtlasFoldFactory:
         for ratio in oversampled_ratios:
             assert 0.8 <= ratio <= 1.2
 
+    def test_epirr_grouping_with_oversampling(self, test_data: EpiAtlasFoldFactory):
+        """Test that EpiRR grouping is maintained and oversampling works at UUID level."""
+        for dset in test_data.yield_split(oversample=True):
+            # EpiRR constraint still holds after oversampling
+            train_epirrs = {
+                dset.train.metadata[md5][EPIRR_LABEL] for md5 in dset.train.ids
+            }
+            valid_epirrs = {
+                dset.validation.metadata[md5][EPIRR_LABEL] for md5 in dset.validation.ids
+            }
+            assert (
+                len(train_epirrs & valid_epirrs) == 0
+            ), f"EpiRR leakage after oversampling: {train_epirrs & valid_epirrs}"
 
+            # Oversampled training set should be >= original
+            assert dset.train.num_examples >= dset.validation.num_examples
+
+            # Oversampling duplicates whole UUIDs, so every md5 in training
+            # should still have all its UUID-siblings present
+            train_ids_list = list(dset.train.ids)
+            for md5 in dset.train.ids:
+                uuid = dset.train.metadata[md5]["uuid"]
+                # All md5s sharing this UUID that appear in training
+                # should appear the same number of times (they're duplicated as a group)
+                siblings = [
+                    m for m in train_ids_list if dset.train.metadata[m]["uuid"] == uuid
+                ]
+                # Count occurrences of each sibling — they should all match
+                sibling_counts = Counter(siblings)
+                counts = list(sibling_counts.values())
+                assert (
+                    len(set(counts)) == 1
+                ), f"UUID {uuid} siblings have inconsistent duplication: {sibling_counts}"

@@ -1,5 +1,5 @@
 """Functions to split epiatlas datasets properly, keeping track types together in the different sets."""
-
+# pylint: disable=too-many-positional-arguments
 # TODO: Proper Data vs TestData typing
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import Any, Dict, Generator, List, Tuple
 import numpy as np
 import numpy.typing as npt
 from imblearn.over_sampling import RandomOverSampler
-from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold
 
 from epiclass.core.data import dataset
 from epiclass.core.data.eager import KnownData
@@ -35,6 +35,8 @@ OTHER_TRACKS = frozenset(ACCEPTED_TRACKS) - LEADER_TRACKS
 NDArray = npt.NDArray[Any]
 NDArrayInt = npt.NDArray[int]  # type: ignore # np.int_ is deprecated NumPy >= 1.20.0
 NDArrayBool = npt.NDArray[bool]  # type: ignore # np.bool_ is deprecated NumPy >= 1.20.0
+
+EPIRR_LABEL = "epirr_id"
 
 
 class EpiAtlasDataset:
@@ -150,7 +152,7 @@ class EpiAtlasDataset:
         loader = Hdf5Loader(chrom_file=self.datasource.chromsize_file, normalization=True)
         loader = loader.load_hdf5s(
             data_file=self.datasource.hdf5_file,
-            md5s=self.metadata.md5s,
+            md5s=self.metadata.md5s,  # type: ignore
             strict=True,
             verbose=True,
         )
@@ -308,6 +310,30 @@ class EpiAtlasFoldFactory:
         unique_uuids, uuid_to_int = np.unique(uuids, return_inverse=True)  # type: ignore
         return np.array(uuids), unique_uuids, uuid_to_int
 
+    @staticmethod
+    def _label_epirr(
+        dset: KnownData,
+    ) -> Tuple[NDArray, NDArray, NDArrayInt]:
+        """Return epirrs, unique epirrs and epirr-to-int mapping for grouping. Mirrors uuid mapping function."""
+        epirrs = [dset.metadata[md5][EPIRR_LABEL] for md5 in dset.ids]
+        unique_epirrs, epirr_to_int = np.unique(epirrs, return_inverse=True)
+        return np.array(epirrs), unique_epirrs, epirr_to_int
+
+    @staticmethod
+    def _uuid_to_epirr_groups(
+        dset: KnownData,
+        uuids_unique: NDArray,
+    ) -> NDArrayInt:
+        """For each unique UUID, return the integer index of its parent EpiRR."""
+        uuid_epirr = {}
+        for md5 in dset.ids:
+            meta = dset.metadata[md5]
+            uuid_epirr[meta["uuid"]] = meta[EPIRR_LABEL]
+
+        epirr_per_uuid = [uuid_epirr[uuid] for uuid in uuids_unique]
+        _, epirr_inverse = np.unique(epirr_per_uuid, return_inverse=True)
+        return epirr_inverse
+
     def _reserve_test(
         self,
     ) -> Tuple[KnownData, KnownData]:
@@ -346,18 +372,24 @@ class EpiAtlasFoldFactory:
         dset: KnownData,
         n_splits: int,
         oversample: bool = False,
-    ) -> Generator[Tuple[KnownData, KnownData], None, None,]:
-        # Convert the labels and groups (uuids) into numpy arrays
+    ) -> Generator[Tuple[KnownData, KnownData], None, None]:
         uuids, uuids_unique, uuids_inverse = self._label_uuid(dset)
-        labels_unique = [
-            dset.encoded_labels[uuids == uuid][0] for uuid in uuids_unique
-        ]  # assuming all samples from the same UUID share the same label --> not true for track_type
+        labels_unique = [dset.encoded_labels[uuids == uuid][0] for uuid in uuids_unique]
 
-        skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+        # Group unique UUIDs by their parent EpiRR
+        epirr_groups = self._uuid_to_epirr_groups(dset, uuids_unique)
+
+        # Split in UUID-space, but constrain so all UUIDs from the same EpiRR
+        # land in the same fold
+        skf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
         for train_idxs_unique, valid_idxs_unique in skf.split(
-            X=np.empty(shape=(len(uuids_unique), dset.signals.shape[1])),
+            X=np.empty(
+                shape=(len(uuids_unique), 1)
+            ),  # dummy X since we only care about y and groups
             y=labels_unique,
+            groups=epirr_groups,
         ):
+            # Expand UUID-level indices back to sample-level
             train_idxs: NDArrayInt = np.concatenate(
                 [np.where(uuids_inverse == idx)[0] for idx in train_idxs_unique]
             )
@@ -366,13 +398,12 @@ class EpiAtlasFoldFactory:
             )
 
             if oversample:
-                # Oversample in the UUID space, not the sample space
+                # Oversample at UUID level (not sample level, not EpiRR level)
                 ros = RandomOverSampler(random_state=42)
                 train_uuids_resampled, _ = ros.fit_resample(  # type: ignore
                     np.array(uuids_unique[train_idxs_unique]).reshape(-1, 1),
                     np.array(labels_unique)[train_idxs_unique],
                 )
-                # map back to the sample space
                 train_idxs: NDArrayInt = np.concatenate(
                     [
                         np.where(uuids == uuid)[0]
@@ -410,7 +441,7 @@ class EpiAtlasFoldFactory:
     def create_total_data(self, oversample: bool = True) -> KnownData:
         """Create a single dataset from the training and validation data.
 
-        Will not oversample properly if all samples from the same UUID do not share target label.
+        Will not oversample properly if all samples from the same UUID do not share target label (e.g. track type)
 
         Used for final training, with no validation.
         """
@@ -420,7 +451,7 @@ class EpiAtlasFoldFactory:
         uuids, uuids_unique, uuids_inverse = self._label_uuid(train_set)
         labels_unique = [
             train_set.encoded_labels[uuids == uuid][0] for uuid in uuids_unique
-        ]  # assuming all samples from the same UUID share the same label --> not true for track_type
+        ]
 
         if oversample:
             # Oversample in the UUID space, not the sample space
