@@ -179,41 +179,7 @@ class LightningDenseClassifier(pl.LightningModule):
 
         return loss
 
-    # --- Other information functions ---
-    def print_model_summary(self, batch_size=1):
-        """Print torchinfo summary."""
-        print("--MODEL SUMMARY--")
-        summary(
-            model=self,
-            input_size=(batch_size, self._x_size),
-            col_names=["input_size", "output_size", "num_params"],
-        )
-
-    def compute_metrics(self, dataset: TensorDataset):
-        """Return dict of metrics for given dataset."""
-        self.eval()
-        with torch.no_grad():
-            features, targets = dataset[:]
-            preds = self(features)
-        return self.metrics(preds, targets)
-
-    def compute_predictions_from_dataset(
-        self, dataset: TensorDataset
-    ) -> Tuple[Tensor, Tensor]:
-        """Return probability predictions and targets from dataset."""
-        self.eval()
-        with torch.no_grad():
-            features, targets = dataset[:]
-            probs = self.predict_proba(features)
-        return probs, targets
-
-    def compute_predictions_from_features(self, features: Tensor) -> Tensor:
-        """Return probability predictions from features."""
-        self.eval()
-        with torch.no_grad():
-            probs = self.predict_proba(features)
-        return probs
-
+    # --- Model saving and loading ---
     @classmethod
     def restore_model(cls, model_dir, verbose=True):
         """Load the checkpoint of the best model from the last run."""
@@ -230,3 +196,46 @@ class LightningDenseClassifier(pl.LightningModule):
         return LightningDenseClassifier.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
             checkpoint_path=ckpt_path
         )
+
+    # --- Analysis related functions ---
+    # These are not used during training but can be used for analysis after training,
+    # e.g. to compute metrics on a test set or to print a model summary.
+    # Force CPU to avoid device mismatch issues when reloading a model trained on GPU.
+    def print_model_summary(self, batch_size=1):
+        """Print torchinfo summary."""
+        print("--MODEL SUMMARY--")
+        summary(
+            model=self,
+            input_size=(batch_size, self._x_size),
+            col_names=["input_size", "output_size", "num_params"],
+        )
+
+    def compute_metrics(self, dataset: TensorDataset):
+        """Return dict of metrics for given dataset."""
+        self.cpu()
+        self.eval()
+        with torch.no_grad():
+            features, targets = dataset[:]
+            features, targets = features.cpu(), targets.cpu()
+            preds = self(features)
+        return self.metrics(preds, targets)
+
+    def compute_predictions_from_dataset(
+        self, dataset: TensorDataset
+    ) -> Tuple[Tensor, Tensor]:
+        """Return probability predictions and targets from dataset."""
+        self.cpu()
+        self.eval()
+        with torch.no_grad():
+            features, targets = dataset[:]
+            features, targets = features.cpu(), targets.cpu()
+            probs = self.predict_proba(features)
+        return probs, targets
+
+    def compute_predictions_from_features(self, features: Tensor) -> Tensor:
+        """Return probability predictions from features."""
+        self.cpu()
+        self.eval()
+        with torch.no_grad():
+            probs = self.predict_proba(features.cpu())
+        return probs
