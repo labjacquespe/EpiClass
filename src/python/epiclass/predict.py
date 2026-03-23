@@ -83,6 +83,8 @@ def main():
         comet_logger.experiment.add_tag("Cluster")
 
     # --- LOAD DATA ---
+    now = time_now()
+    print(f"Loading data: {now}")
     hdf5_loader = Hdf5Loader(chrom_file=cli.chromsize, normalization=True)
 
     if cli.hdf5_dir is not None:
@@ -90,6 +92,9 @@ def main():
     else:
         hdf5_loader.load_hdf5s(data_file=cli.hdf5)
     files = hdf5_loader.signals
+    print(f"Data loaded: {time_now()}")
+    print(f"Time to load data: {time_now() - now}")
+    print(f"Number of files: {len(files)}")
 
     md5s = []
     signals = []
