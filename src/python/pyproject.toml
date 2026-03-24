@@ -29,8 +29,6 @@ only-binary = [
     "pandas",
     "scikit-learn",
 ]
-# This matters for Alliance systems where other indexes may be defined. Here, only PyPI is used, so it changes nothing.
-index-strategy = "unsafe-first-match"
 
 [tool.pip]
 only-binary = [
