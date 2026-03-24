@@ -297,6 +297,7 @@ def do_one_experiment(
                 accelerator="gpu",
                 devices=1,
                 precision=16,
+                enable_progress_bar=False,  # Force disable Lightning's default TQDM
             )
         else:
             trainer = MyTrainer(
