@@ -190,10 +190,10 @@ def main():
         # --- Startup LOGGER ---
         # api key in config file
         is_online = not cli.offline  # additional logging fails when offline
-        logdir = Path(cli.logdir)
+        logdir = Path(cli.logdir) / f"split{i}"
         create_dirs(logdir)
 
-        exp_name = "-".join(cli.logdir.parts[-3:])
+        exp_name = "-".join(cli.logdir.parts[-3:]) + f"_split{i}"
         comet_logger = pl_loggers.CometLogger(
             project="EpiClass",
             name=exp_name,
