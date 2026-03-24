@@ -40,6 +40,11 @@ def argument_parser():
         default=DEFAULT_TORCH,
         help=f"Specify the PyTorch version to install (default: {DEFAULT_TORCH})",
     )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Increase output verbosity for installation commands."
+    )
     # fmt: on
     return parser.parse_args()
 
@@ -62,12 +67,18 @@ def find_package_root(repo_root: Path) -> Path:
     return matches[0].parent
 
 
-def installer_cmd() -> list[str]:
+def installer_cmd(verbose: bool = False) -> list[str]:
     """Return the installer command as a list, using uv if available, else pip."""
     if shutil.which("uv"):
-        return ["uv", "pip", "install"]
-    # else
-    return [sys.executable, "-m", "pip", "install"]
+        base_cmd = ["uv", "pip", "install"]
+        if verbose:
+            return base_cmd + ["-v"]
+        return base_cmd
+    # else use pip
+    base_cmd = [sys.executable, "-m", "pip", "install"]
+    if verbose:
+        return base_cmd + ["-vv"]
+    return base_cmd
 
 
 def is_computecanada():
@@ -125,7 +136,7 @@ def main():
     freeze_output = Path(freeze_output).resolve() if freeze_output else None
 
     # Detect installer: uv or pip
-    install_cmd = installer_cmd()
+    install_cmd = installer_cmd(verbose=cli.verbose)
 
     # ---------------------------
     # Detect NVIDIA GPU / system
@@ -149,7 +160,7 @@ def main():
     # ---------------------------
     # Install torch first
     # ---------------------------
-    print(f"Installing {torch_pkg}...", flush=True)
+    print(f"Installing {torch_pkg}... (${target})", flush=True)
     cmd = install_cmd + [torch_pkg]
     if index_url is not None:
         cmd += ["--index-url", index_url]
