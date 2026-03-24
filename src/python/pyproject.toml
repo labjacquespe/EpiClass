@@ -195,3 +195,5 @@ filterwarnings = [
     "ignore:.*RequirementCache.*:DeprecationWarning",
 ]
 # general format: action:message:category:module:line
+[tool.pytest]
+markers = ["slow: mark test as slow."]
