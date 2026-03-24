@@ -93,7 +93,6 @@ test python_version test_filter="":
 
 # Compile requirements for all Python versions
 compile-all: check-env
-    just compile 3.10
     just compile 3.11
     just compile 3.12
     @echo "✅ All requirements compiled"
@@ -107,7 +106,7 @@ test-all test_filter="": check-env
     echo "🕒 Global run timestamp: ${timestamp}"
     mkdir -p logs
 
-    versions=(3.10 3.11 3.12)
+    versions=(3.11 3.12)
     pids=()
 
     for v in "${versions[@]}"; do

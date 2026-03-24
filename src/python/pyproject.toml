@@ -8,7 +8,7 @@ name = "EpiClass"
 dynamic = ["version", "dependencies"]
 description = "Apply machine learning to epigenomic data classification."
 authors = [{ name = "Joanny Raby", email = "Joanny.Raby@usherbrooke.ca" }]
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11, <3.13"
 
 [tool.setuptools.dynamic]
 dependencies = { file = "requirements/req_core.in" }
@@ -60,13 +60,12 @@ utils = [
     "paramiko",
 ]
 other_models = [
-    "lightgbm==4.5.0",
+    "lightgbm>=4.6.0,<4.7.0",
     "optuna==3.5.0",
     "scikit-optimize @ git+https://github.com/QuentinSoubeyran/scikit-optimize.git@3f92bf42d947efb4ece3d89595d67dc56591c7c3", #scikit-optimize==0.9.0+unofficial, adds support for multimetric scoring to `BayesSearchCV`
 ]
 shap = [
-    "shap==0.46.0; python_version < '3.11'",  # 0.49.1 is last version supporting Python 3.10, and 0.45 has breaking changes.
-    "shap==0.49.1; python_version >= '3.11'"
+    "shap==0.49.1"
 ]
 test = [
     "EpiClass[utils, other_models, shap]",

@@ -1,5 +1,5 @@
 """Module for wrappers around simple sklearn machine learning estimators."""
-# pylint: disable=no-member
+# pylint: disable=no-member, too-many-positional-arguments
 from __future__ import annotations
 
 import glob
@@ -65,7 +65,7 @@ model_mapping = {
     "LinearSVC": Pipeline(steps=[("scaler", StandardScaler()), ("model", LinearSVC())]),
     "RF": Pipeline(steps=[("model", RandomForestClassifier(random_state=RNG, bootstrap=True))]),
     "LR": Pipeline(steps=[
-        ("model", LogisticRegression(penalty="l2", multi_class="multinomial", solver="lbfgs", dual=False, fit_intercept=True, warm_start=True, max_iter=1000))
+        ("model", LogisticRegression(l1_ratio=0, solver="lbfgs", dual=False, fit_intercept=True, warm_start=True, max_iter=1000))
         ]),
     "LGBM": Pipeline(steps=[("model", LGBMClassifier())]),  # type: ignore
 }

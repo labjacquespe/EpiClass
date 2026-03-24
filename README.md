@@ -17,8 +17,7 @@ Models trained on the EpiATLAS dataset and used for inference on other datasets 
 
 ## Setup
 
-The code was developed primarily with **Python 3.8**. Compatibility with other versions is not guaranteed.
-However, the code was modernized and the test suite passes under python 3.10-3.12.
+The code has been tested with Python 3.11 and 3.12. Python 3.10 is no longer supported following the upgrade to scikit-learn >=1.8.0.
 
 ### Installation for training
 
