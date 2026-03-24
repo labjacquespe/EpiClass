@@ -18,58 +18,8 @@ from pathlib import Path
 DEFAULT_TORCH = "2.6.0"
 
 
-def find_package_root(repo_root: Path) -> Path:
-    """Find the package root by looking for pyproject.toml, starting from repo_root and searching recursively."""
-    ignore = {".venv", ".git", "build", "dist", "__pycache__", "envs", "venv"}
-
-    matches = []
-    for path in repo_root.rglob("pyproject.toml"):
-        if any(part in ignore for part in path.parts):
-            continue
-        matches.append(path)
-
-    if not matches:
-        raise RuntimeError(f"No pyproject.toml found under {repo_root}")
-    if len(matches) > 1:
-        raise RuntimeError(f"Multiple pyproject.toml files found: {matches}")
-
-    return matches[0].parent
-
-
-def main():
-    """Main installation logic."""
-    # ---------------------------
-    # Ensure virtual environment
-    # ---------------------------
-    if sys.prefix == sys.base_prefix:
-        print(
-            "ERROR: You must activate a virtual environment before running this script."
-        )
-        sys.exit(1)
-
-    # ---------------------------
-    # Detect installer: uv or pip
-    # ---------------------------
-    def installer_cmd():
-        """Return the installer command as a list, using uv if available, else pip."""
-        if shutil.which("uv"):
-            return ["uv", "pip", "install"]
-        # else
-        return [sys.executable, "-m", "pip", "install"]
-
-    install_cmd = installer_cmd()
-
-    # ---------------------------
-    # Change to package root, where pyproject.toml is.
-    # ---------------------------
-    REPO_ROOT = Path(__file__).resolve().parent
-    PACKAGE_ROOT = find_package_root(REPO_ROOT)
-
-    os.chdir(PACKAGE_ROOT)
-
-    # ---------------------------
-    # Argument parsing
-    # ---------------------------
+def argument_parser():
+    """Return parsed command line arguments."""
     # fmt: off
     parser = argparse.ArgumentParser(description="Install epiclass and dependencies.")
     parser.add_argument(
@@ -91,40 +41,95 @@ def main():
         help=f"Specify the PyTorch version to install (default: {DEFAULT_TORCH})",
     )
     # fmt: on
+    return parser.parse_args()
 
-    args = parser.parse_args()
-    extras = args.extras
 
-    freeze_output = args.freeze
+def find_package_root(repo_root: Path) -> Path:
+    """Find the package root by looking for pyproject.toml, starting from repo_root and searching recursively."""
+    ignore = {".venv", ".git", "build", "dist", "__pycache__", "envs", "venv"}
+
+    matches = []
+    for path in repo_root.rglob("pyproject.toml"):
+        if any(part in ignore for part in path.parts):
+            continue
+        matches.append(path)
+
+    if not matches:
+        raise RuntimeError(f"No pyproject.toml found under {repo_root}")
+    if len(matches) > 1:
+        raise RuntimeError(f"Multiple pyproject.toml files found: {matches}")
+
+    return matches[0].parent
+
+
+def installer_cmd() -> list[str]:
+    """Return the installer command as a list, using uv if available, else pip."""
+    if shutil.which("uv"):
+        return ["uv", "pip", "install"]
+    # else
+    return [sys.executable, "-m", "pip", "install"]
+
+
+def is_computecanada():
+    """Return True if running on Compute Canada system."""
+    env_path = shutil.which("env")
+    if not env_path:
+        return False
+    try:
+        output = subprocess.check_output([env_path], universal_newlines=True)
+        return "/cvmfs/soft.computecanada.ca/" in output
+    except subprocess.SubprocessError:
+        return False
+
+
+def has_nvidia_gpu():
+    """Return True if an NVIDIA GPU is available via nvidia-smi."""
+    nvidia_smi = shutil.which("nvidia-smi")
+    if not nvidia_smi:
+        return False
+    try:
+        output = subprocess.check_output([nvidia_smi, "-L"], universal_newlines=True)
+        return bool(output.strip())  # non-empty output => at least 1 GPU
+    except subprocess.SubprocessError:
+        return False
+
+
+def main():
+    """Main installation logic."""
+    # ---------------------------
+    # Ensure virtual environment
+    # ---------------------------
+    if sys.prefix == sys.base_prefix:
+        print(
+            "ERROR: You must activate a virtual environment before running this script."
+        )
+        sys.exit(1)
+
+    # ---------------------------
+    # Change to package root, where pyproject.toml is.
+    # ---------------------------
+    REPO_ROOT = Path(__file__).resolve().parent
+    PACKAGE_ROOT = find_package_root(REPO_ROOT)
+
+    os.chdir(PACKAGE_ROOT)
+
+    # ---------------------------
+    # Read CLI arguments
+    # ---------------------------
+    cli = argument_parser()
+
+    extras = cli.extras
+    torch_version = cli.torch_version
+
+    freeze_output = cli.freeze
     freeze_output = Path(freeze_output).resolve() if freeze_output else None
 
-    torch_version = args.torch_version
+    # Detect installer: uv or pip
+    install_cmd = installer_cmd()
 
     # ---------------------------
     # Detect NVIDIA GPU / system
     # ---------------------------
-    def is_computecanada():
-        """Return True if running on Compute Canada system."""
-        env_path = shutil.which("env")
-        if not env_path:
-            return False
-        try:
-            output = subprocess.check_output([env_path], universal_newlines=True)
-            return "/cvmfs/soft.computecanada.ca/" in output
-        except subprocess.SubprocessError:
-            return False
-
-    def has_nvidia_gpu():
-        """Return True if an NVIDIA GPU is available via nvidia-smi."""
-        nvidia_smi = shutil.which("nvidia-smi")
-        if not nvidia_smi:
-            return False
-        try:
-            output = subprocess.check_output([nvidia_smi, "-L"], universal_newlines=True)
-            return bool(output.strip())  # non-empty output => at least 1 GPU
-        except subprocess.SubprocessError:
-            return False
-
     # lazy evaluation, order matters
     if is_computecanada() or has_nvidia_gpu():
         target = "gpu"
