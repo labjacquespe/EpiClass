@@ -1087,6 +1087,46 @@ class SplitResultsHandler:
         return all_data
 
 
+def load_split_predictions(
+    data_dir: Path,
+    metadata_handler: MetadataHandler,
+    metadata: Metadata,
+    merge_assays: bool = False,
+    expected_classes: list | None = None,
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """Load, concatenate, and enrich split results in one call, for one classification task.
+
+    If merge_assays is True, expects assay prediction scores columns.
+    If it fails to find them, it will simply try to merge labels under the 'assay_epiclass' column.
+
+    Args:
+        data_dir: The directory containing the split results.
+        metadata_handler: An instance of the MetadataHandler class.
+        metadata: The metadata to join with the split results.
+        merge_assays: Whether to merge similar assays.
+        expected_classes: The expected classes for the predictions.
+        depth: The depth to concatenate the split results.
+    """
+    split_dfs = SplitResultsHandler.read_split_results(data_dir)
+    concat_df: pd.DataFrame = SplitResultsHandler.concatenate_split_results(split_dfs, depth=1)  # type: ignore
+    concat_df = SplitResultsHandler.add_max_pred(
+        concat_df, expected_classes=expected_classes
+    )
+    df = metadata_handler.join_metadata(concat_df, metadata)
+    if merge_assays:
+        try:
+            df = merge_similar_assays(df)
+        except ValueError as e:
+            if "Wrong results dataframe" in str(e):
+                if verbose:
+                    print(
+                        "Could not find column, trying to merge only assay labels and not prediction values."
+                    )
+                df = df.replace({ASSAY: ASSAY_MERGE_DICT}, inplace=False)
+    return df
+
+
 def create_mislabel_corrector(
     paper_dir: Path,
 ) -> Tuple[Dict[str, str], Dict[str, Dict[str, str]]]:
