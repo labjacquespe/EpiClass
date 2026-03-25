@@ -358,7 +358,14 @@ class SplitResultsHandler:
         """Add the max prediction column ("Max pred") to the results dataframe.
 
         The dataframe needs to not contain extra metadata columns.
-        target_label: Column to ascertain output classes columns
+
+        Args:
+            df: The results dataframe.
+            target_label: Column to ascertain output classes columns.
+            expected_classes: If the classes cannot be ascertained from the target_label and "Predicted class" columns, they can be given directly.
+
+        Returns:
+            The results dataframe with the "Max pred" column added.
         """
         if "Max pred" not in df.columns:
             df = df.copy(deep=True)
@@ -419,8 +426,8 @@ class SplitResultsHandler:
         """Compute accuracy per assay for each split.
 
         Args:
-        - split_results: {split_name: results_df}.
-        - metadata_df: The metadata dataframe.
+            split_results: {split_name: results_df}.
+            metadata_df: The metadata dataframe.
         """
 
         assay_acc = defaultdict(dict)
@@ -579,7 +586,7 @@ class SplitResultsHandler:
             depth: The depth of the dictionary structure. Must be 1 or 2.
 
         Returns:
-            Dict[str, pd.DataFrame] : {classifier_name: concatenated_dataframe}
+            out (Dict[str, pd.DataFrame]): {classifier_name: concatenated_dataframe}
 
         Raises:
             AssertionError: If the index of any concatenated DataFrame is not of type str, indicating
@@ -1715,3 +1722,20 @@ class PathChecker:
     def check_directory(path: Path | str) -> None:
         """Check if a directory exists."""
         PathChecker._validate_path(path, check_dir=True)
+
+
+def save_figure(
+    fig: Any,  # go.Figure, but avoid importing plotly here
+    logdir: Path | str,
+    filename: str,
+    scale: float = 2,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
+    """Write a Plotly figure to html + svg + png."""
+    logdir = Path(logdir)
+    logdir.mkdir(parents=True, exist_ok=True)
+
+    fig.write_html(logdir / f"{filename}.html")
+    fig.write_image(logdir / f"{filename}.svg", width=width, height=height)
+    fig.write_image(logdir / f"{filename}.png", width=width, height=height, scale=scale)
