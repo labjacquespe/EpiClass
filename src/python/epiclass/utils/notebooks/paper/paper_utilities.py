@@ -652,7 +652,7 @@ class SplitResultsHandler:
         Expects a DataFrame with the following columns:
             md5sum, True class, predicted class, predicted probabilities
 
-        Output is a dictionary of metrics with the following the following keys:
+        Output is a dictionary of metrics with the following keys:
             Accuracy, F1_macro, AUC_micro, AUC_macro, count
         """
         df = df.copy()
@@ -662,6 +662,7 @@ class SplitResultsHandler:
         df.columns = list(df.columns[:2]) + [
             label.lower() for i, label in enumerate(df.columns.str.lower()) if i > 1
         ]
+
         # One hot encode true class and get predicted probabilities
         # Reindex to ensure that the order of classes is consistent
         classes_order = df.columns[2:]
@@ -670,25 +671,26 @@ class SplitResultsHandler:
             .reindex(columns=classes_order, fill_value=0)
             .values
         )
-
         pred_probs = df[classes_order].values
 
         # Argmax encodings for accuracy/F1
         ravel_true = np.argmax(onehot_true, axis=1)
         ravel_pred = np.argmax(pred_probs, axis=1)
 
-        # fmt: off
         # Core metrics
-        task_metrics_dict: Dict[str, float|int] = {
+        task_metrics_dict: Dict[str, float | int] = {
             "Accuracy": accuracy_score(ravel_true, ravel_pred),
-            "F1_macro": f1_score(ravel_true, ravel_pred, average="macro", zero_division="warn"), # type: ignore
+            "F1_macro": f1_score(
+                ravel_true, ravel_pred, average="macro", zero_division="warn"
+            ),  # type: ignore
             "count": len(df),
-            }
+        }
 
         # --- AUC Handling ---
         unique_classes = np.unique(ravel_true)
-        if unique_classes.shape[0] < 2:
-            # Not enough classes ->- AUC undefined
+        n_classes = unique_classes.shape[0]
+
+        if n_classes < 2:
             logging.warning(
                 "Cannot compute ROC AUC: only one class present in %s for %s (%s)",
                 logging_name,
@@ -698,21 +700,40 @@ class SplitResultsHandler:
             task_metrics_dict.update({"AUC_micro": np.nan, "AUC_macro": np.nan})
             return task_metrics_dict
 
-        # Try to compute AUC safely
         try:
-            # Suppress sklearn warnings explicitly inside block
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", category=UndefinedMetricWarning)
-                task_metrics_dict.update(
-                    {
-                        "AUC_micro": roc_auc_score(
-                            onehot_true, pred_probs, multi_class="ovr", average="micro" # type: ignore
-                        ),
-                        "AUC_macro": roc_auc_score(
-                            onehot_true, pred_probs, multi_class="ovr", average="macro"
-                        ),
-                    }
-                )
+
+                if len(classes_order) == 2:
+                    # Binary classification: compute a single AUC directly.
+                    # With complementary probabilities, per-class AUCs are identical,
+                    # so micro/macro distinction is a meaningless artifact of the
+                    # multiclass API. Report the same correct value for both.
+                    binary_auc = roc_auc_score(onehot_true[:, 0], pred_probs[:, 0])
+                    task_metrics_dict.update(
+                        {  # type: ignore
+                            "AUC_micro": binary_auc,
+                            "AUC_macro": binary_auc,
+                        }
+                    )
+                else:
+                    # Multiclass: micro and macro are meaningfully different
+                    task_metrics_dict.update(
+                        {  # type: ignore
+                            "AUC_micro": roc_auc_score(
+                                onehot_true,
+                                pred_probs,
+                                multi_class="ovr",
+                                average="micro",
+                            ),
+                            "AUC_macro": roc_auc_score(
+                                onehot_true,
+                                pred_probs,
+                                multi_class="ovr",
+                                average="macro",
+                            ),
+                        }
+                    )
         except ValueError as err:
             if "multiclass" in str(err) or "Only one class" in str(err):
                 logging.warning(
