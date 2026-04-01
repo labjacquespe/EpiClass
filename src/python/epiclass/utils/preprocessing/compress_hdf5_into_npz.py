@@ -79,7 +79,12 @@ def main():
     # Store IDs as array for consistency
     ids_array = np.array(list(hdf5_loader.signals.keys()))
 
-    np.savez_compressed(output_npz_path, signals=signal_matrix, ids=ids_array)
+    np.savez_compressed(
+        file=output_npz_path,
+        signals=signal_matrix,
+        ids=ids_array,
+        allow_pickle=False,
+    )
 
 
 if __name__ == "__main__":
