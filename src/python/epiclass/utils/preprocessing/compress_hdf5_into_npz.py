@@ -71,14 +71,20 @@ def main():
         verbose=True,
     )
 
-    # Stack signals into a single matrix
-    signal_matrix = np.stack(list(hdf5_loader.signals.values()), axis=0).astype(
-        np.float32
-    )
+    # We want to avoid 2x memory usage, so we will write the NPZ file in a way that does not require stacking all signals in memory at once.
+    # Pre-allocate the matrix and fill it iteratively, popping each signal from the loader to free memory immediately after use.
+    ids = list(hdf5_loader.signals.keys())
+    n_samples = len(ids)
+    n_features = hdf5_loader.signals[ids[0]].shape[0]
 
-    # Store IDs as array for consistency
-    ids_array = np.array(list(hdf5_loader.signals.keys()))
+    signal_matrix = np.empty((n_samples, n_features), dtype=np.float32)
 
+    for i, md5 in enumerate(ids):
+        signal_matrix[i] = hdf5_loader.signals.pop(md5)
+
+    ids_array = np.array(ids)
+
+    # Save the signals and ids to a compressed NPZ file
     np.savez_compressed(
         file=output_npz_path,
         signals=signal_matrix,
