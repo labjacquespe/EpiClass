@@ -79,6 +79,9 @@ class Hdf5Loader:
         """
         files = self.read_list(data_file)
 
+        if verbose:
+            print(f"Found {len(files)} lines in {data_file}.")
+
         if adapt:
             files = Hdf5Loader.adapt_to_environment(files)
 
@@ -120,6 +123,9 @@ class Hdf5Loader:
                 continue
 
         self._signals = signals
+
+        if verbose:
+            print(f"Loaded {len(signals)}/{len(files)} hdf5 files.")
 
         return self
 
