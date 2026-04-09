@@ -11,6 +11,7 @@ import re
 import sys
 import warnings
 from collections import defaultdict
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
@@ -20,6 +21,7 @@ except ImportError:
     display = print
 import numpy as np
 import pandas as pd
+from scipy.stats import ttest_ind
 from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
@@ -1808,3 +1810,67 @@ def save_figure(
     fig.write_html(logdir / f"{filename}.html")
     fig.write_image(logdir / f"{filename}.svg", width=width, height=height)
     fig.write_image(logdir / f"{filename}.png", width=width, height=height, scale=scale)
+
+
+def pairwise_ttests(
+    all_metrics, metrics_to_compare: List[str] | None = None, k: int = 10
+) -> pd.DataFrame:
+    """
+    For each metadata category and metric, run Welch's t-test (two-sided) comparing
+    every pair of feature sets across k folds.
+
+    all_metrics format: {feature_set: {category: {split_name: metric_dict}}}
+    """
+
+    def significance_symbol(p_value: float) -> str:
+        """Return a significance symbol based on the p-value."""
+        if p_value < 0.001:
+            return "***"
+        if p_value < 0.01:
+            return "**"
+        if p_value < 0.05:
+            return "*"
+        return "ns"
+
+    if metrics_to_compare is None:
+        metrics_to_compare = ["Accuracy", "F1_macro", "AUC_micro", "AUC_macro"]
+
+    # Collect all categories across feature sets
+    all_categories = set()
+    for metrics_dict in all_metrics.values():
+        all_categories.update(metrics_dict.keys())
+
+    results = []
+
+    for category in sorted(all_categories):
+        # Get feature sets that have this category
+        fs_with_cat = [fs for fs, md in all_metrics.items() if category in md]
+
+        for fs_a, fs_b in combinations(fs_with_cat, 2):
+            for metric in metrics_to_compare:
+                vals_a = [
+                    all_metrics[fs_a][category][f"split{i}"][metric] for i in range(k)
+                ]
+                vals_b = [
+                    all_metrics[fs_b][category][f"split{i}"][metric] for i in range(k)
+                ]
+
+                t_stat, p_val = ttest_ind(
+                    vals_a, vals_b, equal_var=False, alternative="two-sided"
+                )
+
+                results.append(
+                    {
+                        "category": category,
+                        "feature_set_a": fs_a,
+                        "feature_set_b": fs_b,
+                        "metric": metric,
+                        "mean_a": np.mean(vals_a),
+                        "mean_b": np.mean(vals_b),
+                        "t_stat": t_stat,
+                        "p_value": p_val,
+                        "significance": significance_symbol(p_val),
+                    }
+                )
+
+    return pd.DataFrame(results)
