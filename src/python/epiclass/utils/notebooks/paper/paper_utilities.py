@@ -349,6 +349,10 @@ class MetadataHandler:
 class SplitResultsHandler:
     """Class to handle split results."""
 
+    def __init__(self, k: int = 10):
+        # Number of splits/folds
+        self.k = k
+
     @staticmethod
     def add_max_pred(
         df: pd.DataFrame,
@@ -447,9 +451,8 @@ class SplitResultsHandler:
 
         return pd.DataFrame(assay_acc)
 
-    @staticmethod
     def gather_split_results_across_methods(
-        results_dir: Path, label_category: str, only_NN: bool = False
+        self, results_dir: Path, label_category: str, only_NN: bool = False
     ) -> Dict[str, Dict[str, pd.DataFrame]]:
         """Gather split results for each classifier type.
 
@@ -473,15 +476,15 @@ class SplitResultsHandler:
 
         NN_csv_path_template = str(
             NN_csv_path_template
-            / "10fold-oversampling"
+            / f"{self.k}fold-oversampling"
             / "{split}"
             / "validation_prediction.csv"
         )
         all_split_dfs = {}
-        for split in [f"split{i}" for i in range(10)]:
+        for split in [f"split{i}" for i in range(self.k)]:
             # Get the csv paths
             NN_csv_path = Path(NN_csv_path_template.format(split=split))  # type: ignore
-            other_csv_root = results_dir / f"{label_category}" / "predict-10fold"
+            other_csv_root = results_dir / f"{label_category}" / f"predict-{self.k}fold"
 
             if not only_NN:
                 if not other_csv_root.exists():
@@ -752,10 +755,11 @@ class SplitResultsHandler:
 
         return task_metrics_dict
 
-    @staticmethod
     def compute_split_metrics(
+        self,
         all_split_dfs: Dict[str, Dict[str, pd.DataFrame]],
         concat_first_level: bool = False,
+        split_list: List[str] | None = None,
     ) -> Dict[str, Dict[str, Dict[str, float]]]:
         """Compute desired metrics for each split and classifier, accommodating different dictionary structures.
 
@@ -769,6 +773,7 @@ class SplitResultsHandler:
             concat_first_level: A boolean flag that indicates the structure of the all_split_dfs dictionary.
                                 If True, the first level is the classifier name. Otherwise, the first
                                 level is the split name.
+            split_list: An optional list of split names to compute metrics for. If None, metrics will be computed for all splits in the dictionary.
 
         Returns:
             A nested dictionary with metrics computed for each classifier and split. The structure is
@@ -788,7 +793,10 @@ class SplitResultsHandler:
 
             all_split_dfs = temp_dict
 
-        for split in [f"split{i}" for i in range(10)]:
+        if split_list is None:
+            split_list = [f"split{i}" for i in range(self.k)]
+
+        for split in split_list:
             dfs = all_split_dfs[split]
 
             metrics: Dict[str, Dict[str, float]] = {}
@@ -845,8 +853,8 @@ class SplitResultsHandler:
 
         return dict(counts)
 
-    @staticmethod
     def general_split_metrics(
+        self,
         results_dir: Path,
         merge_assays: bool,
         exclude_categories: List[str] | None = None,
@@ -907,11 +915,11 @@ class SplitResultsHandler:
         for parent, _, _ in os.walk(results_dir, followlinks=True):
             # Looking for oversampling only results
             parent = Path(parent)
-            if "10fold" not in parent.name:
+            if f"{self.k}fold" not in parent.name:
                 if verbose:
-                    print(f"Skipping {parent}: not 10fold")
+                    print(f"Skipping {parent}: not {self.k}fold")
                 continue
-            if parent.name != "10fold-oversampling" and oversampled_only:
+            if parent.name != f"{self.k}fold-oversampling" and oversampled_only:
                 if verbose:
                     print(f"Skipping {parent}: not oversampled")
                 continue
@@ -937,7 +945,7 @@ class SplitResultsHandler:
 
             # Get the rest of the name, ignore certain runs
             rest_of_name = list(relpath.parts[1:])
-            for dir_name in ["10fold", "10fold-oversampling"]:
+            for dir_name in [f"{self.k}fold", f"{self.k}fold-oversampling"]:
                 try:
                     rest_of_name.remove(dir_name)
                 except ValueError:
