@@ -214,10 +214,11 @@ def main():
         logging.error("'h5repack' command not found.")
         return 1
 
-    max_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "8"))
-
     with open(hdf5_list_path, "r", encoding="utf8") as f:
         hdf5_files = [Path(line.strip()) for line in f if line.strip()]
+
+    cpus = int(os.getenv("SLURM_CPUS_PER_TASK", "8"))
+    max_workers = int(os.getenv("HDF5_CAST_WORKERS", str(cpus * 2)))
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         executor.map(
