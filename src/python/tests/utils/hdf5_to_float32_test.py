@@ -1,8 +1,9 @@
 """
-This module contains tests for HDF5 file operations. These tests include copying HDF5 files,
+This module contains tests for HDF5 file operations. These tests include
 casting datasets within these files to the float32 data type, repacking files to reduce size,
 and a workflow that performs these operations in sequence.
 """
+import shutil
 from pathlib import Path
 
 import h5py
@@ -11,7 +12,7 @@ import pytest
 
 from epiclass.utils.preprocessing.convert_hdf5_to_float32 import (
     cast_datasets_to_float32,
-    copy_hdf5_file,
+    process_file,
     repack_hdf5_file,
 )
 from tests.epilap_test_data import FIXTURES_DIR
@@ -28,70 +29,119 @@ def hdf5_test_file() -> Path:
     return FIXTURES_DIR / "89a0dcb635f0e9740f587931437b69f1_100kb_all_none_value.hdf5"
 
 
-def test_copy_hdf5_file(tmp_path, test_hdf5):
+@pytest.fixture(name="work_copy")
+def hdf5_work_copy(tmp_path, test_hdf5) -> Path:
     """
-    Test for copying an HDF5 file to a new location.
-
-    Args:
-        tmp_path (Path): Temporary path provided by pytest fixture.
-        test_hdf5 (Path): Path to the test HDF5 file.
+    Provides a working copy of the test HDF5 file in tmp_path.
     """
-    copied_file_path = copy_hdf5_file(test_hdf5, tmp_path)
-    assert copied_file_path is not None
-    assert copied_file_path.is_file()
-    assert copied_file_path.stem == test_hdf5.stem + "_float32"
+    dest = tmp_path / test_hdf5.name
+    shutil.copy(test_hdf5, dest)
+    return dest
 
 
-def test_cast_datasets_to_float32(tmp_path, test_hdf5):
+@pytest.fixture(name="test_hdf5_float64")
+def hdf5_test_file_float64(tmp_path, test_hdf5) -> Path:
+    """
+    Provides a copy of the test HDF5 file with all float32 datasets promoted to float64.
+    """
+    dest = tmp_path / "float64_input.hdf5"
+    shutil.copy(test_hdf5, dest)
+
+    with h5py.File(dest, "r+") as f:
+        for group in f.values():
+            if not isinstance(group, h5py.Group):
+                continue
+            for name, dataset in list(group.items()):
+                if not isinstance(dataset, h5py.Dataset):
+                    continue
+                if dataset.dtype == np.float32:
+                    attrs = dict(dataset.attrs.items())
+                    data = dataset[...].astype(np.float64)
+                    del group[name]
+                    group.create_dataset(name, data=data, dtype=np.float64)
+                    group[name].attrs.update(attrs)
+
+    return dest
+
+
+def test_cast_datasets_to_float32(work_copy):
     """
     Test for casting datasets in an HDF5 file to float32.
-
-    Args:
-        tmp_path (Path): Temporary path provided by pytest fixture.
-        test_hdf5 (Path): Path to the test HDF5 file.
     """
-    copied_file_path = copy_hdf5_file(test_hdf5, tmp_path)
-    assert copied_file_path is not None
-    assert cast_datasets_to_float32(copied_file_path) is not None
+    assert cast_datasets_to_float32(work_copy) is not None
 
 
-def test_repack_hdf5_file(tmp_path, test_hdf5):
+def test_repack_hdf5_file(work_copy):
     """
     Test for repacking an HDF5 file to reduce its size.
-
-    Args:
-        tmp_path (Path): Temporary path provided by pytest fixture.
-        test_hdf5 (Path): Path to the test HDF5 file.
     """
-    copied_file_path = copy_hdf5_file(test_hdf5, tmp_path)
-    assert copied_file_path is not None
-    cast_datasets_to_float32(copied_file_path)
-    repack_hdf5_file(copied_file_path)
-    assert copied_file_path.is_file()
+    cast_datasets_to_float32(work_copy)
+    repack_hdf5_file(work_copy)
+    assert work_copy.is_file()
 
 
-def test_workflow(tmp_path, test_hdf5):
+def test_workflow_to_outdir(tmp_path, test_hdf5_float64):
     """
-    Test for performing the workflow of copying, casting, and repacking an HDF5 file.
-
-    Args:
-        tmp_path (Path): Temporary path provided by pytest fixture.
-        test_hdf5 (Path): Path to the test HDF5 file.
+    Test the normal (non-overwrite) workflow via process_file:
+    copies to outdir with a "_float32.hdf5" suffix, casts, and repacks.
     """
-    copied_file_path = copy_hdf5_file(test_hdf5, tmp_path)
-    assert copied_file_path is not None
-    assert copied_file_path.is_file()
-    cast_datasets_to_float32(copied_file_path)
-    repack_hdf5_file(copied_file_path)
-    assert copied_file_path.is_file()
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+
+    process_file(test_hdf5_float64, outdir=outdir, overwrite=False)
+
+    expected_output = outdir / (test_hdf5_float64.stem + "_float32.hdf5")
+    assert expected_output.is_file()
+
+
+def test_workflow_to_outdir_skips_existing(tmp_path, test_hdf5_float64):
+    """
+    Test that the normal workflow skips files that already exist in outdir.
+    """
+    outdir = tmp_path / "output"
+    outdir.mkdir()
+
+    expected_output = outdir / (test_hdf5_float64.stem + "_float32.hdf5")
+    expected_output.write_bytes(b"sentinel")
+
+    process_file(test_hdf5_float64, outdir=outdir, overwrite=False)
+
+    # File should be untouched (still our sentinel content)
+    assert expected_output.read_bytes() == b"sentinel"
+
+
+def test_workflow_overwrite(tmp_path, test_hdf5):
+    """
+    Test the --overwrite workflow via process_file:
+    modifies the file in-place (via a temp copy), replacing the original.
+    """
+    # Work on a copy so we don't modify the fixture file
+    hdf5_copy = tmp_path / test_hdf5.name
+    shutil.copy(test_hdf5, hdf5_copy)
+    original_size = hdf5_copy.stat().st_size
+
+    process_file(hdf5_copy, outdir=None, overwrite=True)
+
+    assert hdf5_copy.is_file()
+
+    # Verify float32 casting actually happened
+    with h5py.File(hdf5_copy, "r") as f:
+        for group in f.values():
+            if not isinstance(group, h5py.Group):
+                continue
+            for dataset in group.values():
+                if isinstance(dataset, h5py.Dataset) and np.issubdtype(
+                    dataset.dtype, np.floating
+                ):
+                    assert dataset.dtype == np.float32
+
+    # Repacking + float32 should reduce file size
+    assert hdf5_copy.stat().st_size <= original_size
 
 
 def test_casting_changes_data(tmp_path):
     """
     Test for verifying that casting datasets in a fake HDF5 file changes the data.
-
-    Args:
-        tmp_path (Path): Temporary path provided by pytest fixture.
     """
     # Create a fake float64 dataset
     # Range is expected typical values in the dataset.
@@ -104,15 +154,15 @@ def test_casting_changes_data(tmp_path):
         group = f.create_group("fake_data")
         group.create_dataset("fake_dataset", data=original_data, dtype=np.float64)
 
-    # Copy the HDF5 file to a new location
-    copied_file_path = copy_hdf5_file(original_file_path, tmp_path)
-    assert copied_file_path is not None
+    # Copy the HDF5 file to a working copy
+    work_copy = tmp_path / "work_copy.hdf5"
+    shutil.copy(original_file_path, work_copy)
 
     # Perform the casting
-    assert cast_datasets_to_float32(copied_file_path)
+    assert cast_datasets_to_float32(work_copy)
 
     # Load the dataset after casting
-    with h5py.File(copied_file_path, "r") as f:
+    with h5py.File(work_copy, "r") as f:
         casted_data = np.array(f["fake_data"]["fake_dataset"])  # type: ignore
 
     # Check that the data type has changed to float32

@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import traceback
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -37,25 +38,18 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "output_dir",
         type=Path,
-        help="Directory where to write the new hdf5 files.",
+        nargs="?",
+        default=None,
+        help="Directory where to write the new hdf5 files. "
+             "Required unless --overwrite is used.",
+    )
+    arg_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite original files in-place instead of writing to output_dir.",
     )
     return arg_parser.parse_args()
     # fmt: on
-
-
-def copy_hdf5_file(file_path: Path, logdir: Path) -> Path | None:
-    """
-    Copies an HDF5 file to a new location, appending "_float32.hdf5" to the filename.
-    """
-    new_hdf5_path = logdir / (file_path.stem + "_float32.hdf5")
-
-    if new_hdf5_path.is_file():
-        logging.warning("%s already exists. Skipping.", new_hdf5_path)
-        return None
-
-    shutil.copy(file_path, new_hdf5_path)
-
-    return new_hdf5_path
 
 
 def cast_datasets_to_float32(file_path: Path) -> bool:
@@ -130,52 +124,67 @@ def repack_hdf5_file(file_path: Path) -> None:
             logging.error("FileNotFoundError during repacking: %s", e)
 
 
-def process_file(hdf5_file: Path, logdir: Path) -> None:
+def process_file(hdf5_file: Path, outdir: Path | None, overwrite: bool = False) -> None:
     """
-    Processes an HDF5 file by copying it to a new location, casting its datasets to float32 data type, and repacking it.
+    Processes an HDF5 file by casting its float64 datasets to float32 and repacking.
 
-    The function first attempts to copy the input file to a new location by appending "_float32.hdf5" to the filename.
-    If the new file already exists, the function logs a warning and returns.
-
-    If the new file is successfully created, the function casts all the datasets in the file to float32 data type,
-    It then repacks the file to reduce its size.
-
-    If any error occurs during the process, the function logs the error message and traceback, and skips the current file.
+    In normal mode, copies to outdir with a "_float32.hdf5" suffix.
+    In overwrite mode, works on a temp copy next to the original and replaces it on success.
 
     Args:
-        hdf5_file (Path): The absolute path to the input HDF5 file.
-        logdir (Path): The directory where the new file will be created.
-
-    Returns:
-        None
+        hdf5_file: The absolute path to the input HDF5 file.
+        outdir: The output directory (used only when overwrite is False).
+        overwrite: If True, replace the original file in-place.
     """
-    try:
-        new_filepath = copy_hdf5_file(hdf5_file, logdir)
-    except Exception as e:
-        logging.error(
-            "Error: %s. Skipping file %s\n%s", e, hdf5_file, traceback.format_exc()
-        )
-        return
-
-    if new_filepath is None:
-        logging.info("File already exists. Skipping: %s", hdf5_file)
-        return
-
-    try:
-        modified = cast_datasets_to_float32(new_filepath)
-    except Exception as e:
-        logging.error(
-            "Error: %s. Skipping file %s\n%s", e, hdf5_file, traceback.format_exc()
-        )
-        new_filepath.unlink(missing_ok=True)  # clean up the broken copy
-        return
-
-    if modified:
-        logging.info("Casting and verification successful. Repacking: %s", new_filepath)
-        repack_hdf5_file(new_filepath)
+    # --- Set up the working copy ---
+    if overwrite:
+        # Temp file in the same directory (same filesystem for safe moves)
+        fd, tmp_str = tempfile.mkstemp(suffix=".hdf5", dir=hdf5_file.parent)
+        os.close(fd)
+        work_path = Path(tmp_str)
     else:
-        logging.info("No casting needed. Skipping: %s", new_filepath)
-        new_filepath.unlink(missing_ok=True)
+        work_path = outdir / (hdf5_file.stem + "_float32.hdf5")  # type: ignore
+        if work_path.is_file():
+            logging.warning("%s already exists. Skipping.", work_path)
+            return
+
+    try:
+        shutil.copy(hdf5_file, work_path)
+    except Exception as e:
+        logging.error("Error copying %s: %s\n%s", hdf5_file, e, traceback.format_exc())
+        if overwrite:
+            work_path.unlink(missing_ok=True)
+        return
+
+    # --- Cast and repack ---
+    try:
+        modified = cast_datasets_to_float32(work_path)
+    except Exception as e:
+        logging.error("Error casting %s: %s\n%s", hdf5_file, e, traceback.format_exc())
+        work_path.unlink(missing_ok=True)
+        return
+
+    if not modified:
+        logging.info("No casting needed. Skipping: %s", hdf5_file)
+        work_path.unlink(missing_ok=True)
+        return
+
+    logging.info("Casting and verification successful. Repacking: %s", hdf5_file)
+    repack_hdf5_file(work_path)
+
+    # --- Finalize ---
+    if overwrite:
+        try:
+            shutil.move(str(work_path), str(hdf5_file))
+            logging.info("Overwritten original: %s", hdf5_file)
+        except Exception as e:
+            logging.error(
+                "Error replacing original %s: %s\n%s",
+                hdf5_file,
+                e,
+                traceback.format_exc(),
+            )
+            work_path.unlink(missing_ok=True)
 
 
 def main():
@@ -185,11 +194,21 @@ def main():
     cli = parse_arguments()
 
     hdf5_list_path = cli.hdf5_list
-    outdir = cli.output_dir.resolve()
+    overwrite = cli.overwrite
+    outdir = cli.output_dir
 
-    if not outdir.is_dir():
-        logging.error("Output directory does not exist: %s", outdir)
+    if overwrite and outdir is not None:
+        logging.warning("--overwrite is set; output_dir (%s) will be ignored.", outdir)
+
+    if not overwrite and outdir is None:
+        logging.error("output_dir is required when --overwrite is not used.")
         return 1
+
+    if outdir is not None:
+        outdir = outdir.resolve()
+        if not overwrite and not outdir.is_dir():
+            logging.error("Output directory does not exist: %s", outdir)
+            return 1
 
     if shutil.which("h5repack") is None:
         logging.error("'h5repack' command not found.")
@@ -201,7 +220,12 @@ def main():
         hdf5_files = [Path(line.strip()) for line in f if line.strip()]
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(process_file, hdf5_files, [outdir] * len(hdf5_files))
+        executor.map(
+            process_file,
+            hdf5_files,
+            [outdir] * len(hdf5_files),
+            [overwrite] * len(hdf5_files),
+        )
 
     return 0
 
