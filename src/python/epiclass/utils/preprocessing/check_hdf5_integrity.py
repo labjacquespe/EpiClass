@@ -9,9 +9,17 @@ Two-phase HDF5 file integrity checker:
   Phase 2 — h5dump -H: Verify that all expected chromosome datasets
                         (chr1-22, chrX, chrY) are present in the metadata.
 
+Optional dtype verification (via --dtype-mode):
+  float : accept any float dtype; flag 64-bit (F64) as oversized.
+  int   : accept any (signed/unsigned) int dtype; flag 64-bit as oversized.
+  auto  : accept either float *or* int per file (auto-detected from the
+          file's own datasets), flag 64-bit, and flag files that mix
+          float and int across chromosomes.
+
 Usage:
-    python check_hdf5_integrity.py file_list.txt -t 8
+    python check_hdf5_integrity.py file_list.txt -t 8 --dtype-mode float
 """
+# pylint: disable=too-many-branches,too-many-positional-arguments
 import argparse
 import logging
 import re
@@ -21,8 +29,10 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Set
 
-EXPECTED_CHROMOSOMES = [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"]
+EXPECTED_CHROMOSOMES_HUMAN = [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"]
+EXPECTED_CHROMOSOMES_MOUSE = [f"chr{i}" for i in range(1, 20)] + ["chrX", "chrY"]
 
 # Matches lines like:  DATASET "chr1" {
 DATASET_RE = re.compile(r'DATASET\s+"([^"]+)"')
@@ -34,6 +44,33 @@ DATASET_DTYPE_RE = re.compile(
     r'DATASET\s+"([^"]+)"\s*\{[^}]*?DATATYPE\s+(H5T_\S+)',
     re.DOTALL,
 )
+
+# Accepted dtype families.
+# - 32-bit floats:  H5T_IEEE_F32LE / F32BE
+# - 64-bit floats:  H5T_IEEE_F64LE / F64BE  (flagged as oversized)
+# - 32-bit ints:    H5T_STD_{I,U}32{LE,BE}
+# - 64-bit ints:    H5T_STD_{I,U}64{LE,BE}  (flagged as oversized)
+FLOAT32_RE = re.compile(r"^H5T_IEEE_F32[LB]E$")
+FLOAT64_RE = re.compile(r"^H5T_IEEE_F64[LB]E$")
+INT32_RE = re.compile(r"^H5T_STD_[IU]32[LB]E$")
+INT64_RE = re.compile(r"^H5T_STD_[IU]64[LB]E$")
+
+
+def classify_dtype(dtype):
+    """
+    Classify an h5dump DATATYPE string.
+
+    Returns one of: 'float32', 'float64', 'int32', 'int64', 'other'.
+    """
+    if FLOAT32_RE.match(dtype):
+        return "float32"
+    if FLOAT64_RE.match(dtype):
+        return "float64"
+    if INT32_RE.match(dtype):
+        return "int32"
+    if INT64_RE.match(dtype):
+        return "int64"
+    return "other"
 
 
 def cli():
@@ -65,10 +102,39 @@ def cli():
         help="Timeout in seconds for h5dump per file (default: 120).",
     )
     parser.add_argument(
-        "--check-dtype",
+        "--dtype-mode",
+        choices=["off", "float", "int", "auto"],
+        default="auto",
+        help=(
+            "Dtype verification mode. "
+            "'off': skip dtype checks. "
+            "'float': require all chromosome datasets to be float (32-bit ok, "
+            "64-bit flagged as oversized). "
+            "'int': require all chromosome datasets to be int (32-bit ok, "
+            "64-bit flagged as oversized — unlikely to be needed for rank data). "
+            "'auto'  (default): accept either float or int per file (auto-detected), flag "
+            "64-bit, and flag files that mix float and int across chromosomes."
+        ),
+    )
+    parser.add_argument(
+        "--chromosomes",
+        choices=["human", "mouse"],
+        default="human",
+        help=(
+            "Set expected chromosome names. "
+            "'human' (default): chr1-22, chrX, chrY. "
+            "'mouse': chr1-19, chrX, chrY."
+        ),
+    )
+    parser.add_argument(
+        "--allow-missing-chry",
         action="store_true",
         default=False,
-        help="Verify that each chromosome dataset has DATATYPE H5T_IEEE_F32LE (float32).",
+        help=(
+            "Treat chrY as optional: a file missing only chrY still passes. "
+            "Dtype checks (if enabled) run on the remaining chromosomes. "
+            "Files where chrY is absent are logged as info, not as failures."
+        ),
     )
     parser.add_argument(
         "--log-file",
@@ -214,19 +280,108 @@ def run_h5check(filepath, timeout=300):
     return {"passed": True, "error": None}
 
 
-def run_h5dump_check(filepath, timeout=120, check_dtype=False):
+def verify_dtypes(
+    expected_chromosomes: set[str], dataset_dtypes: dict[str, str], mode: str
+):
+    """
+    Verify chromosome dataset dtypes against the requested mode.
+
+    Parameters
+    ----------
+    expected_chromosomes : set[str]
+        Set of expected chromosome names.
+    dataset_dtypes : dict[str, str]
+        Map of dataset name -> DATATYPE string (from h5dump -H).
+    mode : str
+        One of 'float', 'int', 'auto'.
+
+    Returns
+    -------
+    dict with keys:
+        wrong_dtype : list[str]   # "chrom=DTYPE" entries (unrecognized/disallowed family)
+        oversized   : list[str]   # "chrom=DTYPE" entries (64-bit variants)
+        mixed       : list[str]   # "chrom=DTYPE" entries that broke file-level consistency (auto only)
+        family      : str or None # resolved family for this file ('float' or 'int'), auto mode only
+    """
+    wrong_dtype = []
+    oversized = []
+    mixed = []
+    family = None  # for auto mode
+
+    # In auto mode, the first classified chromosome sets the expected family
+    # for the rest of the file. Subsequent chromosomes of the *other* family
+    # are reported as 'mixed'.
+    for chrom in expected_chromosomes:
+        dtype = dataset_dtypes.get(chrom)
+        if dtype is None:
+            # Missing datasets are handled by the caller; skip here.
+            continue
+
+        kind = classify_dtype(
+            dtype
+        )  # 'float32' | 'float64' | 'int32' | 'int64' | 'other'
+
+        if kind == "other":
+            wrong_dtype.append(f"{chrom}={dtype}")
+            continue
+
+        this_family = "float" if kind.startswith("float") else "int"
+        is_64bit = kind.endswith("64")
+
+        if mode == "float":
+            if this_family != "float":
+                wrong_dtype.append(f"{chrom}={dtype}")
+            elif is_64bit:
+                oversized.append(f"{chrom}={dtype}")
+        elif mode == "int":
+            if this_family != "int":
+                wrong_dtype.append(f"{chrom}={dtype}")
+            elif is_64bit:
+                oversized.append(f"{chrom}={dtype}")
+        elif mode == "auto":
+            if family is None:
+                family = this_family
+            if this_family != family:
+                mixed.append(f"{chrom}={dtype}")
+            if is_64bit:
+                oversized.append(f"{chrom}={dtype}")
+
+    return {
+        "wrong_dtype": wrong_dtype,
+        "oversized": oversized,
+        "mixed": mixed,
+        "family": family,
+    }
+
+
+def run_h5dump_check(
+    filepath,
+    expected_chromosomes: Set[str],
+    timeout=120,
+    dtype_mode="off",
+    allow_missing_chry=False,
+):
     """
     Run h5dump -H and verify expected chromosome datasets exist.
 
-    Optionally verify that each chromosome dataset has DATATYPE H5T_IEEE_F32LE.
+    Optionally verify dtypes according to dtype_mode ('off', 'float', 'int', 'auto').
 
-    Returns dict with 'passed', 'missing', 'found', 'wrong_dtype', 'error'.
+    When allow_missing_chry is True, a file missing only chrY is still considered
+    to have passed the dataset check; chrY is reported in 'missing_allowed'
+    (informational) rather than 'missing' (failure).
+
+    Returns dict with 'passed', 'missing', 'missing_allowed', 'found',
+    'wrong_dtype', 'oversized', 'mixed', 'family', 'error'.
     """
     result_base = {
         "passed": False,
         "missing": [],
+        "missing_allowed": [],
         "found": [],
         "wrong_dtype": [],
+        "oversized": [],
+        "mixed": [],
+        "family": None,
         "error": None,
     }
 
@@ -251,29 +406,63 @@ def run_h5dump_check(filepath, timeout=120, check_dtype=False):
         }
 
     dataset_names = set(DATASET_RE.findall(proc.stdout))
-    expected_set = set(EXPECTED_CHROMOSOMES)
+    expected_set = set(expected_chromosomes)
     found = sorted(dataset_names & expected_set)
-    missing = [c for c in EXPECTED_CHROMOSOMES if c not in dataset_names]
 
-    # Optional dtype check: each chromosome dataset must be F32LE
+    # Split missing chromosomes into failing vs. informational (allowed).
+    # chrY is optional when allow_missing_chry is True.
+    all_missing = [c for c in expected_chromosomes if c not in dataset_names]
+    missing_allowed = []
+    missing = []
+    for c in all_missing:
+        if c == "chrY" and allow_missing_chry:
+            missing_allowed.append(c)
+        else:
+            missing.append(c)
+
     wrong_dtype = []
-    if check_dtype and not missing:
+    oversized = []
+    mixed = []
+    family = None
+
+    # Only run dtype verification if enabled and no *required* chromosomes are
+    # missing. chrY in missing_allowed does not block the dtype pass; the
+    # per-chrom loop in verify_dtypes naturally skips datasets that aren't
+    # present in the dtype map.
+    if dtype_mode != "off" and not missing:
         dataset_dtypes = dict(DATASET_DTYPE_RE.findall(proc.stdout))
-        for chrom in EXPECTED_CHROMOSOMES:
-            dtype = dataset_dtypes.get(chrom)
-            if dtype and dtype != "H5T_IEEE_F32LE":
-                wrong_dtype.append(f"{chrom}={dtype}")
+        dv = verify_dtypes(expected_chromosomes, dataset_dtypes, dtype_mode)
+        wrong_dtype = dv["wrong_dtype"]
+        oversized = dv["oversized"]
+        mixed = dv["mixed"]
+        family = dv["family"]
+
+    # A file passes only if nothing went wrong. 'oversized' is treated as a
+    # failure condition (64-bit is flagged). 'mixed' is a failure in auto mode.
+    # 'missing_allowed' is informational and does not affect 'passed'.
+    passed = not missing and not wrong_dtype and not oversized and not mixed
 
     return {
-        "passed": not missing and not wrong_dtype,
+        "passed": passed,
         "missing": missing,
+        "missing_allowed": missing_allowed,
         "found": found,
         "wrong_dtype": wrong_dtype,
+        "oversized": oversized,
+        "mixed": mixed,
+        "family": family,
         "error": None,
     }
 
 
-def check_file(filepath, h5check_timeout=300, h5dump_timeout=120, check_dtype=False):
+def check_file(
+    filepath,
+    expected_chromosomes: Set[str],
+    h5check_timeout=300,
+    h5dump_timeout=120,
+    dtype_mode="off",
+    allow_missing_chry=False,
+):
     """Run h5check then h5dump -H on a single file, returning a result dict."""
     result = {
         "file": filepath,
@@ -281,7 +470,11 @@ def check_file(filepath, h5check_timeout=300, h5dump_timeout=120, check_dtype=Fa
         "datasets_ok": False,
         "ok": False,
         "missing": [],
+        "missing_allowed": [],
         "wrong_dtype": [],
+        "oversized": [],
+        "mixed": [],
+        "family": None,
         "error": None,
     }
 
@@ -297,33 +490,45 @@ def check_file(filepath, h5check_timeout=300, h5dump_timeout=120, check_dtype=Fa
         return result
 
     # Phase 2: dataset verification (+ optional dtype check)
-    h5d = run_h5dump_check(filepath, timeout=h5dump_timeout, check_dtype=check_dtype)
+    h5d = run_h5dump_check(
+        filepath,
+        expected_chromosomes=expected_chromosomes,
+        timeout=h5dump_timeout,
+        dtype_mode=dtype_mode,
+        allow_missing_chry=allow_missing_chry,
+    )
     result["datasets_ok"] = h5d["passed"]
+    result["family"] = h5d["family"]
+    # missing_allowed is informational; carry it through regardless of pass/fail.
+    result["missing_allowed"] = h5d["missing_allowed"]
     if not h5d["passed"]:
         if h5d["error"]:
             result["error"] = h5d["error"]
         else:
             result["missing"] = h5d["missing"]
             result["wrong_dtype"] = h5d["wrong_dtype"]
+            result["oversized"] = h5d["oversized"]
+            result["mixed"] = h5d["mixed"]
         return result
 
     result["ok"] = True
     return result
 
 
-def _format_failure(res):
+def format_failure(res):
     """Build a human-readable failure reason string from a result dict."""
     if res["error"]:
         return res["error"]
 
     reasons = []
     if res["missing"]:
-        missing = ", ".join(res["missing"])
-        reasons.append(f"missing {missing}")
-
+        reasons.append(f"missing {', '.join(res['missing'])}")
     if res["wrong_dtype"]:
-        wrong_dtype = ", ".join(res["wrong_dtype"])
-        reasons.append(f"wrong dtype {wrong_dtype}")
+        reasons.append(f"wrong dtype {', '.join(res['wrong_dtype'])}")
+    if res["oversized"]:
+        reasons.append(f"oversized dtype {', '.join(res['oversized'])}")
+    if res["mixed"]:
+        reasons.append(f"mixed dtype families {', '.join(res['mixed'])}")
 
     return "; ".join(reasons)
 
@@ -332,13 +537,20 @@ def _log_result(log, res, failed_files):
     """Log a single file result and append to failed_files if needed."""
     fname = res["file"]
     if res["ok"]:
-        log.debug("OK    %s", fname)
+        if res.get("missing_allowed"):
+            log.debug(
+                "OK    %s  (allowed missing: %s)",
+                fname,
+                ", ".join(res["missing_allowed"]),
+            )
+        else:
+            log.debug("OK    %s", fname)
         return
     if res["error"]:
         phase = "h5check" if not res["h5check_ok"] else "h5dump"
         log.warning("FAIL  %s  [%s] %s", fname, phase, res["error"])
     else:
-        log.warning("FAIL  %s  [datasets] %s", fname, _format_failure(res))
+        log.warning("FAIL  %s  [datasets] %s", fname, format_failure(res))
     failed_files.append(res)
 
 
@@ -364,6 +576,14 @@ def main():
     if not files:
         sys.exit("Error: file list is empty.")
 
+    # Determine expected chromosomes based on the --chromosomes argument
+    if args.chromosomes == "human":
+        expected_chromosomes = set(EXPECTED_CHROMOSOMES_HUMAN)
+    elif args.chromosomes == "mouse":
+        expected_chromosomes = set(EXPECTED_CHROMOSOMES_MOUSE)
+    else:
+        sys.exit(f"Error: unknown chromosome set '{args.chromosomes}'")
+
     log.info(
         "Starting integrity check: %d files, %d threads",
         len(files),
@@ -374,22 +594,29 @@ def main():
         args.h5check_timeout,
         args.h5dump_timeout,
     )
-    if args.check_dtype:
+    if args.dtype_mode != "off":
         log.info(
-            "  dtype check enabled: expecting H5T_IEEE_F32LE for all chromosome datasets"
+            "  dtype check enabled (mode=%s): 32-bit accepted, 64-bit flagged as oversized%s",
+            args.dtype_mode,
+            "; mixed float/int families flagged" if args.dtype_mode == "auto" else "",
         )
+    if args.allow_missing_chry:
+        log.info("  chrY is optional: files missing only chrY will pass")
 
     progress = ProgressTracker(len(files), log, log_every=args.log_every)
     failed_files = []
+    allowed_missing_count = 0
 
     with ThreadPoolExecutor(max_workers=args.threads) as pool:
         futures = {
             pool.submit(
                 check_file,
                 f,
+                expected_chromosomes,
                 args.h5check_timeout,
                 args.h5dump_timeout,
-                args.check_dtype,
+                args.dtype_mode,
+                args.allow_missing_chry,
             ): f
             for f in files
         }
@@ -397,13 +624,21 @@ def main():
             res = future.result()
             _log_result(log, res, failed_files)
             progress.record(res["ok"])
+            if res["ok"] and res.get("missing_allowed"):
+                allowed_missing_count += 1
 
     progress.summary()
+
+    if allowed_missing_count:
+        log.info(
+            "Passed files with allowed-missing chromosomes: %d (chrY treated as optional)",
+            allowed_missing_count,
+        )
 
     if failed_files:
         log.info("Failed files (%d):", len(failed_files))
         for res in failed_files:
-            log.info("  %s: %s", res["file"], _format_failure(res))
+            log.info("  %s: %s", res["file"], format_failure(res))
 
 
 if __name__ == "__main__":
