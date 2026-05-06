@@ -10,8 +10,6 @@ import os
 import sys
 from pathlib import Path
 
-from epiclass.core.loaders import dataset_factory
-
 try:
     import lightgbm  # pylint: disable=unused-import
     import optuna  # pylint: disable=unused-import
@@ -28,6 +26,7 @@ from epiclass.core import estimators, metadata
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
 from epiclass.core.lgbm import tune_lgbm
+from epiclass.core.loaders import dataset_factory
 from epiclass.utils import modify_metadata
 from epiclass.utils.time import time_now
 
@@ -245,6 +244,7 @@ def main():
             estimators.run_predictions(ea_handler, estimator, model_name, cli.logdir)
 
     # Giving predictions with chosen models, for all files in hdf5 list.
+    # Does not necessitate EpiATLAS specific treatment, so we use DatasetFactory directly.
     if cli.predict_new:
         pattern = "{log}/**{name}*.pickle"
         to_load = []

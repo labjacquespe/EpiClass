@@ -1,4 +1,5 @@
 """Module defining data factory classes, for preprocessing of samples and metadata."""
+# pylint: disable=too-many-branches, too-many-positional-arguments
 from __future__ import annotations
 
 import collections
@@ -6,6 +7,7 @@ import math
 from typing import List
 
 import numpy as np
+from imblearn.over_sampling import RandomOverSampler
 from sklearn import preprocessing
 
 from epiclass.core.data.dataset import DataSet
@@ -188,15 +190,17 @@ class EpiData:
         split_index_dict = collections.Counter(size_validation_dict)
         split_index_dict.update(size_test_dict)
 
-        # Will grab the indexes from the dicts and return md5 slices
-        # no end means : [i:None]=[i:]=slice from i to end
-        slice_data = lambda begin={}, end={}: sum(
-            [
-                data[label][begin.get(label, 0) : end.get(label, None)]
-                for label in size_all_dict.keys()
-            ],
-            [],
-        )
+        def slice_data(begin={}, end={}):  # pylint: disable=dangerous-default-value
+            """Will grab the indexes from the dicts and return md5 slices.
+            No end means: [i:None]=[i:]=slice from i to end.
+            """
+            return sum(
+                [
+                    data[label][begin.get(label, 0) : end.get(label, None)]
+                    for label in size_all_dict.keys()
+                ],
+                [],
+            )
 
         validation_md5s = slice_data(end=size_validation_dict)
         test_md5s = slice_data(begin=size_validation_dict, end=split_index_dict)
