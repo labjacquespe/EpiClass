@@ -7,8 +7,8 @@ import pandas as pd
 
 from epiclass.core.metadata import Metadata
 from epiclass.utils import modify_metadata
-from epiclass.utils.augment_predict_file import add_coherence
 from epiclass.utils.metadata_utils import EPIATLAS_CATS
+from epiclass.utils.postprocessing.augment_predict_file import add_coherence
 
 # from epiclass.utils.preconditions import check_epitatlas_uuid_premise
 
