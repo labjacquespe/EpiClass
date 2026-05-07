@@ -6,6 +6,7 @@
 **/tests/**/*.zip
 **/tests/**/*.ckpt
 **/tests/fixtures/
+mmap_cache
 
 # uv
 uv.lock
