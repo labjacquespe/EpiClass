@@ -17,11 +17,13 @@ except ImportError as e:
         "Install with: pip install .[shap]"
     ) from e
 
+import numpy as np
+
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.data.eager import UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_data_classes import LazyUnknownData
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 
 
@@ -68,43 +70,38 @@ def parse_arguments() -> argparse.Namespace:
     return arg_parser.parse_args()
 
 
+def _load_lazy(hdf5_list: Path, chromsize: Path, mmap_dir: Path) -> LazyUnknownData:
+    """Register and preload HDF5 files into a LazyUnknownData for SHAP."""
+    loader = LazyHdf5Loader(chrom_file=chromsize, normalization=True, mmap_dir=mmap_dir)
+    loader.register_hdf5s(hdf5_list, strict=True)
+    loader.preload_all()
+    sample_ids = list(loader.file_paths.keys())
+    n = len(sample_ids)
+    return LazyUnknownData(
+        ids=sample_ids,
+        loader=loader,
+        y=np.zeros(n, dtype=np.int64),
+        y_str=[""] * n,
+    )
+
+
 def compute_shap(
     cli: argparse.Namespace,
     shap_computer,
     output_name: str,
 ):
-    """
-    Compute SHAP values for a given model.
+    """Compute SHAP values for a given model.
 
     Args:
-        cli (argparse.Namespace): Parsed command-line arguments.
-        model (LightningDenseClassifier or EstimatorAnalyzer): Model to compute SHAP values for.
-        shap_computer (NN_SHAP_Handler or LGBM_SHAP_Handler): SHAP computer instance.
-        output_name (str): Output name for the SHAP values.
-        background_required (bool, optional): Whether the background dataset is required. Defaults to False.
+        cli: Parsed command-line arguments.
+        shap_computer: NN_SHAP_Handler or LGBM_SHAP_Handler instance.
+        output_name: Name prefix for output files.
     """
-    signals = {}
-    hdf5_loader = Hdf5Loader(chrom_file=cli.chromsize, normalization=True)
-
-    hdf5_loader.load_hdf5s(cli.background_hdf5, strict=True)
-    signals["background"] = hdf5_loader.signals
-
-    hdf5_loader.load_hdf5s(cli.explain_hdf5, strict=True)
-    signals["explain"] = hdf5_loader.signals
-
-    background_set = UnknownData(
-        list(signals["background"].keys()),
-        list(signals["background"].values()),
-        None,
-        None,
+    base_mmap = Path("./mmap_cache")
+    background_set = _load_lazy(
+        cli.background_hdf5, cli.chromsize, base_mmap / "background"
     )
-
-    explain_set = UnknownData(
-        list(signals["explain"].keys()),
-        list(signals["explain"].values()),
-        None,
-        None,
-    )
+    explain_set = _load_lazy(cli.explain_hdf5, cli.chromsize, base_mmap / "explain")
 
     shap_computer.compute_shaps(
         background_dset=background_set,

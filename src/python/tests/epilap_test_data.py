@@ -10,8 +10,10 @@ from typing import List
 import h5py
 
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+)
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.metadata import Metadata
 
 DEFAULT_TEST_LOGDIR = Path("/tmp/pytest")
@@ -37,7 +39,7 @@ class EpiAtlasTreatmentTestData:
 
         self.dir = FIXTURES_DIR.resolve()
         self.chroms_file = self.dir.parents[3] / "input-format/hg38.noy.chrom.sizes"
-        self.chroms = Hdf5Loader.load_chroms(self.chroms_file)
+        self.chroms = LazyHdf5Loader.load_chroms(self.chroms_file)
 
         tmp_hdf5 = self.create_temp_hdf5s(md5_list_path.resolve())
 
@@ -46,12 +48,13 @@ class EpiAtlasTreatmentTestData:
         )
 
     def get_ea_handler(self, label_category: str, min_class_size=3, n_fold=2):
-        """Return a EpiAtlasFoldFactory object from mock datasource."""
+        """Return a LazyEpiAtlasFoldFactory object from mock datasource."""
         return EpiAtlasFoldFactory.from_datasource(
             datasource=self.datasource,
             label_category=label_category,
             min_class_size=min_class_size,
             n_fold=n_fold,
+            mmap_dir=self.hdf5_logdir / "mmap_cache",
         )
 
     @staticmethod

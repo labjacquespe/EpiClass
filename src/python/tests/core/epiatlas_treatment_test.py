@@ -223,7 +223,9 @@ class TestEpiAtlasFoldFactory:
         result = test_data.create_total_data(oversample=False)
 
         assert np.array_equal(result.ids, test_data.train_val_dset.ids)
-        assert np.array_equal(result.signals, test_data.train_val_dset.signals)
+        assert np.array_equal(
+            result.materialize()[0], test_data.train_val_dset.materialize()[0]
+        )
         assert np.array_equal(
             result.encoded_labels, test_data.train_val_dset.encoded_labels
         )

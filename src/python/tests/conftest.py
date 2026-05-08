@@ -13,7 +13,9 @@ from typing import Iterator
 import pytest
 
 from epiclass.core.data.dataset import DataSet
-from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+)
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from tests.epilap_test_data import (
     DEFAULT_TEST_LOGDIR,
@@ -128,7 +130,7 @@ def fixture_NN_model(
     test_mapping = test_epiatlas_dataset.load_mapping(test_mapping)
 
     return LightningDenseClassifier(
-        input_size=test_epiatlas_dataset.train.signals.shape[1],
+        input_size=test_epiatlas_dataset.train.signal_length,
         output_size=len(test_epiatlas_dataset.classes),
         mapping=test_mapping,
         hparams={},

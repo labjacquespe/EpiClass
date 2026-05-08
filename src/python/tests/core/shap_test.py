@@ -13,8 +13,8 @@ from shap import TreeExplainer
 from sklearn.datasets import make_blobs
 
 from epiclass.core.data.dataset import DataSet
-from epiclass.core.data.eager import UnknownData
 from epiclass.core.estimators import EstimatorAnalyzer
+from epiclass.core.lazy.lazy_data_classes import LazyUnknownData
 from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
 
 
@@ -34,10 +34,8 @@ class Test_NN_SHAP_Handler:
     @pytest.fixture
     def mock_shap_values(self, test_epiatlas_dataset: DataSet) -> List[np.ndarray]:
         """Mock shape values for evaluation on two examples."""
-        shap_values = [
-            np.zeros(test_epiatlas_dataset.validation.signals.shape)
-            for _ in test_epiatlas_dataset.classes
-        ]
+        val_signals, _ = test_epiatlas_dataset.validation.materialize()
+        shap_values = [np.zeros(val_signals.shape) for _ in test_epiatlas_dataset.classes]
         return shap_values
 
     @pytest.fixture
@@ -71,7 +69,8 @@ class Test_NN_SHAP_Handler:
             background_dset=dset.train, evaluation_dset=dset.validation, save=False
         )
 
-        n_samples, n_features = dset.validation.signals.shape
+        val_signals, _ = dset.validation.materialize()
+        n_samples, n_features = val_signals.shape
         n_classes = len(handler.model_classes)
 
         # New SHAP 0.45+ format: single numpy array
@@ -161,15 +160,14 @@ class Test_LGBM_SHAP_Handler:
     @staticmethod
     def create_test_model(
         nb_class: int, nb_features: int, nb_samples: int
-    ) -> Tuple[EstimatorAnalyzer, UnknownData]:
+    ) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
         """Create a test LGBMClassifier model for testing."""
         X, y = make_blobs(n_samples=nb_samples, centers=nb_class, n_features=nb_features, random_state=42)  # type: ignore # pylint: disable=unbalanced-tuple-unpacking
-        test_model = LGBMClassifier(
-            boosting_type="dart",
-        )
+        test_model = LGBMClassifier(boosting_type="dart")
         test_model.fit(X, y)
 
-        dataset = UnknownData(range(nb_samples), X, y, [str(val) for val in y])
+        ids = [str(i) for i in range(nb_samples)]
+        dataset = LazyUnknownData.from_array(ids, X, y, [str(val) for val in y])
 
         model_analyzer = EstimatorAnalyzer(
             classes=[str(i) for i in range(nb_class)],
@@ -179,22 +177,14 @@ class Test_LGBM_SHAP_Handler:
         return model_analyzer, dataset
 
     @pytest.fixture(name="model2c")
-    def test_model_2classes(self) -> Tuple[EstimatorAnalyzer, UnknownData]:
+    def test_model_2classes(self) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
         """Test model with 2 classes."""
-        model_analyzer, dataset = Test_LGBM_SHAP_Handler.create_test_model(
-            2, 4, Test_LGBM_SHAP_Handler.N
-        )
-
-        return model_analyzer, dataset
+        return Test_LGBM_SHAP_Handler.create_test_model(2, 4, Test_LGBM_SHAP_Handler.N)
 
     @pytest.fixture(name="model3c")
-    def test_model_3classes(self) -> Tuple[EstimatorAnalyzer, UnknownData]:
+    def test_model_3classes(self) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
         """Test model with 3 classes."""
-        model_analyzer, dataset = Test_LGBM_SHAP_Handler.create_test_model(
-            3, 4, Test_LGBM_SHAP_Handler.N
-        )
-
-        return model_analyzer, dataset
+        return Test_LGBM_SHAP_Handler.create_test_model(3, 4, Test_LGBM_SHAP_Handler.N)
 
     @pytest.mark.parametrize(
         "test_data,num_workers",
@@ -239,7 +229,7 @@ class Test_LGBM_SHAP_Handler:
         # Test output shapes
         nb_samples = Test_LGBM_SHAP_Handler.N
         nb_classes = len(model_analyzer.classes)
-        nb_features = evaluation_dset.signals.shape[1]
+        nb_features = evaluation_dset.materialize()[0].shape[1]
 
         if nb_classes == 2:  # Binary classification
             # Returns: (n_samples, n_features) for positive class only

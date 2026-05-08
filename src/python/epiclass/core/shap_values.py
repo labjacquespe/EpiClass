@@ -115,7 +115,8 @@ class NN_SHAP_Handler:
                 (#samples, #features, #classes)
         """
         model = self.model
-        data = torch.from_numpy(background_dset.signals).float()
+        bg_signals, _ = background_dset.materialize()
+        data = torch.from_numpy(bg_signals).float()
         explainer = shap.DeepExplainer(model=model, data=data)
 
         if save:
@@ -126,7 +127,8 @@ class NN_SHAP_Handler:
                 classes=self.model_classes,
             )
 
-        signals = torch.from_numpy(evaluation_dset.signals).float()
+        eval_signals, _ = evaluation_dset.materialize()
+        signals = torch.from_numpy(eval_signals).float()
         shap_values = NN_SHAP_Handler._compute_shap_values_parallel(
             model=model,
             background_data=data,
@@ -224,9 +226,10 @@ class LGBM_SHAP_Handler:
                 - Binary classification: (#samples, #features)
                 - Multiclass: (#samples, #features, #classes)
         """
+        bg_signals, _ = background_dset.materialize()
         explainer = shap.TreeExplainer(
             model=self.model,
-            data=background_dset.signals,
+            data=bg_signals,
             model_output="raw",
             feature_perturbation="interventional",
         )
@@ -239,9 +242,10 @@ class LGBM_SHAP_Handler:
                 classes=self.model_classes,
             )
 
+        eval_signals, _ = evaluation_dset.materialize()
         shap_values = LGBM_SHAP_Handler._compute_shap_values_parallel(
             explainer=explainer,
-            signals=evaluation_dset.signals,
+            signals=eval_signals,
             num_workers=num_workers,
         )
 
