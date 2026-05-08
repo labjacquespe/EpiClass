@@ -46,7 +46,7 @@ def pytest_exception_interact(node, call, report):
         report.longrepr = (
             f"\nFileNotFoundError intercepted:\n"
             f"  {call.excinfo.value}\n"
-            f"Hint: Did you forget to extract fixtures.tar.xz?\n"
+            f"Hint: Did you forget to extract fixtures.tar.zstd? Use zstd -d fixtures.tar.zstd\n"
         )
 
 
@@ -60,7 +60,7 @@ def pytest_sessionstart(session):
         message = (
             f"Required fixtures directory '{FIXTURES_DIR}' is missing or empty.\n"
             "Please ensure the fixtures are uncompressed and available before running tests.\n"
-            "Search for: fixtures.tar.xz"
+            "Search for: fixtures.tar.zstd"
         )
         pytest.exit(reason=message, returncode=1)
     checkpoint_file = FIXTURES_DIR / "saccer3" / "best_checkpoint.list"

@@ -22,7 +22,7 @@ if not FIXTURES_DIR.exists():
     raise FileNotFoundError(
         (
             f"Could not find fixtures directory: {FIXTURES_DIR}\n"
-            "Hint: Did you extract fixtures.tar.xz?\n"
+            "Hint: Did you extract fixtures.tar.zstd? Use zstd -d fixtures.tar.zstd\n"
         )
     )
 
