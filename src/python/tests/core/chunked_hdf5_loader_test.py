@@ -62,8 +62,11 @@ def chunk_file_second(tmp_path: Path, signal_length: int) -> Path:
 
 
 @pytest.fixture
-def chunk_dir(chunk_file: Path) -> Path:
-    """Return the directory containing chunk files."""
+def chunk_dir(
+    chunk_file: Path,
+    chunk_file_second: Path,  # pylint: disable=unused-argument
+) -> Path:
+    """Return the directory containing both chunk files."""
     return chunk_file.parent
 
 
