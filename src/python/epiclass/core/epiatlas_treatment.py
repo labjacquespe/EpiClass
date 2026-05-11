@@ -470,36 +470,3 @@ class EpiAtlasFoldFactory:
             train_set = train_set.subsample(list(train_idxs))
 
         return train_set
-
-    # TODO: needed for tune_estimator
-    # def split(
-    #     self,
-    #     total_data: data.KnownData,
-    #     X=None,
-    #     y=None,
-    #     groups=None,
-    # ) -> Generator[tuple[List, List], None, None]:
-    #     """Generate indices to split total data into training and validation set.
-
-    #     Indexes match positions in output of create_total_data()
-    #     X, y and groups :
-    #         Always ignored, exist for compatibility.
-    #     """
-    #     md5_mapping = {md5: i for i, md5 in enumerate(total_data.ids)}
-
-    #     raw_dset = self.epiatlas_dataset.raw_dataset
-    #     skf = StratifiedKFold(n_splits=self.k, shuffle=False)
-    #     for train_idxs, valid_idxs in skf.split(
-    #         np.zeros((raw_dset.train.num_examples, len(self.classes))),
-    #         list(raw_dset.train.encoded_labels),
-    #     ):
-    #         # The "complete" refers to the fact that the indexes are sampling over total data.
-    #         complete_train_idxs = self._find_other_tracks(
-    #             train_idxs, self._raw_dset.train, resample=True, md5_mapping=md5_mapping  # type: ignore
-    #         )
-
-    #         complete_valid_idxs = self._find_other_tracks(
-    #             valid_idxs, self._raw_dset.train, resample=False, md5_mapping=md5_mapping  # type: ignore
-    #         )
-
-    #         yield complete_train_idxs, complete_valid_idxs

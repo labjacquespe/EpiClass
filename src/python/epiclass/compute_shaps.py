@@ -21,10 +21,10 @@ import numpy as np
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.estimators import EstimatorAnalyzer
 from epiclass.core.lazy.lazy_data_classes import LazyUnknownData
 from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
+from epiclass.core.shap_values import NN_SHAP_Handler
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -35,36 +35,28 @@ def parse_arguments() -> argparse.Namespace:
         argparse.Namespace: Namespace object with parsed arguments.
     """
     arg_parser = ArgumentParser(
-        description="Compute SHAP values for a given model. shap package is required, install with: pip install .[shap]. For LightGBM models, lightgbm package is also required, install with: pip install .[other_models]"
+        description="Compute SHAP values for a trained neural network. "
+        "Requires the `shap` package: pip install .[shap]"
     )
 
     # fmt: off
-    gen_group = arg_parser.add_argument_group("General arguments")
-    gen_group.add_argument(
-        "-m", "--model", required=True, choices=["NN", "LGBM"], help="Model to explain. Neural network or LightGBM.",
-    )
-    gen_group.add_argument(
+    arg_parser.add_argument(
         "--background_hdf5", required=True, metavar="background-hdf5", type=Path, help="A file with hdf5 filenames for the explainer background. Use absolute path!"
     )
-    gen_group.add_argument(
+    arg_parser.add_argument(
         "--explain_hdf5", required=True, metavar="explain-hdf5", type=Path, help="A file with hdf5 filenames on which to compute SHAP values. Use absolute path!",
     )
-    gen_group.add_argument(
+    arg_parser.add_argument(
         "--chromsize", required=True, type=Path, help="A file with chrom sizes.",
     )
-    gen_group.add_argument(
+    arg_parser.add_argument(
+        "--model_dir", required=True, type=DirectoryChecker(), help="Model directory containing 'best_checkpoint.list'.",
+    )
+    arg_parser.add_argument(
         "-l", "--logdir", type=DirectoryChecker(), help="Directory for the output logs.",
     )
-    gen_group.add_argument(
+    arg_parser.add_argument(
         "-o", "--output_name", metavar="--output-name", default="", help="Name (not path) of outputted pickle file containing computed SHAP values",
-    )
-    depend_group = arg_parser.add_argument_group("Model dependent arguments")
-
-    depend_group.add_argument(
-        "--model_file", metavar="model_file", type=Path, help="Needed for LGBM model. Specify the model file to load.",
-    )
-    depend_group.add_argument(
-        "--model_dir", type=DirectoryChecker(), help="Needed for neural network model. Directory with 'best_checkpoint.list' file.",
     )
     # fmt: on
     return arg_parser.parse_args()
@@ -90,13 +82,7 @@ def compute_shap(
     shap_computer,
     output_name: str,
 ):
-    """Compute SHAP values for a given model.
-
-    Args:
-        cli: Parsed command-line arguments.
-        shap_computer: NN_SHAP_Handler or LGBM_SHAP_Handler instance.
-        output_name: Name prefix for output files.
-    """
+    """Compute SHAP values for the given NN handler."""
     base_mmap = Path("./mmap_cache")
     background_set = _load_lazy(
         cli.background_hdf5, cli.chromsize, base_mmap / "background"
@@ -116,46 +102,11 @@ def main():
     """main"""
     cli = parse_arguments()
 
-    name = cli.output_name
+    logdir = cli.logdir if cli.logdir is not None else Path.cwd()
 
-    logdir = cli.logdir
-    if logdir is None:
-        logdir = Path.cwd()
-
-    model_dir = cli.model_dir
-
-    model_name = cli.model
-    if model_name == "NN":
-        if not cli.model_dir:
-            raise ValueError(
-                "Must provide a model directory for neural network models. See help."
-            )
-
-        # pylint: disable-next=import-outside-toplevel
-        from epiclass.core.shap_values import NN_SHAP_Handler
-
-        my_model = LightningDenseClassifier.restore_model(model_dir)
-
-        shap_handler = NN_SHAP_Handler(model=my_model, logdir=logdir)
-        compute_shap(cli, shap_handler, name)
-
-    if model_name == "LGBM":
-        try:
-            # pylint: disable-next=import-outside-toplevel
-            from epiclass.core.shap_values import LGBM_SHAP_Handler
-        except ImportError as e:
-            raise ImportError(
-                "LightGBM SHAP computation requires `lightgbm`."
-                "Install with: pip install .[lgbm]"
-            ) from e
-
-        if not cli.model_file:
-            raise ValueError("Must provide a model file for LGBM models.")
-
-        model_analyzer = EstimatorAnalyzer.restore_model_from_path(cli.model_file)
-
-        shap_handler = LGBM_SHAP_Handler(model_analyzer=model_analyzer, logdir=logdir)
-        compute_shap(cli, shap_handler, name)
+    my_model = LightningDenseClassifier.restore_model(cli.model_dir)
+    shap_handler = NN_SHAP_Handler(model=my_model, logdir=logdir)
+    compute_shap(cli, shap_handler, cli.output_name)
 
 
 if __name__ == "__main__":

@@ -2,20 +2,14 @@
 # pylint: disable=import-error
 from __future__ import annotations
 
-import itertools
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 import pytest
-from lightgbm import LGBMClassifier
-from shap import TreeExplainer
-from sklearn.datasets import make_blobs
 
 from epiclass.core.data.dataset import DataSet
-from epiclass.core.estimators import EstimatorAnalyzer
-from epiclass.core.lazy.lazy_data_classes import LazyUnknownData
-from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
+from epiclass.core.shap_values import NN_SHAP_Handler
 
 
 class Test_NN_SHAP_Handler:
@@ -113,130 +107,3 @@ class Test_NN_SHAP_Handler:
         assert filename.name.startswith(f"shap_{name}_")
         assert filename.name.endswith(f".{ext}")
         assert filename.parent == Path(handler.logdir)
-
-
-@pytest.mark.skip(reason="One time thing")
-def test_tree_explainer():
-    """Minimal test to check if TreeExplainer works with LGBMClassifier."""
-    X, y = make_blobs(n_samples=100, centers=3, n_features=3, random_state=42)  # type: ignore # pylint: disable=unbalanced-tuple-unpacking
-
-    for boosting_method, model_output in itertools.product(
-        ["gbdt", "dart"],
-        ["raw", "probability", "log_loss", "predict", "predict_proba"],
-    ):
-        test_model = LGBMClassifier(boosting_type=boosting_method, objective="multiclass")
-        test_model.fit(X, y)
-        try:
-            explainer = TreeExplainer(
-                model=test_model,
-                data=X,
-                model_output=model_output,
-                feature_perturbation="interventional",
-            )
-        except AttributeError:
-            print(
-                f"({boosting_method})(err2) TreeExplainer does not support multiclass + model_output={model_output}"
-            )
-            continue
-        except Exception as e:
-            if "Model does not have a known objective or output type" in e.args[0]:
-                print(
-                    f"({boosting_method})(err1) TreeExplainer does not support multiclass + model_output={model_output}"
-                )
-                continue
-            raise e
-        shap_values = explainer.shap_values(X)
-        print(
-            f"({boosting_method}) TreeExplainer supports multiclass + model_output={model_output}"
-        )
-        print(np.array(shap_values).shape)
-
-
-class Test_LGBM_SHAP_Handler:
-    """Class to test LGBM_SHAP_Handler class."""
-
-    N = 100
-
-    @staticmethod
-    def create_test_model(
-        nb_class: int, nb_features: int, nb_samples: int
-    ) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
-        """Create a test LGBMClassifier model for testing."""
-        X, y = make_blobs(n_samples=nb_samples, centers=nb_class, n_features=nb_features, random_state=42)  # type: ignore # pylint: disable=unbalanced-tuple-unpacking
-        test_model = LGBMClassifier(boosting_type="dart")
-        test_model.fit(X, y)
-
-        ids = [str(i) for i in range(nb_samples)]
-        dataset = LazyUnknownData.from_array(ids, X, y, [str(val) for val in y])
-
-        model_analyzer = EstimatorAnalyzer(
-            classes=[str(i) for i in range(nb_class)],
-            estimator=test_model,
-        )
-
-        return model_analyzer, dataset
-
-    @pytest.fixture(name="model2c")
-    def test_model_2classes(self) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
-        """Test model with 2 classes."""
-        return Test_LGBM_SHAP_Handler.create_test_model(2, 4, Test_LGBM_SHAP_Handler.N)
-
-    @pytest.fixture(name="model3c")
-    def test_model_3classes(self) -> Tuple[EstimatorAnalyzer, LazyUnknownData]:
-        """Test model with 3 classes."""
-        return Test_LGBM_SHAP_Handler.create_test_model(3, 4, Test_LGBM_SHAP_Handler.N)
-
-    @pytest.mark.parametrize(
-        "test_data,num_workers",
-        [("model2c", 1), ("model3c", 1), ("model2c", 2), ("model3c", 2)],
-    )
-    def test_compute_shaps(self, test_data, num_workers, tmp_path, request):
-        """Tests the compute_shaps method of the LGBM_SHAP_Handler class.
-
-        With SHAP 0.45+, TreeExplainer return format changed for multiclass models:
-
-        Binary classification (one input, one output):
-            Returns: np.ndarray of shape (n_samples, n_features)
-            Contains SHAP values for the positive class only.
-
-        Multiclass classification (one input, multiple outputs):
-            Old format (< 0.45): List of arrays, one per class
-            New format (>= 0.45): Single array of shape (n_samples, n_features, n_classes)
-
-        This test verifies:
-            1. SHAP values are numpy arrays (not lists)
-            2. Shapes match the new SHAP 0.45+ conventions
-            3. Expected values from explainer are correctly formatted
-            4. Results are properly saved to disk
-        """
-        model_analyzer, evaluation_dset = request.getfixturevalue(test_data)
-        handler = LGBM_SHAP_Handler(model_analyzer, tmp_path)
-
-        # Test compute_shaps
-        explainer, shap_values = handler.compute_shaps(
-            background_dset=evaluation_dset,
-            evaluation_dset=evaluation_dset,
-            save=True,
-            name="test",
-            num_workers=num_workers,
-        )
-
-        # Test output types - must be numpy array in SHAP 0.45+
-        expected_value = explainer.expected_value
-        assert isinstance(shap_values, np.ndarray)
-        assert isinstance(expected_value, (float, np.ndarray, np.floating))
-
-        # Test output shapes
-        nb_samples = Test_LGBM_SHAP_Handler.N
-        nb_classes = len(model_analyzer.classes)
-        nb_features = evaluation_dset.materialize()[0].shape[1]
-
-        if nb_classes == 2:  # Binary classification
-            # Returns: (n_samples, n_features) for positive class only
-            assert shap_values.shape == (nb_samples, nb_features)
-            assert isinstance(expected_value, (float, np.floating))
-        else:  # Multiclass classification
-            # New format: (n_samples, n_features, n_classes)
-            assert shap_values.shape == (nb_samples, nb_features, nb_classes)
-            assert isinstance(expected_value, np.ndarray)
-            assert expected_value.shape == (nb_classes,)

@@ -20,7 +20,6 @@ except RuntimeError:
 # ---------------------------------------------------------------------
 
 import concurrent.futures
-import copy
 from pathlib import Path
 from typing import List, Tuple
 
@@ -28,11 +27,7 @@ import numpy as np
 import pandas as pd
 import shap
 import torch
-from lightgbm import LGBMClassifier
-from numpy.typing import ArrayLike
-from sklearn.pipeline import Pipeline
 
-from epiclass.core.estimators import EstimatorAnalyzer
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.types import SomeData
 from epiclass.utils.time import time_now_str
@@ -178,120 +173,4 @@ class NN_SHAP_Handler:
             )
 
         shap_values = np.concatenate(shap_values_chunks, axis=0)
-        return shap_values
-
-
-class LGBM_SHAP_Handler:
-    """Handle shap computations and data saving/loading."""
-
-    def __init__(self, model_analyzer: EstimatorAnalyzer, logdir: Path | str):
-        self.logdir = logdir
-        self.saver = SHAP_Saver(logdir=logdir)
-        self.model_classes = list(model_analyzer.mapping.items())
-        self.model: LGBMClassifier = LGBM_SHAP_Handler._check_model_is_lgbm(
-            model_analyzer
-        )
-
-    @staticmethod
-    def _check_model_is_lgbm(model_analyzer: EstimatorAnalyzer) -> LGBMClassifier:
-        """Return lightgbm classifier if found, else raise ValueError."""
-        model = model_analyzer.classifier
-        if isinstance(model, Pipeline):
-            model = model.steps[-1][1]
-        if not isinstance(model, LGBMClassifier):
-            raise ValueError(
-                f"Expected model to be a lightgbm classifier, but got {model} instead."
-            )
-        return model
-
-    def compute_shaps(
-        self,
-        background_dset: SomeData,
-        evaluation_dset: SomeData,
-        save=True,
-        name="",
-        num_workers: int = 4,
-    ) -> Tuple[shap.TreeExplainer, np.ndarray]:
-        """Compute shap values of lgbm model on evaluation dataset.
-
-        Args:
-            background_dset: Background dataset for SHAP explainer.
-            evaluation_dset: Dataset to compute SHAP values for.
-            save: Whether to save the results.
-            name: Name prefix for saved files.
-            num_workers: Number of parallel workers.
-
-        Returns:
-            Tuple[explainer, shap_values] where shap_values is np.ndarray of shape:
-                - Binary classification: (#samples, #features)
-                - Multiclass: (#samples, #features, #classes)
-        """
-        bg_signals, _ = background_dset.materialize()
-        explainer = shap.TreeExplainer(
-            model=self.model,
-            data=bg_signals,
-            model_output="raw",
-            feature_perturbation="interventional",
-        )
-
-        if save:
-            self.saver.save_to_npz(
-                name=name + "_explainer_background",
-                background_md5s=background_dset.ids,
-                background_expectation=explainer.expected_value,  # type: ignore
-                classes=self.model_classes,
-            )
-
-        eval_signals, _ = evaluation_dset.materialize()
-        shap_values = LGBM_SHAP_Handler._compute_shap_values_parallel(
-            explainer=explainer,
-            signals=eval_signals,
-            num_workers=num_workers,
-        )
-
-        if save:
-            self.saver.save_to_npz(
-                name=name + "_evaluation",
-                evaluation_md5s=evaluation_dset.ids,
-                shap_values=shap_values,
-                expected_value=explainer.expected_value,
-                classes=self.model_classes,
-            )
-
-        return explainer, shap_values
-
-    @staticmethod
-    def _compute_shap_values_parallel(
-        explainer: shap.TreeExplainer,
-        signals: ArrayLike,
-        num_workers: int,
-    ) -> np.ndarray:
-        """Compute SHAP values in parallel using a ThreadPoolExecutor.
-
-        Args:
-            explainer: The SHAP TreeExplainer object.
-            signals: The evaluation dataset samples of shape (#samples, #features).
-            num_workers: The number of parallel threads to use.
-
-        Returns:
-            np.ndarray: SHAP values of shape:
-                - Binary classification: (#samples, #features)
-                - Multiclass: (#samples, #features, #classes)
-        """
-        # Split the signals into chunks for parallel processing
-        signal_chunks = np.array_split(signals, num_workers)
-
-        def worker(chunk):
-            """Compute shap values using an explainer copy."""
-            local_explainer = copy.deepcopy(explainer)  # Deep copy to avoid thread issues
-            return local_explainer.shap_values(X=chunk, check_additivity=True)
-
-        # Use ThreadPoolExecutor to compute shap_values in parallel
-        # The C++ backend (of TreeExplainer) should release the GIL, so multi-core should still work.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            shap_values_chunks = list(executor.map(worker, signal_chunks))
-
-        # Concatenate along sample dimension (axis=0)
-        shap_values = np.concatenate(shap_values_chunks, axis=0)
-
         return shap_values

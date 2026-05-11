@@ -73,8 +73,6 @@ def test_imports() -> None:
     import matplotlib.pyplot as plt
     import numpy as np
     import numpy.typing as npt
-    import optuna
-    import optuna.integration.lightgbm as lgb
     import pandas as pd
     import paramiko
     import plotly.express as px
@@ -95,7 +93,6 @@ def test_imports() -> None:
     from git import Repo
     from imblearn.over_sampling import RandomOverSampler
     from IPython.display import display
-    from lightgbm import LGBMClassifier, log_evaluation
     from matplotlib import cm
     from matplotlib.colors import ListedColormap
     from numpy.typing import ArrayLike
@@ -129,8 +126,6 @@ def test_imports() -> None:
         StandardScaler,
     )
     from sklearn.svm import SVC, LinearSVC
-    from skopt import BayesSearchCV
-    from skopt.space import Categorical, Integer, Real
     from statsmodels.multivariate.manova import MANOVA
     from tabulate import tabulate
     from torch import Tensor, nn
@@ -142,7 +137,7 @@ def test_imports() -> None:
         DefaultHelpParser as ArgumentParser,
     )
     from epiclass.argparseutils.directorychecker import DirectoryChecker
-    from epiclass.core import analysis, estimators, metadata
+    from epiclass.core import analysis, metadata
     from epiclass.core.analysis import write_pred_table
     from epiclass.core.confusion_matrix import ConfusionMatrixWriter
     from epiclass.core.data.dataset import DataSet
@@ -153,13 +148,11 @@ def test_imports() -> None:
         TRACKS_MAPPING,
         EpiAtlasFoldFactory,
     )
-    from epiclass.core.estimators import EstimatorAnalyzer
-    from epiclass.core.lgbm import tune_lgbm
     from epiclass.core.loaders.dataset_factory import DataSetFactory
     from epiclass.core.loaders.hdf5_loader import Hdf5Loader
     from epiclass.core.metadata import Metadata, UUIDMetadata
     from epiclass.core.model_pytorch import LightningDenseClassifier
-    from epiclass.core.shap_values import LGBM_SHAP_Handler, NN_SHAP_Handler
+    from epiclass.core.shap_values import NN_SHAP_Handler
     from epiclass.core.trainer import MyTrainer, define_callbacks
     from epiclass.core.types import SomeData, TensorData
     from epiclass.utils import modify_metadata
