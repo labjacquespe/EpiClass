@@ -8,9 +8,10 @@ from typing import Generic, List, Type, TypeVar
 from sklearn import preprocessing
 
 from epiclass.core.data.eager import Data, KnownData
+from epiclass.core.lazy.lazy_data_classes import LazyData
 
-# Define a type variable that can be either KnownData or UnknownData
-DataType = TypeVar("DataType", bound="Data")
+# Define a type variable that can be either KnownData or UnknownData (eager or lazy)
+DataType = TypeVar("DataType", bound="Data | LazyData")
 
 
 class DataSet(Generic[DataType], abc.ABC):
@@ -67,8 +68,8 @@ class DataSet(Generic[DataType], abc.ABC):
                 file=sys.stderr,
             )
         else:
-            if not issubclass(data_class, Data):
-                raise AssertionError("data_class must be a subclass of Data")
+            if not issubclass(data_class, (Data, LazyData)):
+                raise AssertionError("data_class must be a subclass of Data or LazyData")
 
         assert data_class is not None  # for pylance
 
@@ -100,12 +101,6 @@ class DataSet(Generic[DataType], abc.ABC):
             if dset.num_examples:
                 new_classes.extend(dset.original_labels)
         self._sorted_classes = sorted(list(set(new_classes)))
-
-    def preprocess(self, f):
-        """Apply preprocessing function to all datasets."""
-        for dset in [self._train, self._validation, self._test]:
-            if dset.num_examples:
-                dset.preprocess(f)
 
     def save_mapping(self, path):
         """Write the 'output position --> label' mapping to path."""
