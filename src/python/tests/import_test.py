@@ -141,15 +141,11 @@ def test_imports() -> None:
     from epiclass.core.analysis import write_pred_table
     from epiclass.core.confusion_matrix import ConfusionMatrixWriter
     from epiclass.core.data.dataset import DataSet
-    from epiclass.core.data.eager import KnownData, UnknownData
     from epiclass.core.data_source import HDF5_RESOLUTION, EpiDataSource
-    from epiclass.core.epiatlas_treatment import (
-        ACCEPTED_TRACKS,
-        TRACKS_MAPPING,
-        EpiAtlasFoldFactory,
-    )
-    from epiclass.core.loaders.dataset_factory import DataSetFactory
-    from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+    from epiclass.core.epiatlas_constants import ACCEPTED_TRACKS, TRACKS_MAPPING
+    from epiclass.core.lazy.lazy_data_classes import LazyKnownData, LazyUnknownData
+    from epiclass.core.lazy.lazy_fold_factory import LazyEpiAtlasFoldFactory
+    from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
     from epiclass.core.metadata import Metadata, UUIDMetadata
     from epiclass.core.model_pytorch import LightningDenseClassifier
     from epiclass.core.shap_values import NN_SHAP_Handler

@@ -10,12 +10,14 @@ import numpy as np
 import pytest
 
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_treatment import (
+from epiclass.core.epiatlas_constants import (
     ACCEPTED_TRACKS,
     EPIRR_LABEL,
     LEADER_TRACKS,
     OTHER_TRACKS,
-    EpiAtlasFoldFactory,
+)
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
 )
 from epiclass.core.metadata import Metadata
 from epiclass.utils.general_utility import write_md5s_to_file

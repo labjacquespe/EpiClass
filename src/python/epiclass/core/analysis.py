@@ -19,7 +19,7 @@ import pytorch_lightning as pl
 import torch
 import torchmetrics
 from torch import Tensor
-from torch.utils.data import TensorDataset
+from torch.utils.data import Dataset
 
 from epiclass.core.confusion_matrix import ConfusionMatrixWriter
 from epiclass.core.data.dataset import DataSet
@@ -56,15 +56,17 @@ class Analysis:
         else:
             self._save_dir = None
 
-        # Original DataSet object (legacy)
-        self.datasets = datasets_info
-        self._set_dict = {
-            "training": self.datasets.train,
-            "validation": self.datasets.validation,
-            "test": self.datasets.test,
+        # Per-split sample ids; only used to label rows in the prediction CSV.
+        self._ids_dict = {
+            name: list(split.ids) if split.num_examples else []
+            for name, split in (
+                ("training", datasets_info.train),
+                ("validation", datasets_info.validation),
+                ("test", datasets_info.test),
+            )
         }
 
-        # TensorDataset objects (pytorch)
+        # Torch Dataset objects driving inference (TensorDataset, LazyHdf5Dataset, ...).
         self._train = train_dataset
         self._val = val_dataset
         self._test = test_dataset
@@ -134,7 +136,7 @@ class Analysis:
             print(f"Cannot compute {name} predictions : No {name} dataset given")
             return None
 
-        if isinstance(to_predict, TensorDataset):
+        if isinstance(to_predict, Dataset):
             preds, targets = self._model.compute_predictions_from_dataset(to_predict)
             str_targets = [self._model.mapping[int(val.item())] for val in targets]
         elif isinstance(to_predict, Tensor):
@@ -142,7 +144,7 @@ class Analysis:
             str_targets = ["Unknown" for _ in range(to_predict.size(dim=1))]
         else:
             raise ValueError(
-                f"Cannot compute {name} predictions : to_predict should be either TensorDataset or Tensor, but got {type(to_predict)}"
+                f"Cannot compute {name} predictions : to_predict should be either Dataset or Tensor, but got {type(to_predict)}"
             )
 
         write_pred_table(
@@ -152,7 +154,7 @@ class Analysis:
                 for val in torch.argmax(preds, dim=-1)
             ],
             str_targets=str_targets,
-            md5s=self._set_dict[name].ids,
+            md5s=self._ids_dict[name],
             classes=self._classes,
             path=path,
         )

@@ -17,6 +17,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from epiclass.core.data import dataset
 from epiclass.core.data_source import EpiDataSource
+from epiclass.core.epiatlas_constants import EPIRR_LABEL
 from epiclass.core.metadata import UUIDMetadata
 
 from .lazy_data_classes import LazyKnownData
@@ -25,8 +26,6 @@ from .lazy_hdf5_loader import LazyHdf5Loader
 NDArray = npt.NDArray[Any]
 NDArrayInt = npt.NDArray[int]
 NDArrayBool = npt.NDArray[bool]
-
-EPIRR_LABEL = "epirr_id"
 
 
 class LazyEpiAtlasDataset:

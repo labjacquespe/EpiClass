@@ -26,6 +26,7 @@ from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis, metadata
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data_source import EpiDataSource
+from epiclass.core.lazy.lazy_data_classes import LazyKnownData
 from epiclass.core.lazy.lazy_fold_factory import (
     LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
 )
@@ -191,7 +192,7 @@ def main():
 
     oversample = hparams.get("oversample", hparams.get("oversampling", True))
     my_data = ea_handler.create_total_data(oversample=oversample)
-    my_dataset = DataSet.empty_collection()
+    my_dataset = DataSet.empty_collection(data_class=LazyKnownData)
     my_dataset.set_train(my_data)
 
     # Everything happens in there

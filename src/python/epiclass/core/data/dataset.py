@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 import abc
-import sys
 from typing import Generic, List, Type, TypeVar
 
 from sklearn import preprocessing
 
-from epiclass.core.data.eager import Data, KnownData
-from epiclass.core.lazy.lazy_data_classes import LazyData
+from epiclass.core.lazy.lazy_data_classes import LazyData, LazyKnownData
 
-# Define a type variable that can be either KnownData or UnknownData (eager or lazy)
-DataType = TypeVar("DataType", bound="Data | LazyData")
+DataType = TypeVar("DataType", bound="LazyData")
 
 
 class DataSet(Generic[DataType], abc.ABC):
@@ -51,28 +48,13 @@ class DataSet(Generic[DataType], abc.ABC):
 
     @classmethod
     def empty_collection(
-        cls, data_class: Type[DataType] | None = None
+        cls, data_class: Type[DataType] = LazyKnownData  # type: ignore
     ) -> "DataSet[DataType]":
-        """Returns an empty object.
+        """Return an empty DataSet whose train/val/test are empty instances of data_class."""
+        if not issubclass(data_class, LazyData):
+            raise AssertionError("data_class must be a subclass of LazyData")
 
-        Args:
-            data_class: The data class to use (KnownData, UnknownData, lazy versions.)
-        """
         obj = cls.__new__(cls)
-
-        # Narrow the type
-        if data_class is None:
-            data_class = KnownData  # type: ignore
-            print(
-                "Warning: data_class not provided, using KnownData.",
-                file=sys.stderr,
-            )
-        else:
-            if not issubclass(data_class, (Data, LazyData)):
-                raise AssertionError("data_class must be a subclass of Data or LazyData")
-
-        assert data_class is not None  # for pylance
-
         obj._train = data_class.empty_collection()
         obj._validation = data_class.empty_collection()
         obj._test = data_class.empty_collection()

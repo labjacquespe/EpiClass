@@ -6,7 +6,7 @@ from torch.utils.data import TensorDataset
 
 from epiclass.core.analysis import Analysis
 from epiclass.core.data.dataset import DataSet
-from epiclass.core.data.eager import KnownData
+from epiclass.core.lazy.lazy_data_classes import LazyKnownData
 from epiclass.core.metadata import Metadata
 from epiclass.core.model_pytorch import LightningDenseClassifier
 
@@ -49,17 +49,15 @@ def fixture_dummy_datasets():
 
     metadata = Metadata.from_dict(meta, allow_non_md5sum_index=True)
 
-    train_data = KnownData(
-        ids=train_ids, x=train_x, y=train_y, y_str=train_y_str, metadata=metadata
+    train_data = LazyKnownData.from_array(
+        train_ids, train_x, train_y, train_y_str, metadata
     )
-    val_data = KnownData(
-        ids=val_ids, x=val_x, y=val_y, y_str=val_y_str, metadata=metadata
-    )
+    val_data = LazyKnownData.from_array(val_ids, val_x, val_y, val_y_str, metadata)
 
     dataset = DataSet(
         training=train_data,
         validation=val_data,
-        test=KnownData.empty_collection(),
+        test=LazyKnownData.empty_collection(),
         sorted_classes=classes,
     )
 

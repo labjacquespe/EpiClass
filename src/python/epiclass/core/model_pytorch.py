@@ -10,7 +10,7 @@ import lightning as pl
 import torch
 import torch.nn.functional as F
 from torch import Tensor, nn
-from torch.utils.data import TensorDataset
+from torch.utils.data import DataLoader, Dataset
 from torchinfo import summary
 from torchmetrics import (
     Accuracy,
@@ -210,27 +210,42 @@ class LightningDenseClassifier(pl.LightningModule):
             col_names=["input_size", "output_size", "num_params"],
         )
 
-    def compute_metrics(self, dataset: TensorDataset):
-        """Return dict of metrics for given dataset."""
+    def compute_metrics(self, dataset: Dataset, batch_size: int = 256):
+        """Return dict of metrics for given dataset.
+
+        Iterates the dataset via a DataLoader rather than slurping it via
+        ``dataset[:]`` so it works for streaming lazy datasets without
+        materialising the full signal matrix in RAM.
+        """
         self.cpu()
         self.eval()
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        # Reset metric state, then accumulate per-batch.
+        self.metrics.reset()
         with torch.no_grad():
-            features, targets = dataset[:]
-            features, targets = features.cpu(), targets.cpu()
-            preds = self(features)
-        return self.metrics(preds, targets)
+            for batch_x, batch_y in loader:
+                preds = self(batch_x.cpu())
+                self.metrics.update(preds, batch_y.cpu())
+        return self.metrics.compute()
 
     def compute_predictions_from_dataset(
-        self, dataset: TensorDataset
+        self, dataset: Dataset, batch_size: int = 256
     ) -> Tuple[Tensor, Tensor]:
-        """Return probability predictions and targets from dataset."""
+        """Return probability predictions and targets from dataset.
+
+        Iterates the dataset via a DataLoader; only the per-sample (n_classes)
+        probability vector is kept in RAM, not the full input matrix.
+        """
         self.cpu()
         self.eval()
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+        prob_chunks: list[Tensor] = []
+        target_chunks: list[Tensor] = []
         with torch.no_grad():
-            features, targets = dataset[:]
-            features, targets = features.cpu(), targets.cpu()
-            probs = self.predict_proba(features)
-        return probs, targets
+            for batch_x, batch_y in loader:
+                prob_chunks.append(self.predict_proba(batch_x.cpu()))
+                target_chunks.append(batch_y.cpu())
+        return torch.cat(prob_chunks, dim=0), torch.cat(target_chunks, dim=0)
 
     def compute_predictions_from_features(self, features: Tensor) -> Tensor:
         """Return probability predictions from features."""

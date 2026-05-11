@@ -2,7 +2,9 @@
 
 import pytest
 
-from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+)
 from epiclass.utils.bed_utils import (
     bed_ranges_to_bins,
     bins_to_bed_ranges,

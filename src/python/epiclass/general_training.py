@@ -25,9 +25,9 @@ from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as Argume
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
 from epiclass.core.data.dataset import DataSet
-from epiclass.core.data.eager import KnownData
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_data_classes import LazyKnownData
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.metadata import Metadata
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
@@ -52,6 +52,7 @@ class GeneralFoldFactory:
         label_category: str,
         min_class_size: int = 3,
         n_fold: int = 4,
+        mmap_dir: Path | None = None,
     ):
         self.k = n_fold
         if n_fold < 2:
@@ -61,7 +62,7 @@ class GeneralFoldFactory:
 
         # Load and filter metadata
         meta = Metadata(datasource.metadata_file)
-        files = Hdf5Loader.read_list(datasource.hdf5_file)
+        files = LazyHdf5Loader.read_list(datasource.hdf5_file)
         meta.apply_filter(lambda item: item[0] in files)
         meta.remove_missing_labels(label_category)
         meta.remove_small_classes(min_class_size, label_category)
@@ -70,24 +71,30 @@ class GeneralFoldFactory:
         self._classes = meta.unique_classes(label_category)
         self._classes_mapping = {label: i for i, label in enumerate(self._classes)}
 
-        # Load signals
-        loader = Hdf5Loader(chrom_file=datasource.chromsize_file, normalization=True)
-        loader = loader.load_hdf5s(
+        # Register HDF5 paths lazily (no signals loaded yet)
+        loader = LazyHdf5Loader(
+            chrom_file=datasource.chromsize_file,
+            normalization=True,
+            mmap_dir=mmap_dir,
+        )
+        loader.register_hdf5s(
             data_file=datasource.hdf5_file,
             md5s=list(meta.md5s),
             strict=True,
             verbose=True,
         )
-        signals = loader.signals
+        loader.preload_all()
 
-        md5s = list(signals.keys())
+        md5s = list(loader.file_paths.keys())
         labels = [meta[md5][label_category] for md5 in md5s]
 
-        self._dataset = KnownData(
+        self._dataset = LazyKnownData(
             ids=md5s,
-            x=list(signals.values()),
+            loader=loader,
             y_str=labels,
-            y=[self._classes_mapping[label] for label in labels],
+            y=np.array(
+                [self._classes_mapping[label] for label in labels], dtype=np.int64
+            ),
             metadata=meta,
         )
 
@@ -102,11 +109,14 @@ class GeneralFoldFactory:
     def yield_split(self, oversample: bool = True) -> Generator[DataSet, None, None]:
         """Yield DataSet for each fold of stratified k-fold CV."""
         dset = self._dataset
-        X = dset.signals
         y = dset.encoded_labels
 
+        # StratifiedKFold only inspects sample count; passing a placeholder
+        # avoids materializing all signals just to split on indices.
+        x_placeholder = np.zeros((len(y), 1), dtype=np.float32)
+
         skf = StratifiedKFold(n_splits=self.k, shuffle=True, random_state=42)
-        for train_idxs, valid_idxs in skf.split(X, y):
+        for train_idxs, valid_idxs in skf.split(x_placeholder, y):
             train_idxs = list(train_idxs)
             valid_idxs = list(valid_idxs)
 
@@ -124,7 +134,7 @@ class GeneralFoldFactory:
             yield DataSet(
                 training=train_set,
                 validation=valid_set,
-                test=KnownData.empty_collection(),
+                test=LazyKnownData.empty_collection(),
                 sorted_classes=self._classes,
             )
 
@@ -210,7 +220,7 @@ def do_one_experiment(
     mapping = my_data.load_mapping(mapping_file)
 
     # Model
-    input_size = my_data.train.signals[0].size
+    input_size = my_data.train.signal_length
     output_size = len(my_data.classes)
 
     my_model = LightningDenseClassifier(
@@ -321,6 +331,7 @@ def main():
         label_category=cli.category,
         min_class_size=cli.min_class_size,
         n_fold=cli.n_fold,
+        mmap_dir=logdir / "mmap_cache",
     )
     print(f"Loading time: {time_now() - loading_begin}")
 

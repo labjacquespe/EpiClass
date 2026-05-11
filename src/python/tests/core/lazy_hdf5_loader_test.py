@@ -11,7 +11,7 @@ import h5py  # pylint: disable=unused-import # import to avoid weirdness
 import numpy as np
 import pytest
 
-from epiclass.core.epiatlas_treatment import EpiAtlasDataset
+from epiclass.core.lazy.lazy_fold_factory import LazyEpiAtlasDataset as EpiAtlasDataset
 from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader as Hdf5Loader
 from tests.epilap_test_data import EpiAtlasTreatmentTestData
 

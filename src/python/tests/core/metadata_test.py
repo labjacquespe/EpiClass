@@ -6,7 +6,9 @@ import tempfile
 
 import pytest
 
-from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+)
 from epiclass.core.metadata import UUIDMetadata, env_filtering
 
 # pytestmark = pytest.mark.filterwarnings("ignore:.*Cannot read file directly.*")
