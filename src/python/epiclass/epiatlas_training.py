@@ -26,7 +26,9 @@ from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis, metadata
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_treatment import EpiAtlasFoldFactory
+from epiclass.core.lazy.lazy_fold_factory import (
+    LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+)
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils import modify_metadata
@@ -250,7 +252,7 @@ def do_one_experiment(
         logger.experiment.log_asset(mapping_file)
 
         #  DEFINE sizes for input and output LAYERS of the network
-        input_size = my_data.train.signals[0].size  # type: ignore
+        input_size = my_data.train.signal_length
         output_size = len(my_data.classes)
         hl_units = int(os.getenv("LAYER_SIZE", default="3000"))
         nb_layers = int(os.getenv("NB_LAYER", default="1"))
