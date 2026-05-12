@@ -4,15 +4,16 @@ This file provides guidance to coding agents (e.g. Claude Code) when working wit
 
 ## Project Overview
 
-EpiClass (Epigenomic Classifier) is a framework for training machine learning models (neural networks, LGBM, Random Forest, etc.) to classify and label epigenomic data. It uses PyTorch Lightning for neural network training and scikit-learn/LightGBM for traditional ML models.
+EpiClass (Epigenomic Classifier) is a framework for training neural network models to classify and label epigenomic data. It uses PyTorch Lightning for training and supports both single-sample and chunked HDF5 input formats.
 
 ## Repository Layout
 
 - `src/python/` — Main Python package root (where `pyproject.toml` lives)
   - `epiclass/` — Core package
-    - `core/` — Data loading (`loaders/`, `data/`), model (`model_pytorch.py`), training (`trainer.py`), metadata (`metadata.py`), estimators (`estimators.py`)
+    - `core/` — Data loading (`lazy/`), model (`model_pytorch.py`), training (`trainer.py`), metadata (`metadata.py`), analysis (`analysis.py`)
+    - `core/lazy/` — Lazy data layer: `lazy_hdf5_loader.py`, `chunked_hdf5_loader.py`, `lazy_data_classes.py`, `lazy_fold_factory.py`, `lazy_torch_dataset.py`
     - `utils/` — Analysis scripts, notebooks, HDF5 utilities, SHAP analysis
-    - Top-level scripts: `epiatlas_training.py`, `predict.py`, `compute_shaps.py`, `other_estimators.py`
+    - Top-level scripts: `epiatlas_training.py`, `epiatlas_training_no_valid.py`, `predict.py`, `compute_shaps.py`, `general_training.py`
   - `tests/` — pytest test suite (mirrors `core/`, `mains/`, `utils/` structure)
   - `requirements/` — Pinned dependency files per Python version (`req_test-pyX.Y.txt`)
 - `src/R/` — R scripts for metadata handling (ENCODE, recount3, ChIP-Atlas)
@@ -40,7 +41,7 @@ pip install -e .[dev]      # install with dev tools (black, isort, pylint, pre-c
 cd src/python/tests && tar -xf fixtures.tar.xz
 
 # Run all tests (from src/python/)
-pytest tests
+pytest tests -n auto
 ```
 
 The `tests/justfile` provides multi-version test orchestration via `uv`:
@@ -62,9 +63,11 @@ just test-all               # run tests for Python 3.10, 3.11, 3.12 in parallel
 
 ## Architecture Notes
 
-- **Data pipeline**: Epigenomic signal data is stored in HDF5 files (created by epigeec tool). `hdf5_loader.py` loads them, `dataset_factory.py` creates PyTorch datasets. Chromosome sizes files + resolution define the genomic bins.
-- **Metadata**: The `Metadata` class (`core/metadata.py`) handles label management. Any value (including empty strings) in a label category is treated as a valid label — use `remove_missing_labels()` to clean.
-- **Training flow**: `epiatlas_training.py` does cross-validation; `epiatlas_training_no_valid.py` trains without validation (for final models). Both use PyTorch Lightning via `trainer.py`.
-- **Non-NN models**: `other_estimators.py` supports LinearSVC, Random Forest, Logistic Regression, and LGBM with Bayesian hyperparameter search.
+- **Data pipeline**: Epigenomic signal data is stored in HDF5 files (created by epigeec tool). Two input formats are supported:
+  - *Single-sample HDF5*: one file per sample with per-chromosome datasets. Requires a chromosome sizes file (`--chromsize`). Loaded via `LazyHdf5Loader`, which preloads all samples into a single memory-mapped `.npy` file (`preload_all()`) and exposes it via `as_mmap()`. Chromosome sizes files + resolution define the genomic bins.
+  - *Chunked HDF5* (`--chunked`): multi-sample HDF5 files produced by `utils/preprocessing/hdf5_chunks_creation.py`. No chromosome sizes needed. Loaded via `ChunkedHdf5Loader`, which streams chunk-by-chunk (true streaming for PCA; materializes for UMAP due to random-access requirement).
+- **Lazy data layer** (`core/lazy/`): all data access goes through this stack. `LazyKnownData` / `LazyUnknownData` hold sample IDs + a loader reference; signals are read on demand. `LazyEpiAtlasFoldFactory` drives cross-validation. `LazyHdf5Dataset` wraps them as a PyTorch `Dataset`. `as_mmap(mmap_mode="c")` is required for UMAP (copy-on-write so numba's jitted kernels accept the array); `mmap_mode="r"` is sufficient for everything else.
+- **Metadata**: The `Metadata` class (`core/metadata.py`) handles label management. Any value (including empty strings) in a label category is treated as a valid label — use `remove_missing_labels()` to clean. Track/assay constants live in `core/epiatlas_constants.py`.
+- **Training flow**: `epiatlas_training.py` does cross-validation; `epiatlas_training_no_valid.py` trains without validation (for final models). Both use PyTorch Lightning via `trainer.py`. `general_training.py` is the shared backbone used by both.
 - **Experiment tracking**: Comet-ML integration (supports `--offline` mode).
 - **Models are published** to Hugging Face under the "EpiClass models" collection.
