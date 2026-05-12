@@ -5,7 +5,7 @@ from pathlib import Path
 
 import numpy as np
 
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def parse_arguments():
@@ -59,29 +59,23 @@ def main():
         output_npz_path = output_npz_path.with_name(output_npz_path.stem + "_new.npz")
         print(f"New output file: {output_npz_path}")
 
-    hdf5_loader = Hdf5Loader(
+    hdf5_loader = LazyHdf5Loader(
         chrom_file=chromsizes_path,
         normalization=False,
+        mmap_dir=output_npz_path.parent / "mmap_cache",
     )
-
-    hdf5_loader.load_hdf5s(
+    hdf5_loader.register_hdf5s(
         data_file=hdf5_list_path,
         strict=True,
-        adapt=False,
         verbose=True,
     )
+    hdf5_loader.preload_all()
 
-    # We want to avoid 2x memory usage, so we will write the NPZ file in a way that does not require stacking all signals in memory at once.
-    # Pre-allocate the matrix and fill it iteratively, popping each signal from the loader to free memory immediately after use.
-    ids = list(hdf5_loader.signals.keys())
-    n_samples = len(ids)
-    n_features = hdf5_loader.signals[ids[0]].shape[0]
-
-    signal_matrix = np.empty((n_samples, n_features), dtype=np.float32)
-
-    for i, md5 in enumerate(ids):
-        signal_matrix[i] = hdf5_loader.signals.pop(md5)
-
+    # The mmap-backed array is already the (n_samples, signal_length) matrix
+    # we need; np.savez_compressed will read it from disk in chunks rather
+    # than forcing the whole thing into RAM at once.
+    ids = list(hdf5_loader.file_paths.keys())
+    signal_matrix = hdf5_loader.as_mmap()
     ids_array = np.array(ids)
 
     # Save the signals and ids to a compressed NPZ file

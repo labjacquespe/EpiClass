@@ -7,7 +7,7 @@ from typing import Iterable, Tuple
 import numpy as np
 import pandas as pd
 
-from epiclass.core.data.eager import KnownData
+from epiclass.core.lazy.lazy_data_classes import LazyKnownData
 from epiclass.core.metadata import Metadata
 
 EPIATLAS_CATS = set(
@@ -151,7 +151,7 @@ def print_pairs(my_metadata: Metadata, cat1: str, cat2: str):
         print(pair, count)
 
 
-def count_labels_from_dset(dset: KnownData, label_category: str, from_uuid):
+def count_labels_from_dset(dset: LazyKnownData, label_category: str, from_uuid):
     """
     Returns a Counter object containing the counts of all examples of a given label category in a dataset.
 
@@ -159,7 +159,7 @@ def count_labels_from_dset(dset: KnownData, label_category: str, from_uuid):
     counting the number of occurrences for each unique label.
 
     Args:
-        dset (KnownData): The dataset object containing the samples and metadata.
+        dset (LazyKnownData): The dataset object containing the samples and metadata.
         label_category (str): The specific label category to count (e.g., "assay", "cell_type").
         from_uuid (bool): A flag to determine whether to use "uuid" or "md5sum" as the identifying label.
 

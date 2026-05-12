@@ -10,7 +10,7 @@ import pandas as pd
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def module_exists(module_name):
@@ -100,11 +100,17 @@ def main() -> None:
         feature_list_name = "all"
         feature_list = []
 
-    hdf5_loader = Hdf5Loader(chrom_file=chromsize_path, normalization=normalize_hdf5)
-    hdf5_loader.load_hdf5s(data_file=hdf5_list_path, verbose=False, strict=True)
+    hdf5_loader = LazyHdf5Loader(
+        chrom_file=chromsize_path,
+        normalization=normalize_hdf5,
+        mmap_dir=output_dir / "mmap_cache",
+    )
+    hdf5_loader.register_hdf5s(data_file=hdf5_list_path, verbose=False, strict=True)
+    hdf5_loader.preload_all()
 
     selected_values = {}
-    for md5sum, signal in hdf5_loader.signals.items():
+    for md5sum in hdf5_loader.file_paths.keys():
+        signal = hdf5_loader.load_signal(md5sum)
         if feature_list:
             feature_values = signal[feature_list]
         else:

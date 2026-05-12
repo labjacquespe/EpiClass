@@ -12,8 +12,8 @@ import plotly.express as px
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_treatment import ACCEPTED_TRACKS
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.epiatlas_constants import ACCEPTED_TRACKS
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.metadata import Metadata
 
 ASSAY = "assay_epiclass"
@@ -97,7 +97,7 @@ def main():
             print(f"Excluding samples for track type: {track_type}")
             md5_to_exclude.extend(md5_list)
 
-    md5s_to_analyze = set(Hdf5Loader.read_list(hdf5_list_path).keys())
+    md5s_to_analyze = set(LazyHdf5Loader.read_list(hdf5_list_path).keys())
     for md5 in md5_to_exclude:
         try:
             md5s_to_analyze.remove(md5)
@@ -117,9 +117,15 @@ def main():
     print(df_md5_metadata[TRACK_TYPE].value_counts())
     print(df_md5_metadata[ASSAY].value_counts())
 
-    # Load the hdf5 files into a datafram
-    hdf5_loader = Hdf5Loader(chrom_file=chromsize_path, normalization=True)
-    signals = hdf5_loader.load_hdf5s(hdf5_list_path, md5s_to_analyze, strict=True).signals
+    # Load the hdf5 files into a dataframe
+    hdf5_loader = LazyHdf5Loader(
+        chrom_file=chromsize_path,
+        normalization=True,
+        mmap_dir=logdir / "mmap_cache",
+    )
+    hdf5_loader.register_hdf5s(hdf5_list_path, md5s=list(md5s_to_analyze), strict=True)
+    hdf5_loader.preload_all()
+    signals = {md5: hdf5_loader.load_signal(md5) for md5 in hdf5_loader.file_paths}
     df = pd.DataFrame.from_dict(signals, orient="index")
 
     # Compute descriptive statistics

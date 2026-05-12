@@ -12,8 +12,8 @@ import pandas as pd
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_treatment import TRACKS_MAPPING
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.epiatlas_constants import TRACKS_MAPPING
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.metadata import Metadata
 from epiclass.utils.metadata_utils import EPIATLAS_ASSAYS as epiatlas_assays
 
@@ -71,7 +71,11 @@ def print_unique_target_sets_distribution(epirr_dict: Dict[str, Dict]):
     print(len(epirr_assays_dict))
 
 
-def load_signals(datasource: EpiDataSource, md5sums: List[str]) -> Dict[str, np.ndarray]:
+def load_signals(
+    datasource: EpiDataSource,
+    md5sums: List[str],
+    mmap_dir: Path | None = None,
+) -> Dict[str, np.ndarray]:
     """
     Load signals from HDF5 files using the provided EpiDataSource and
     a list of MD5 checksums which identify the files.
@@ -80,11 +84,14 @@ def load_signals(datasource: EpiDataSource, md5sums: List[str]) -> Dict[str, np.
         dict: A dictionary containing the loaded signals, where the keys are the md5sums
         and the values are the corresponding signals.
     """
-    hdf5_loader = Hdf5Loader(datasource.chromsize_file, normalization=True)
-
-    hdf5_loader.load_hdf5s(datasource.hdf5_file, md5sums, strict=True, verbose=True)
-
-    return hdf5_loader.signals
+    hdf5_loader = LazyHdf5Loader(
+        datasource.chromsize_file, normalization=True, mmap_dir=mmap_dir
+    )
+    hdf5_loader.register_hdf5s(
+        datasource.hdf5_file, md5s=md5sums, strict=True, verbose=True
+    )
+    hdf5_loader.preload_all()
+    return {md5: hdf5_loader.load_signal(md5) for md5 in hdf5_loader.file_paths}
 
 
 def define_accepted_tracks() -> FrozenSet[str]:
@@ -243,7 +250,9 @@ def main():
     my_metadata.select_category_subsets("track_type", accepted_tracks)
     my_metadata.select_category_subsets("assay_epiclass", epiatlas_assays)
 
-    hdf5_signals = load_signals(my_datasource, list(my_metadata.md5s))
+    hdf5_signals = load_signals(
+        my_datasource, list(my_metadata.md5s), mmap_dir=Path(log) / "mmap_cache"
+    )
     my_metadata.select_category_subsets(
         "md5sum", list(hdf5_signals.keys())
     )  # TEMP FOR TEST

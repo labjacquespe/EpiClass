@@ -13,7 +13,7 @@ import numpy as np
 import skops.io as skio
 from sklearn.decomposition import IncrementalPCA
 
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -67,9 +67,14 @@ def main():
     if cli.batch_size <= 0:
         raise ValueError("batch_size must be positive")
 
-    # Initialize HDF5 loader
+    # Initialize HDF5 loader; mmap-backed so the full (N, signal_length) matrix
+    # never has to live in RAM (IncrementalPCA streams in batches).
     chromsize_path = cli.chromsize
-    hdf5_loader = Hdf5Loader(chrom_file=chromsize_path, normalization=True)
+    hdf5_loader = LazyHdf5Loader(
+        chrom_file=chromsize_path,
+        normalization=True,
+        mmap_dir=output_dir / "mmap_cache",
+    )
 
     # Handle input file paths
     if cli.input_list is not None:
@@ -93,34 +98,30 @@ def main():
                 f.write(f"{path}\n")
         print(f"Saved hdf5 files list to: {hdf5_paths_list_path}")
 
-    # Load HDF5 files
+    # Register + preload HDF5 files (mmap-backed; nothing loaded into RAM yet)
     print("Loading HDF5 files.")
     try:
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Cannot read file directly with")
-            hdf5_dict = hdf5_loader.load_hdf5s(
+            hdf5_loader.register_hdf5s(
                 data_file=hdf5_paths_list_path,
                 verbose=True,
                 strict=False,
-            ).signals
+            )
+            hdf5_loader.preload_all()
     except Exception as e:
         raise RuntimeError(f"Error loading HDF5 files: {str(e)}") from e
 
-    if not hdf5_dict:
+    if not hdf5_loader.file_paths:
         raise ValueError("No valid data loaded from HDF5 files")
 
-    print(f"Loaded {len(hdf5_dict)}/{total_files} files.")
+    print(f"Loaded {len(hdf5_loader.file_paths)}/{total_files} files.")
 
-    # Extract data and free memory
-    file_names = list(hdf5_dict.keys())
-    try:
-        # Stack all arrays into a single 2D array
-        data = np.array(list(hdf5_dict.values()), dtype=np.float32)
-        print(f"Dataset shape: {data.shape}")
-    except Exception as e:
-        raise RuntimeError(f"Error converting data to numpy array: {str(e)}") from e
-    finally:
-        del hdf5_dict  # Free memory immediately
+    # Mmap-backed (n_samples, signal_length); IncrementalPCA will read it in
+    # batch_size chunks from disk rather than slurping all of it into RAM.
+    file_names = list(hdf5_loader.file_paths.keys())
+    data = hdf5_loader.as_mmap()
+    print(f"Dataset shape: {data.shape}")
 
     if data.size == 0:
         raise ValueError("Empty dataset after conversion")

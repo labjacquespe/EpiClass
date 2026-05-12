@@ -203,6 +203,26 @@ class LazyHdf5Loader:
             self._mmap_array = np.load(mmap_path, mmap_mode="r")
         return int(self._mmap_array.shape[1])
 
+    def as_mmap(self) -> np.ndarray:
+        """Return the full mmap-backed (n_samples, signal_length) array.
+
+        The returned ndarray is read-only and disk-backed; the OS pages in
+        chunks on demand, so this does NOT load the full dataset into RAM.
+        Row order matches ``self.file_paths.keys()``.
+
+        Use this for whole-dataset analyses (PCA, UMAP, correlation matrices)
+        that need a 2-D array view but should not pull the entire matrix into
+        memory. ``preload_all()`` must have been called first.
+        """
+        mmap_path = self._get_mmap_path()
+        if not mmap_path.exists():
+            raise FileNotFoundError(
+                f"Mmap file not found: {mmap_path}. Run preload_all() first."
+            )
+        if self._mmap_array is None:
+            self._mmap_array = np.load(mmap_path, mmap_mode="r")
+        return self._mmap_array
+
     def load_signal(self, md5: str) -> np.ndarray:
         """Load a single signal by MD5 from the memory-mapped file."""
         if md5 not in self._files:

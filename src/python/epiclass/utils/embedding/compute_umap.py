@@ -15,7 +15,7 @@ import numpy as np
 import umap
 from umap.umap_ import nearest_neighbors
 
-from epiclass.core.loaders.hdf5_loader import Hdf5Loader
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -73,7 +73,11 @@ def main():
         if not path.exists():
             raise FileNotFoundError(f"Could not find {path}.")
 
-    hdf5_loader = Hdf5Loader(chrom_file=chromsize_path, normalization=True)
+    hdf5_loader = LazyHdf5Loader(
+        chrom_file=chromsize_path,
+        normalization=True,
+        mmap_dir=output_dir / "mmap_cache",
+    )
 
     # Get all paths
     hdf5_input_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
@@ -95,19 +99,20 @@ def main():
         for path in all_paths:
             f.write(f"{path}\n")
 
-    # Load relevant files
+    # Register + preload (mmap-backed; full matrix lives on disk, OS pages in
+    # rows as nearest_neighbors / umap touch them).
     with warnings.catch_warnings():
         warnings.filterwarnings("ignore", message="Cannot read file directly with")
-        hdf5_dict = hdf5_loader.load_hdf5s(
+        hdf5_loader.register_hdf5s(
             data_file=hdf5_paths_list_path,
             verbose=True,
             strict=False,
-        ).signals
+        )
+        hdf5_loader.preload_all()
 
-    print(f"Loaded {len(hdf5_dict)}/{len(all_paths)} files.")
-    file_names = list(hdf5_dict.keys())
-    data = np.array(list(hdf5_dict.values()), dtype=np.float32)
-    del hdf5_dict
+    print(f"Loaded {len(hdf5_loader.file_paths)}/{len(all_paths)} files.")
+    file_names = list(hdf5_loader.file_paths.keys())
+    data = hdf5_loader.as_mmap()
 
     # UMAP parameters
     nn_default = 15

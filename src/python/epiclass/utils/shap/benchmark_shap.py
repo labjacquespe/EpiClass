@@ -1,9 +1,9 @@
 """Benchmarking SHAP value computation functions."""
 from pathlib import Path
 
-from epiclass.core.data.eager import KnownData
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.loaders.dataset_factory import DataSetFactory
+from epiclass.core.lazy.lazy_data_classes import LazyKnownData
+from epiclass.core.lazy.lazy_epidata import DataSetFactory
 from epiclass.core.metadata import Metadata
 from epiclass.core.shap_values import NN_SHAP_Handler
 from epiclass.utils.time import time_now
@@ -102,7 +102,7 @@ def test_background_effect(
         - set(background_1_idxs + background_2_idxs)
     )
 
-    assert isinstance(full_data.train, KnownData)
+    assert isinstance(full_data.train, LazyKnownData)
     background_1_data = full_data.train.subsample(background_1_idxs)
     background_2_data = full_data.train.subsample(background_2_idxs)
 

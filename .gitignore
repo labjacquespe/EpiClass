@@ -21,6 +21,7 @@ slurm_files/
 # Dev environnement
 .vscode
 *.lprof
+.claude/
 
 # macOS
 .DS_Store
