@@ -15,16 +15,16 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
-def test_compute_pca_runs(test_dir: Path, saccer3_hdf5_file_list: Path):
-    """End-to-end: register HDF5s, preload mmap, run IPCA, write skops files."""
+def test_compute_pca_single_sample(test_dir: Path, saccer3_hdf5_file_list: Path):
+    """Single-sample path: register HDF5s, preload mmap, run IPCA, save skops."""
     chroms = FIXTURES_DIR / "saccer3" / "saccer3.can.chrom.sizes"
 
     sys.argv = [
         "compute_pca.py",
-        str(chroms),
-        str(test_dir),
-        "--input_list",
         str(saccer3_hdf5_file_list),
+        str(test_dir),
+        "--chromsize",
+        str(chroms),
         "--batch_size",
         "256",
     ]
@@ -35,3 +35,22 @@ def test_compute_pca_runs(test_dir: Path, saccer3_hdf5_file_list: Path):
     assert fit_files, "Expected an IPCA fit file in output dir."
     assert x_files, "Expected an X_IPCA file in output dir."
     assert (test_dir / "IPCA_saved_files_requirements.txt").is_file()
+
+
+@pytest.mark.slow
+def test_compute_pca_chunked(test_dir: Path, saccer3_chunked_dir: Path):
+    """Chunked path: partial_fit/transform per chunk file; no chromsize needed."""
+    sys.argv = [
+        "compute_pca.py",
+        str(saccer3_chunked_dir),
+        str(test_dir),
+        "--chunked",
+        "--batch_size",
+        "256",
+    ]
+    main_module()
+
+    fit_files = list(test_dir.glob("IPCA_fit_n*.skops"))
+    x_files = list(test_dir.glob("X_IPCA_n*.skops"))
+    assert fit_files, "Expected an IPCA fit file in output dir."
+    assert x_files, "Expected an X_IPCA file in output dir."

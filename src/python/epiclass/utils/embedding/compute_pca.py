@@ -1,5 +1,14 @@
-"""Compute PCA for some hardcoded datasets. (dataset selection done in .sh script)"""
-# pylint: disable=import-error, redefined-outer-name, use-dict-literal, too-many-lines, unused-import, unused-argument, too-many-branches
+"""Compute IncrementalPCA on HDF5 signals.
+
+Supports two input formats:
+  - Single-sample HDF5 (default): one HDF5 file per sample with per-chromosome
+    datasets. Requires --chromsize. Loaded via LazyHdf5Loader into a single
+    mmap-backed .npy file; IncrementalPCA reads it in batches.
+  - Chunked HDF5 (--chunked): pre-concatenated multi-sample HDF5 files
+    produced by hdf5_chunks_creation.py. No --chromsize needed. PCA streams
+    chunk-by-chunk via partial_fit, never materializing the full matrix.
+"""
+# pylint: disable=duplicate-code
 from __future__ import annotations
 
 import argparse
@@ -7,12 +16,14 @@ import os
 import warnings
 from importlib import metadata
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
+import h5py
 import numpy as np
 import skops.io as skio
 from sklearn.decomposition import IncrementalPCA
 
+from epiclass.core.lazy.chunked_hdf5_loader import ChunkedHdf5Loader
 from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
@@ -23,15 +34,31 @@ def parse_arguments() -> argparse.Namespace:
         description="Compute Incremental PCA embeddings for hdf5 files."
     )
     arg_parser.add_argument(
-        "chromsize",
+        "hdf5",
         type=Path,
-        help="A file with chrom sizes.",
+        help="For single format: file listing HDF5 paths (or omitted to scan "
+             "SLURM_TMPDIR/tmp). For chunked format: directory or file of "
+             "chunk HDF5s.",
+        nargs="?",
+        default=None,
     )
     arg_parser.add_argument(
         "output",
         type=Path,
         default=None,
         help="Directory to save embeddings in. Saves in home directory if not provided.",
+    )
+    arg_parser.add_argument(
+        "--chunked",
+        action="store_true",
+        help="Input is chunked HDF5 format (produced by hdf5_chunks_creation.py). "
+             "If not set, single-sample HDF5 format is assumed.",
+    )
+    arg_parser.add_argument(
+        "--chromsize",
+        type=Path,
+        default=None,
+        help="A file with chrom sizes. Required for single-sample HDF5 format.",
     )
     arg_parser.add_argument(
         "--batch_size",
@@ -42,7 +69,7 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "--input_list",
         type=Path,
-        help="List of hdf5 files to load. Absolute path is recommended. By default, all hdf5 files in SLURM_TMPDIR or /tmp are used.",
+        help="DEPRECATED alias for the hdf5 positional in single-sample mode.",
         default=None,
     )
     # fmt: on
@@ -58,144 +85,170 @@ def find_rows_with_same_values(arr, atol=1e-5) -> List[int]:
     return problematic_rows
 
 
-def main():
-    """Run the main function."""
-    cli = parse_arguments()
+def _resolve_single_input_list(hdf5: Path | None, output_dir: Path) -> Tuple[Path, int]:
+    """Pick the HDF5 list for the single-sample path; fall back to scanning."""
+    if hdf5 is not None:
+        with open(hdf5, "r", encoding="utf8") as f:
+            total = sum(1 for _ in f)
+        return hdf5, total
 
-    output_dir = cli.output if cli.output is not None else Path.home()
+    scan_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
+    paths = list(scan_dir.rglob("*.hdf5"))
+    if not paths:
+        raise FileNotFoundError(f"No hdf5 files found in {scan_dir}.")
+    total = len(paths)
+    print(f"Found {total} hdf5 files in {scan_dir}.")
 
-    if cli.batch_size <= 0:
-        raise ValueError("batch_size must be positive")
+    list_path = output_dir / f"{output_dir.name}_pca_files.list"
+    with open(list_path, "w", encoding="utf8") as f:
+        for path in paths:
+            f.write(f"{path}\n")
+    print(f"Saved hdf5 files list to: {list_path}")
+    return list_path, total
 
-    # Initialize HDF5 loader; mmap-backed so the full (N, signal_length) matrix
-    # never has to live in RAM (IncrementalPCA streams in batches).
-    chromsize_path = cli.chromsize
+
+def _pca_single(
+    cli: argparse.Namespace, output_dir: Path
+) -> Tuple[IncrementalPCA, np.ndarray, List[str]]:
+    """Single-sample path: mmap-backed full matrix, IncrementalPCA streams it."""
+    if cli.chromsize is None:
+        raise ValueError(
+            "--chromsize is required for single-sample HDF5 format. "
+            "Use --chunked if your data is in chunked format."
+        )
+
+    hdf5 = cli.input_list if cli.input_list is not None else cli.hdf5
+    list_path, total_files = _resolve_single_input_list(hdf5, output_dir)
+
     hdf5_loader = LazyHdf5Loader(
-        chrom_file=chromsize_path,
+        chrom_file=cli.chromsize,
         normalization=True,
         mmap_dir=output_dir / "mmap_cache",
     )
-
-    # Handle input file paths
-    if cli.input_list is not None:
-        hdf5_paths_list_path = cli.input_list
-        # Count files in input list for reporting
-        with open(hdf5_paths_list_path, "r", encoding="utf8") as f:
-            total_files = sum(1 for _ in f)
-    else:
-        # Find all hdf5 files
-        hdf5_input_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
-        all_paths = list(hdf5_input_dir.rglob("*.hdf5"))
-        if not all_paths:
-            raise FileNotFoundError(f"No hdf5 files found in {hdf5_input_dir}.")
-
-        total_files = len(all_paths)
-        print(f"Found {total_files} hdf5 files.")
-
-        hdf5_paths_list_path = output_dir / f"{output_dir.name}_umap_files.list"
-        with open(hdf5_paths_list_path, "w", encoding="utf8") as f:
-            for path in all_paths:
-                f.write(f"{path}\n")
-        print(f"Saved hdf5 files list to: {hdf5_paths_list_path}")
-
-    # Register + preload HDF5 files (mmap-backed; nothing loaded into RAM yet)
-    print("Loading HDF5 files.")
-    try:
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message="Cannot read file directly with")
-            hdf5_loader.register_hdf5s(
-                data_file=hdf5_paths_list_path,
-                verbose=True,
-                strict=False,
-            )
-            hdf5_loader.preload_all()
-    except Exception as e:
-        raise RuntimeError(f"Error loading HDF5 files: {str(e)}") from e
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Cannot read file directly with")
+        hdf5_loader.register_hdf5s(data_file=list_path, verbose=True, strict=False)
+        hdf5_loader.preload_all()
 
     if not hdf5_loader.file_paths:
         raise ValueError("No valid data loaded from HDF5 files")
-
     print(f"Loaded {len(hdf5_loader.file_paths)}/{total_files} files.")
 
-    # Mmap-backed (n_samples, signal_length); IncrementalPCA will read it in
-    # batch_size chunks from disk rather than slurping all of it into RAM.
     file_names = list(hdf5_loader.file_paths.keys())
     data = hdf5_loader.as_mmap()
     print(f"Dataset shape: {data.shape}")
+    _validate_data(data, file_names)
 
-    if data.size == 0:
-        raise ValueError("Empty dataset after conversion")
+    n_components, batch_size = _resolve_pca_params(cli.batch_size, len(file_names))
+    ipca = IncrementalPCA(n_components=n_components, batch_size=batch_size)
+    X_ipca = ipca.fit_transform(data)
+    return ipca, X_ipca, file_names
 
-    # Find rows containing NaN or Inf values
-    problematic_rows = (~np.isfinite(data)).any(axis=1)
-    if np.any(problematic_rows):
-        row_indices = np.where(problematic_rows)[0]
-        print(f"Problematic rows (indices): {row_indices}")
 
-        affected_files = [file_names[i] for i in row_indices]
-        print(f"Filenames with issues: {affected_files}")
-
-        raise ValueError("Dataset contains inf or NaN values")
-
-    problematic_rows_idx = find_rows_with_same_values(data)
-    if problematic_rows_idx:
-        print(f"Problematic rows (indices): {problematic_rows_idx}")
-        affected_files = [file_names[i] for i in problematic_rows_idx]
-        print(f"Filenames with issues: {affected_files}")
+def _pca_chunked(cli: argparse.Namespace) -> Tuple[IncrementalPCA, np.ndarray, List[str]]:
+    """Chunked path: partial_fit + transform per chunk file (true streaming)."""
+    if cli.hdf5 is None:
         raise ValueError(
-            "Dataset contains rows with all identical values. Check preprocessing steps."
+            "Provide a chunk directory or file as positional 'hdf5' for --chunked."
         )
 
-    N_files = len(file_names)
+    loader = ChunkedHdf5Loader()
+    loader.register_chunked_hdf5s(cli.hdf5, strict=True)
+    if loader.num_registered == 0:
+        raise ValueError("No samples registered from chunked input.")
+    print(
+        f"Loaded {loader.num_registered} samples from "
+        f"{len(loader.chunk_files)} chunk file(s)."
+    )
 
-    # Validate batch size against dataset size
-    if cli.batch_size > N_files:
-        print(
-            f"Warning: batch_size ({cli.batch_size}) is larger than dataset size ({N_files})"
-        )
-        batch_size = N_files
-    else:
-        batch_size = cli.batch_size
-
-    # PCA computation
-    print("Computing PCA")
-    n_components = min(3, N_files)  # Ensure n_components doesn't exceed dataset size
+    file_names = list(loader.sample_ids)
+    n_components, batch_size = _resolve_pca_params(cli.batch_size, len(file_names))
     ipca = IncrementalPCA(n_components=n_components, batch_size=batch_size)
 
-    try:
-        X_ipca = ipca.fit_transform(data)
-    except Exception as e:
-        raise RuntimeError(f"PCA computation failed: {str(e)}") from e
-    finally:
-        del data  # Free memory immediately after PCA
+    # Fit pass: stream chunk by chunk.
+    for chunk_path in loader.chunk_files:
+        with h5py.File(chunk_path, "r") as f:
+            signals = f["signals"][:]
+        _validate_data(signals, ids=None, where=str(chunk_path))
+        # IncrementalPCA needs at least n_components rows per partial_fit call.
+        for start in range(0, len(signals), batch_size):
+            block = signals[start : start + batch_size]
+            if len(block) < n_components:
+                continue  # accumulate; tail handled by transform
+            ipca.partial_fit(block)
 
-    # Save results
-    fit_name = f"IPCA_fit_n{N_files}.skops"
-    X_name = f"X_IPCA_n{N_files}.skops"
-    dump_fit = {"file_names": file_names, "ipca_fit": ipca}
-    dump_transformed_data = {"file_names": file_names, "X_ipca": X_ipca}
+    # Transform pass: same stream, project, concatenate.
+    transformed = []
+    for chunk_path in loader.chunk_files:
+        with h5py.File(chunk_path, "r") as f:
+            signals = f["signals"][:]
+        transformed.append(ipca.transform(signals))
+    X_ipca = np.concatenate(transformed, axis=0)
+    return ipca, X_ipca, file_names
 
-    try:
-        skio.dump(dump_fit, output_dir / fit_name)
-        skio.dump(dump_transformed_data, output_dir / X_name)
-    except Exception as e:
-        raise RuntimeError(f"Error saving results: {str(e)}") from e
 
-    # Save requirements
+def _validate_data(
+    data: np.ndarray, ids: List[str] | None = None, where: str = "dataset"
+) -> None:
+    """Raise if data contains NaN/Inf or rows with all identical values."""
+    if data.size == 0:
+        raise ValueError(f"Empty {where}")
+
+    bad = (~np.isfinite(data)).any(axis=1)
+    if np.any(bad):
+        idxs = np.where(bad)[0]
+        msg = f"{where} contains inf or NaN values at rows {list(idxs)}"
+        if ids is not None:
+            msg += f" ({[ids[i] for i in idxs]})"
+        raise ValueError(msg)
+
+    flat_rows = find_rows_with_same_values(data)
+    if flat_rows:
+        msg = f"{where} has rows with all identical values at {flat_rows}"
+        if ids is not None:
+            msg += f" ({[ids[i] for i in flat_rows]})"
+        raise ValueError(msg)
+
+
+def _resolve_pca_params(requested_batch: int, n_samples: int) -> Tuple[int, int]:
+    """Cap batch_size to n_samples; n_components = min(3, n_samples)."""
+    if requested_batch <= 0:
+        raise ValueError("batch_size must be positive")
+    batch_size = min(requested_batch, n_samples)
+    n_components = min(3, n_samples)
+    return n_components, batch_size
+
+
+def main():
+    """Run the main function."""
+    cli = parse_arguments()
+    output_dir = cli.output if cli.output is not None else Path.home()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    print("Computing PCA")
+    if cli.chunked:
+        ipca, X_ipca, file_names = _pca_chunked(cli)
+    else:
+        ipca, X_ipca, file_names = _pca_single(cli, output_dir)
+    n = len(file_names)
+
+    fit_name = f"IPCA_fit_n{n}.skops"
+    X_name = f"X_IPCA_n{n}.skops"
+    skio.dump({"file_names": file_names, "ipca_fit": ipca}, output_dir / fit_name)
+    skio.dump({"file_names": file_names, "X_ipca": X_ipca}, output_dir / X_name)
+
     try:
         dists = metadata.distributions()
-        req_file_name = "IPCA_saved_files_requirements.txt"
-        with open(output_dir / req_file_name, "w", encoding="utf8") as f:
+        req_file = "IPCA_saved_files_requirements.txt"
+        with open(output_dir / req_file, "w", encoding="utf8") as f:
             for dist in dists:
-                name = dist.metadata["Name"]
-                version = dist.version
-                f.write(f"{name}=={version}\n")
+                f.write(f"{dist.metadata['Name']}=={dist.version}\n")
+        print(f"Saved requirements to: {output_dir / req_file}")
     except Exception as e:  # pylint: disable=broad-exception-caught
         print(f"Warning: Could not save requirements file: {str(e)}")
 
     print(f"Saved IPCA fit to: {output_dir / fit_name}")
     print(f"Saved transformed data to: {output_dir / X_name}")
-    print(f"Saved requirements to: {output_dir / req_file_name}")
 
 
 if __name__ == "__main__":

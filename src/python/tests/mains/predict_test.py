@@ -7,7 +7,6 @@ import pandas as pd
 import pytest
 
 from epiclass.predict import main as main_module
-from epiclass.utils.preprocessing.hdf5_chunks_creation import convert
 from tests.epilap_test_data import FIXTURES_DIR
 
 SACCER3_FIXTURES_DIR = FIXTURES_DIR / "saccer3"
@@ -18,25 +17,6 @@ SACCER3_CHROMS = SACCER3_FIXTURES_DIR / "saccer3.can.chrom.sizes"
 def fixture_test_dir(mk_logdir) -> Path:
     """Make temp logdir for tests."""
     return mk_logdir("predict")
-
-
-@pytest.fixture(name="saccer3_chunked_dir")
-def fixture_saccer3_chunked_dir(test_dir: Path, saccer3_hdf5_file_list: Path) -> Path:
-    """Convert saccer3 single-sample HDF5s into chunked format for tests.
-
-    Normalization mirrors what LazyHdf5Loader applies on the single-sample
-    path, so the chunked signals match the model's training distribution.
-    """
-    chunk_dir = test_dir / "chunked"
-    convert(
-        hdf5_list=saccer3_hdf5_file_list,
-        chrom_file=SACCER3_CHROMS,
-        output_dir=chunk_dir,
-        samples_per_chunk=50,
-        normalize=True,
-        strict=True,
-    )
-    return chunk_dir
 
 
 @pytest.mark.slow

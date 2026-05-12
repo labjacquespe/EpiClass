@@ -1,6 +1,21 @@
-"""Compute various UMAP embeddings (modify nearest neighboors + densMap or not) for some hardcoded datasets."""
+"""Compute UMAP embeddings (varying nearest-neighbors + densMap) from HDF5 signals.
 
-# pylint: disable=import-error, redefined-outer-name, use-dict-literal, too-many-lines, unused-import, unused-argument, too-many-branches
+Supports two input formats:
+  - Single-sample HDF5 (default): loaded via LazyHdf5Loader into a single
+    mmap-backed `.npy` file. Requires --chromsize. UMAP/pynndescent see a
+    memory-mapped ndarray (copy-on-write) so the dataset never has to live
+    fully in RAM.
+  - Chunked HDF5 (--chunked): pre-concatenated multi-sample HDF5s
+    (produced by hdf5_chunks_creation.py). No --chromsize needed.
+    Materializes the full matrix via load_batch — UMAP needs random
+    access to all rows, so streaming isn't possible here. For genuinely
+    huge chunked inputs, PCA-first via compute_pca.py.
+
+By default the script sweeps {standard, densmap} × {2D, 3D} × {15, 30, 100}
+nearest-neighbor sizes — 12 embeddings total. Use ``--max_embeddings`` to cap
+the sweep when testing or smoke-running.
+"""
+# pylint: disable=duplicate-code, too-many-branches
 from __future__ import annotations
 
 import argparse
@@ -10,39 +25,123 @@ import pickle
 import warnings
 from importlib import metadata
 from pathlib import Path
+from typing import List, Tuple
 
 import numpy as np
 import umap
 from umap.umap_ import nearest_neighbors
 
+from epiclass.core.lazy.chunked_hdf5_loader import ChunkedHdf5Loader
 from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:
     """argument parser for command line"""
-    arg_parser = argparse.ArgumentParser()
+    arg_parser = argparse.ArgumentParser(
+        description="Compute UMAP embeddings for hdf5 signals."
+    )
 
     # fmt: off
     arg_parser.add_argument(
-        "--load_knn",
+        "hdf5",
         type=Path,
+        nargs="?",
         default=None,
-        help="Directory containing precomputed knn pickle file",
+        help="For single format: file listing HDF5 paths (or omit to scan "
+             "SLURM_TMPDIR/tmp). For chunked format: directory or file of "
+             "chunk HDF5s.",
     )
     arg_parser.add_argument(
         "-o", "--output",
         type=Path,
         default=None,
-        help="Directory to save embeddings in.",
+        help="Directory to save embeddings in. Defaults to home directory.",
     )
     arg_parser.add_argument(
-        "-l", "--hdf5_list",
+        "--chunked",
+        action="store_true",
+        help="Input is chunked HDF5 format. If not set, single-sample HDF5 is assumed.",
+    )
+    arg_parser.add_argument(
+        "--chromsize",
         type=Path,
         default=None,
-        help="List of hdf5 files to load, only the filenames will be considered.",
+        help="A file with chrom sizes. Required for single-sample HDF5 format.",
+    )
+    arg_parser.add_argument(
+        "-l", "--input_list",
+        type=Path,
+        default=None,
+        help="DEPRECATED alias for the hdf5 positional in single-sample mode.",
+    )
+    arg_parser.add_argument(
+        "--load_knn",
+        type=Path,
+        default=None,
+        help="Directory containing a precomputed knn pickle file.",
+    )
+    arg_parser.add_argument(
+        "--max_embeddings",
+        type=int,
+        default=None,
+        help="If set, compute at most this many embeddings from the sweep.",
     )
     # fmt: on
     return arg_parser.parse_args()
+
+
+def _load_single(
+    cli: argparse.Namespace, output_dir: Path
+) -> Tuple[np.ndarray, List[str]]:
+    """Single-sample path: mmap-backed (copy-on-write so numba accepts it)."""
+    if cli.chromsize is None:
+        raise ValueError(
+            "--chromsize is required for single-sample HDF5 format. "
+            "Use --chunked if your data is in chunked format."
+        )
+
+    hdf5 = cli.input_list if cli.input_list is not None else cli.hdf5
+    if hdf5 is None:
+        scan_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
+        paths = list(scan_dir.rglob("*.hdf5"))
+        if not paths:
+            raise FileNotFoundError(f"No hdf5 files found in {scan_dir}.")
+        hdf5 = output_dir / f"{output_dir.name}_umap_files.list"
+        with open(hdf5, "w", encoding="utf8") as f:
+            for path in paths:
+                f.write(f"{path}\n")
+        print(f"Wrote auto-discovered hdf5 list to {hdf5}")
+
+    loader = LazyHdf5Loader(
+        chrom_file=cli.chromsize,
+        normalization=True,
+        mmap_dir=output_dir / "mmap_cache",
+    )
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Cannot read file directly with")
+        loader.register_hdf5s(data_file=hdf5, verbose=True, strict=False)
+        loader.preload_all()
+
+    print(f"Loaded {len(loader.file_paths)} files.")
+    # Copy-on-write: pynndescent's numba-jitted kernels reject read-only arrays.
+    return loader.as_mmap(mmap_mode="c"), list(loader.file_paths.keys())
+
+
+def _load_chunked(
+    cli: argparse.Namespace,
+) -> Tuple[np.ndarray, List[str]]:
+    """Chunked path: materialize via load_batch (UMAP needs random access)."""
+    if cli.hdf5 is None:
+        raise ValueError(
+            "Provide a chunk directory or file as positional 'hdf5' for --chunked."
+        )
+    loader = ChunkedHdf5Loader()
+    loader.register_chunked_hdf5s(cli.hdf5, strict=True)
+    if loader.num_registered == 0:
+        raise ValueError("No samples registered from chunked input.")
+    ids = list(loader.sample_ids)
+    print(f"Loaded {len(ids)} samples from {len(loader.chunk_files)} chunk file(s).")
+    return loader.load_batch(ids), ids
 
 
 def main():
@@ -67,54 +166,12 @@ def main():
     else:
         output_dir = Path.home()
 
-    input_basedir = Path("/lustre06/project/6007017/rabyj/epilap/input")
-    chromsize_path = input_basedir / "chromsizes" / "hg38.noy.chrom.sizes"
-    for path in [input_basedir, chromsize_path]:
-        if not path.exists():
-            raise FileNotFoundError(f"Could not find {path}.")
+    if cli.chunked:
+        data, file_names = _load_chunked(cli)
+    else:
+        data, file_names = _load_single(cli, output_dir)
 
-    hdf5_loader = LazyHdf5Loader(
-        chrom_file=chromsize_path,
-        normalization=True,
-        mmap_dir=output_dir / "mmap_cache",
-    )
-
-    # Get all paths
-    hdf5_input_dir = Path(os.environ.get("SLURM_TMPDIR", "/tmp"))
-
-    all_paths = list(hdf5_input_dir.rglob("*.hdf5"))
-    if not all_paths:
-        raise FileNotFoundError(f"No hdf5 files found in {hdf5_input_dir}.")
-
-    # Filter hdf5 files
-    if cli.hdf5_list is not None:
-        with open(cli.hdf5_list, "r", encoding="utf8") as f:
-            hdf5_list = f.readlines()
-        hdf5_to_read = set(Path(x.strip()).name for x in hdf5_list)
-        all_paths = [x for x in all_paths if x.name in hdf5_to_read]
-
-    # Save list of hdf5 files actually read
-    hdf5_paths_list_path = output_dir / f"{output_dir.name}_umap_files.list"
-    with open(hdf5_paths_list_path, "w", encoding="utf8") as f:
-        for path in all_paths:
-            f.write(f"{path}\n")
-
-    # Register + preload (mmap-backed; full matrix lives on disk, OS pages in
-    # rows as nearest_neighbors / umap touch them).
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", message="Cannot read file directly with")
-        hdf5_loader.register_hdf5s(
-            data_file=hdf5_paths_list_path,
-            verbose=True,
-            strict=False,
-        )
-        hdf5_loader.preload_all()
-
-    print(f"Loaded {len(hdf5_loader.file_paths)}/{len(all_paths)} files.")
-    file_names = list(hdf5_loader.file_paths.keys())
-    data = hdf5_loader.as_mmap()
-
-    # UMAP parameters
+    # UMAP parameter sweep
     nn_default = 15
     nn_bigger = 30
     nn_biggest = 100
@@ -164,8 +221,11 @@ def main():
         with open(output_dir / f"precomputed_knn_{nn_knn}.pkl", "rb") as f:
             precomputed_knn = pickle.load(f)
 
-    # Compute+save embeddings
-    for name, params in embedding_params.items():
+    # Compute+save embeddings (capped by --max_embeddings if set)
+    items = list(embedding_params.items())
+    if cli.max_embeddings is not None:
+        items = items[: cli.max_embeddings]
+    for name, params in items:
         filename = output_dir / f"embedding_{name}.pkl"
         if filename.exists():
             print(f"Embedding {name} already exists. Skipping.")

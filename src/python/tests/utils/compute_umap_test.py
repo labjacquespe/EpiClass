@@ -1,24 +1,60 @@
-"""Sanity-check tests for compute_umap.py after lazy migration.
+"""Sanity-check integration test for compute_umap.py after lazy migration."""
+import sys
+from pathlib import Path
 
-compute_umap.py hardcodes the HPC input directory
-(``/lustre06/project/.../epiclass/input``) and the chromsize path, so a
-true end-to-end test from CI is not viable without that filesystem. We
-keep an import smoke test here and skip the full run with a clear reason
-— if the script is ever refactored to accept paths via the CLI, lift
-the skip and run it against saccer3 fixtures.
-"""
-# pylint: disable=unused-import, import-outside-toplevel
 import pytest
 
-
-def test_compute_umap_imports():
-    """Smoke test: module imports cleanly after the lazy migration."""
-    import epiclass.utils.embedding.compute_umap
+from epiclass.utils.embedding.compute_umap import main as main_module
+from tests.epilap_test_data import FIXTURES_DIR
 
 
-@pytest.mark.skip(
-    reason="compute_umap.main() hardcodes /lustre06/project HPC paths; "
-    "needs refactor before it can run against the saccer3 fixture."
-)
-def test_compute_umap_runs():
-    """Placeholder for an end-to-end UMAP integration test."""
+@pytest.fixture(name="test_dir")
+def fixture_test_dir(mk_logdir) -> Path:
+    """Make temp logdir for tests."""
+    return mk_logdir("compute_umap")
+
+
+@pytest.mark.slow
+def test_compute_umap_single_sample(test_dir: Path, saccer3_hdf5_file_list: Path):
+    """Single-sample path: mmap (copy-on-write), build knn, fit one UMAP.
+
+    ``--max_embeddings 1`` keeps the sweep to a single fit; the full
+    12-embedding sweep would take minutes.
+    """
+    chroms = FIXTURES_DIR / "saccer3" / "saccer3.can.chrom.sizes"
+
+    sys.argv = [
+        "compute_umap.py",
+        str(saccer3_hdf5_file_list),
+        "--output",
+        str(test_dir),
+        "--chromsize",
+        str(chroms),
+        "--max_embeddings",
+        "1",
+    ]
+    main_module()
+
+    assert (test_dir / "precomputed_knn_100.pkl").is_file()
+    assert (test_dir / "pickle_requirements.txt").is_file()
+    embeddings = list(test_dir.glob("embedding_*.pkl"))
+    assert len(embeddings) == 1, f"Expected 1 embedding, got {len(embeddings)}"
+
+
+@pytest.mark.slow
+def test_compute_umap_chunked(test_dir: Path, saccer3_chunked_dir: Path):
+    """Chunked path: materialize via load_batch, build knn, fit one UMAP."""
+    sys.argv = [
+        "compute_umap.py",
+        str(saccer3_chunked_dir),
+        "--output",
+        str(test_dir),
+        "--chunked",
+        "--max_embeddings",
+        "1",
+    ]
+    main_module()
+
+    assert (test_dir / "precomputed_knn_100.pkl").is_file()
+    embeddings = list(test_dir.glob("embedding_*.pkl"))
+    assert len(embeddings) == 1, f"Expected 1 embedding, got {len(embeddings)}"

@@ -203,24 +203,35 @@ class LazyHdf5Loader:
             self._mmap_array = np.load(mmap_path, mmap_mode="r")
         return int(self._mmap_array.shape[1])
 
-    def as_mmap(self) -> np.ndarray:
+    def as_mmap(self, mmap_mode: str = "r") -> np.ndarray:
         """Return the full mmap-backed (n_samples, signal_length) array.
 
-        The returned ndarray is read-only and disk-backed; the OS pages in
-        chunks on demand, so this does NOT load the full dataset into RAM.
-        Row order matches ``self.file_paths.keys()``.
+        The returned ndarray is disk-backed; the OS pages chunks in on demand,
+        so this does NOT load the full dataset into RAM. Row order matches
+        ``self.file_paths.keys()``. ``preload_all()`` must have been called
+        first.
 
-        Use this for whole-dataset analyses (PCA, UMAP, correlation matrices)
-        that need a 2-D array view but should not pull the entire matrix into
-        memory. ``preload_all()`` must have been called first.
+        ``mmap_mode`` (numpy semantics):
+          - ``"r"`` (default): read-only. Safest; works for IncrementalPCA,
+            np.savez_compressed, and other read-only consumers.
+          - ``"c"`` (copy-on-write): readable + writable, but writes are kept
+            in RAM and never reach the file. Required by consumers whose
+            inner loops are numba-jitted with a writable-array signature —
+            pynndescent / UMAP being the canonical case. Pages still page
+            in lazily; only pages that get written use extra RAM.
+
+        Use ``"c"`` for UMAP; ``"r"`` for everything else.
         """
         mmap_path = self._get_mmap_path()
         if not mmap_path.exists():
             raise FileNotFoundError(
                 f"Mmap file not found: {mmap_path}. Run preload_all() first."
             )
-        if self._mmap_array is None:
-            self._mmap_array = np.load(mmap_path, mmap_mode="r")
+        if (
+            self._mmap_array is None
+            or getattr(self._mmap_array, "mode", None) != mmap_mode
+        ):
+            self._mmap_array = np.load(mmap_path, mmap_mode=mmap_mode)
         return self._mmap_array
 
     def load_signal(self, md5: str) -> np.ndarray:

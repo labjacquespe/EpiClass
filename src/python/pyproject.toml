@@ -51,7 +51,7 @@ utils = [
     "pyBigWig>=0.3.22",
     "seaborn>=0.13, <0.14",
     "tables>=3.8",
-    "umap-learn>=0.5, <0.6",
+    "umap-learn>=0.5.8, <0.6",
     "UpSetPlot>=0.8, <0.9",
     "statsmodels",
     "scp",

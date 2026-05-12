@@ -1,5 +1,5 @@
 """pytest setup/configuration"""
-# pylint: disable=unused-argument
+# pylint: disable=unused-argument, import-outside-toplevel
 from __future__ import annotations
 
 import os
@@ -22,10 +22,6 @@ from tests.epilap_test_data import (
     FIXTURES_DIR,
     EpiAtlasTreatmentTestData,
 )
-
-# def pytest_collection_modifyitems(session, config, items):
-#     """Ignore certain names from collection."""
-#     items[:] = [item for item in items if item.name != "test_logdir"]
 
 RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
 
@@ -179,3 +175,25 @@ def hdf5_file_list(
             f.write(f"{hdf5_file}\n")
 
     return file_list
+
+
+@pytest.fixture(scope="function", name="saccer3_chunked_dir")
+def fixture_saccer3_chunked_dir(test_dir: Path, saccer3_hdf5_file_list: Path) -> Path:
+    """Convert saccer3 single-sample HDF5s into chunked format for tests.
+
+    Normalization mirrors what LazyHdf5Loader applies on the single-sample
+    path, so the chunked signals match the expected distribution. Shared
+    across predict_test and the embedding util tests.
+    """
+    from epiclass.utils.preprocessing.hdf5_chunks_creation import convert
+
+    chunk_dir = test_dir / "chunked"
+    convert(
+        hdf5_list=saccer3_hdf5_file_list,
+        chrom_file=SACCER3_DIR / "saccer3.can.chrom.sizes",
+        output_dir=chunk_dir,
+        samples_per_chunk=50,
+        normalize=True,
+        strict=True,
+    )
+    return chunk_dir
