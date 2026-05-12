@@ -246,9 +246,11 @@ class LazyHdf5Loader:
                 f"Mmap file not found: {mmap_path}. Run preload_all() first."
             )
 
-        # Lazy-load the mmap array reference
+        # Copy-on-write: PyTorch's from_numpy rejects read-only arrays.
+        # COW pages are only dirtied if a caller writes to the slice, which the
+        # training loop never does, so no real copying occurs in practice.
         if self._mmap_array is None:
-            self._mmap_array = np.load(mmap_path, mmap_mode="r")
+            self._mmap_array = np.load(mmap_path, mmap_mode="c")
 
         if not self._md5_to_index:
             # Rebuild index mapping from file order
