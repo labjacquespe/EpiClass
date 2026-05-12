@@ -1,6 +1,6 @@
 # EpiClass - Epigenomic Classifier
 
-EpiClass trains machine learning models to classify and label epigenomic data.
+EpiClass trains neural network models to classify and label epigenomic data.
 
 ## Publication
 
@@ -94,7 +94,6 @@ The test suite has been confirmed to pass with all of these fixed-dependency fil
 - `epiatlas_training.sh`: Job submission template supporting both training modes. Update variables as needed.
 - `predict.py`: Uses a trained model to generate predictions on new data.
 - `compute_shaps.py`: Computes SHAP values using a trained model and a representative background set.
-- `other_estimators.py`: Trains and evaluates non-neural network models (e.g., Random Forest, LGBM, etc.).
 - `general_training.py`: A more general training script that can be used for non-EpiATLAS datasets.
 
 ## Metadata Handling
@@ -177,94 +176,67 @@ The model directory should be the folder where the checkpoint `best_checkpoint.l
 The last path of this file will be loaded, so make sure the path points to a model weights file (`.ckpt`) that exists.
 
 ```text
-usage: predict.py [-h] [--offline] [--model MODEL] hdf5 chromsize logdir
+usage: predict.py [-h] [--chromsize CHROMSIZE] [--chunked] [--mmap_dir MMAP_DIR] [--hdf5_dir HDF5_DIR] [--model MODEL] [--offline] hdf5 logdir
 
 positional arguments:
-  hdf5           File with HDF5 paths.
-  chromsize      Chromosome sizes file.
-  logdir         Output directory.
+  hdf5                  For single format: file listing HDF5 paths. For chunked format: directory or file of chunk HDF5s.
+  logdir                Directory for output logs.
 
 options:
-  -h, --help     Show this help message and exit.
-  --offline      Use offline logging.
-  --model MODEL  Directory containing the model (defaults to `logdir`).
-```
-
-### `other_estimators.py`
-
-```text
-usage: other_estimators.py [-h]
-       [--models {all,LinearSVC,RF,LR,LGBM} [{all,LinearSVC,RF,LR,LGBM} ...]]
-       (--tune | --predict | --predict-new | --full-run)
-       [-n N] [--hyperparams HYPERPARAMS]
-       category hdf5 chromsize metadata logdir
-
-positional arguments:
-  category              Metadata category to analyze.
-  hdf5                  File with HDF5 paths.
-  chromsize             Chromosome sizes file.
-  metadata              Metadata JSON file.
-  logdir                Output directory.
-
-options:
-  -h, --help            Show this help message and exit.
-  --models              Specify models to use. Choices: all, LinearSVC, RF, LR, LGBM.
-
-Modes:
-  --tune                Perform hyperparameter search.
-  --predict             Fit model(s) and predict.
-  --predict-new         Use saved models to predict new samples.
-  --full-run            Tune and then predict.
-
-Tuning:
-  -n N                  Number of iterations for BayesSearchCV.
-
-Prediction:
-  --hyperparams         JSON file with model hyperparameters.
+  -h, --help            show this help message and exit
+  --chromsize CHROMSIZE
+                        Chromosome sizes file. Required for single-sample HDF5 format.
+  --chunked             Input is chunked HDF5 format (e.g. produced by convert_to_chunked.py). If not set, single-sample HDF5 format is assumed.
+  --mmap_dir MMAP_DIR   Directory for the mmap cache (single format only). Defaults to ./mmap_cache. On HPC, set to $SLURM_TMPDIR.
+  --hdf5_dir HDF5_DIR   Override HDF5 file paths to this directory (single format). Useful when HDF5s are copied to $SLURM_TMPDIR.
+  --model MODEL         Directory from which to load the model. Defaults to logdir.
+  --offline             Log offline instead of online.
 ```
 
 ### `compute_shaps.py`
 
 ```text
-usage: compute_shaps.py [-h]
-       -m {NN,LGBM}
-       --background_hdf5 BACKGROUND_HDF5
-       --explain_hdf5 EXPLAIN_HDF5
-       --chromsize CHROMSIZE
-       [-l LOGDIR]
-       [-o OUTPUT_NAME]
-       [--model_file MODEL_FILE]
-       [--model_dir MODEL_DIR]
+usage: compute_shaps.py [-h] --background_hdf5 background-hdf5 --explain_hdf5 explain-hdf5 --chromsize CHROMSIZE --model_dir MODEL_DIR [-l LOGDIR] [-o --output-name]
 
-Required arguments:
-  -m, --model           Model type: NN (neural network) or LGBM.
-  --background_hdf5     File with background HDF5s (for SHAP explainer). Absolute path required.
-  --explain_hdf5        File with HDF5s to explain. Absolute path required.
-  --chromsize           Chromosome sizes file.
+Compute SHAP values for a trained neural network. Requires the `shap` package: pip install .[shap]
 
-Optional arguments:
-  -l, --logdir          Output directory.
-  -o, --output_name     Output filename (pickle) for SHAP values.
-
-Model-specific:
-  --model_file          Path to trained LGBM model.
-  --model_dir           Directory with NN model (`best_checkpoint.list` required).
+options:
+  -h, --help            show this help message and exit
+  --background_hdf5 background-hdf5
+                        A file with hdf5 filenames for the explainer background. Use absolute path!
+  --explain_hdf5 explain-hdf5
+                        A file with hdf5 filenames on which to compute SHAP values. Use absolute path!
+  --chromsize CHROMSIZE
+                        A file with chrom sizes.
+  --model_dir MODEL_DIR
+                        Model directory containing 'best_checkpoint.list'.
+  -l LOGDIR, --logdir LOGDIR
+                        Directory for the output logs.
+  -o --output-name, --output_name --output-name
+                        Name (not path) of outputted pickle file containing computed SHAP values
 ```
 
 ## Tests
 
-All tests are expected to pass on tagged releases since v0.3.0, provided all requirements are installed.
+All tests are expected to pass on tagged releases since v0.3.0, provided all requirements are installed (`pip install -e .[test]`).
 
-Exceptions:
-
-- Three tests are skipped (due to runtime).
-- One test is currently unimplemented.
-
-To run tests, first uncompress fixtures `src/python/tests/fixtures.tar.xz` as folder `fixtures`.
+First, uncompress the test fixtures (only needed once):
 
 ```bash
-pytest src/python/tests
+cd src/python/tests && tar -xf fixtures.tar.zstd
 ```
+
+Then run the full suite in parallel from `src/python/`:
+
+```bash
+pytest tests # you can add `-n auto` if pytest-xdist is installed
+```
+
+Known exceptions:
+
+- **Skipped (GPU required)**: one test only runs when a CUDA-capable GPU is available.
+- **Skipped (visual)**: confusion matrix graph tests require manual visual inspection.
+- **Not yet implemented**: fold splitting for track-type classification (e.g. raw/pval/fold-change) is not yet correct.
 
 ## License
 
