@@ -1,4 +1,5 @@
 """Utility functions for merging classification results."""
+# pylint: disable=too-many-branches
 from __future__ import annotations
 
 import numpy as np
@@ -93,12 +94,17 @@ def merge_dataframes(
     # Combine different values with a separator
     dup_cols = [name for name in result.columns if name.endswith("_merge")]
     for dup_col in dup_cols:
-        normal_col = dup_col.replace("_merge", "")  # More readable way to remove suffix
+        normal_col = dup_col.replace("_merge", "")
 
         # For rows where both columns have values and they're different
         # combine them with a semicolon
         both_exist_mask = result[normal_col].notna() & result[dup_col].notna()
         different_vals_mask = both_exist_mask & (result[normal_col] != result[dup_col])
+
+        if different_vals_mask.any():
+            # Explicitly cast to object to avoid FutureWarning when assigning string values
+            # (the semicolon separator) to a potentially numeric column
+            result[normal_col] = result[normal_col].astype(object)
 
         # Combine different values with semicolon separator and clean formatting
         result.loc[different_vals_mask, normal_col] = (
@@ -109,6 +115,11 @@ def merge_dataframes(
 
         # Fill missing values in normal column from duplicate column
         missing_mask = result[normal_col].isna() & result[dup_col].notna()
+        if missing_mask.any():
+            # Also respect stricter dtypes
+            if result[normal_col].dtype != object and result[dup_col].dtype == object:
+                result[normal_col] = result[normal_col].astype(object)
+
         result.loc[missing_mask, normal_col] = result.loc[missing_mask, dup_col]
 
         # Drop the duplicate column

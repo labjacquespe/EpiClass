@@ -182,6 +182,7 @@ filterwarnings = [
     "ignore:.*pkg_resources.declare_namespace.*:DeprecationWarning",
     "ignore:.*pkg_resources is deprecated as an API.*",
     "ignore:.*RequirementCache.*:DeprecationWarning",
+    "error::FutureWarning:pandas.*", # treat pandas FutureWarnings as errors to ensure they are addressed promptly
 ]
 # general format: action:message:category:module:line
 [tool.pytest]
