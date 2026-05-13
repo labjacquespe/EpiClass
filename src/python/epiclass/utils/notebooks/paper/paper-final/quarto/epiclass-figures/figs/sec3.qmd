@@ -1,0 +1,800 @@
+---
+title: "Application of EpiClass on public epigenomic data"
+author: "Joanny Raby"
+format:
+  html:
+    code-fold: true
+    code-tools: true
+    toc: true
+    toc-location: right
+    toc-expand: 2
+    embed-resources: true
+engine: jupyter
+execute:
+  echo: true
+  warning: false
+  eval: true
+  error: false
+---
+
+# Results section 3: Figures and their code
+
+The formatting of the figures may differ slightly from those in the paper, but they display the same data points.
+
+All code cells are folded by default. To view any cell, click **"Code"** to expand it, or use the code options near the main title above to unfold all at once.
+
+Some figures are not included here because:
+
+- The interactive versions would be too large (e.g., PCA figures)
+- They were created manually (no figure creation code available)
+
+These figures can be viewed directly in the [paper](https://www.biorxiv.org/content/10.1101/2025.09.04.670545v1) and the [supplementary figures PDF](https://www.biorxiv.org/content/biorxiv/early/2025/09/04/2025.09.04.670545/DC1/embed/media-1.pdf).
+
+
+## Setup
+
+Imports and paths setups.
+
+```{python}
+#| label: setup-imports
+from __future__ import annotations
+
+from pathlib import Path
+from typing import List
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import skops.io as skio
+import upsetplot
+from IPython.display import display
+
+from epiclass.utils.notebooks.paper.paper_utilities import (
+    ASSAY,
+    ASSAY_ORDER,
+    IHECColorMap,
+    MetadataHandler,
+    SplitResultsHandler,
+)
+```
+
+```{python}
+#| label: setup-constants
+CANCER = "harmonized_sample_cancer_high"
+CORE_ASSAYS = ASSAY_ORDER[0:7]
+```
+
+```{python}
+#| label: setup-paths
+base_dir = Path.home() / "Projects/epiclass/output/paper"
+paper_dir = base_dir
+if not paper_dir.exists():
+    raise FileNotFoundError(f"Directory {paper_dir} does not exist.")
+
+base_data_dir = base_dir / "data"
+base_fig_dir = base_dir / "figures"
+tables_dir = base_dir / "tables"
+
+base_metadata_dir = base_data_dir / "metadata"
+```
+
+```{python}
+#| label: setup-colors
+IHECColorMap = IHECColorMap(base_fig_dir)
+assay_colors = IHECColorMap.assay_color_map
+cell_type_colors = IHECColorMap.cell_type_color_map
+sex_colors = IHECColorMap.sex_color_map
+```
+
+```{python}
+#| label: setup-handlers
+split_results_handler = SplitResultsHandler()
+
+metadata_handler = MetadataHandler(paper_dir)
+metadata_v2 = metadata_handler.load_metadata("v2")
+metadata_v2_df = metadata_handler.load_metadata_df("v2")
+```
+
+```{python}
+#| label: setup-pred-dir
+base_pred_dir = base_data_dir / "training_results" / "dfreeze_v2" / "predictions"
+if not base_pred_dir.exists():
+    raise FileNotFoundError(f"Directory {base_pred_dir} does not exist.")
+```
+
+## Results context
+
+Predictions on external databases (ENCODE, ChIP-Atlas and Recount3) were all performed using the same classifiers trained on the labeled EpiAtlas samples.
+
+| Metadata category|   Nb classes |     Experiment Key (comet.com)       | Training Files |
+|------------------|--------------|--------------------------------------|----------|
+| assay_epiclass   |     7      | 69488630801b4a05a53b5d9e572f0aaa       | 16788    |
+| assay_epiclass   |     11      | 0f8e5eb996114868a17057bebe64f87c      | 20922    |
+| harmonized_donor_sex | 3       | 4b908b83e0ec45c3ab991e65aa27af0c | 18299    |
+| harmonized_donor_life_stage | 5    | 91214ed0b1664395b1826dc69a495ed4 | 15372    |
+| harmonized_sample_cancer_high | 2    | 15da476b92f140eab818ece369248f4c | 20922    |
+| harmonized_biomaterial_type | 4 | f42b6f4e147c4f1bbe378f3eed415099 | 20922 |
+
+Classes:
+
+- assay 7c: 6 h3k* histone marks + input
+- assay 11c: assay7c + rna_seq + mrna_seq + wgbs_standard + wgbs_pbat
+- harmonized_donor_sex: male, female, mixed
+- harmonized_donor_life_stage: adult, child, newborn, fetal, embryonic
+- harmonized_sample_cancer_high (modification of harmonized_sample_disease_high): cancer, non-cancer (healthy/None+disease)
+- harmonized_biomaterial_type (biomat): cell line, primary cell, primary cell culture, primary tissue
+
+Training metadata: Approximately `IHEC_sample_metadata_harmonization.v1.1.extended.csv`.
+
+See `data/metadata/epiatlas/README.md` for metadata details, and `training_metadata_vs_official_v1.1.json` for exact difference of our training data and v1.1.
+
+Additonally, for ENCODE, the `harmonized_sample_ontology_intermediate` model was used on a subset of files with known EpiATLAS biospecimens.
+
+| Metadata category|   Nb classes |     Experiment Key (comet.com)      | Training Files |
+|-------------------------------------------|-------------|---------------------------------------|----------|
+| harmonized_sample_ontology_intermediate   |     16      | bb66b72ae83645d587e50b34aebb39c3      | 16379    |
+
+The metadata for ENCODE predictions was created using the FILE + EXPERIMENT + BIOSAMPLE accessions, starting from filenames.
+For the initial extraction process, see: `src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb)).
+Final metadata file: `encode_full_metadata_2025-02_no_revoked.freeze1.csv(.xz)`
+
+## Figure 3 and Supp Fig 8A,D - Public databases metrics {#sec-all-DB-metrics}
+
+ChIP-Atlas, ENCODE and recount3 metrics at various prediction score thresholds were generated using the `MetricsPerAssay` class, from `src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py)).
+
+([Folder permalink](https://github.com/labjacquespe/EpiClass/tree/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper))
+- ChIP-Atlas: `src/python/epiclass/utils/notebooks/paper/c-a_pred_analysis.ipynb` (section `Summary metrics by assay`)
+- ENCODE: `src/python/epiclass/utils/notebooks/paper/encode_pred_analysis.ipynb` (section `All 5 tasks metrics summary`, run `Setup` section beforehand)
+- recount3: `src/python/epiclass/utils/notebooks/paper/recount3_pred_analysis.ipynb`
+
+
+Results were manually merged into Supplementary Table 9, and graphs were manually created using values from that table.
+
+### Figure 3B - ChIP-Atlas assay (7classes) prediction
+
+The following code shows how the various fractions presented in the graph are obtained.
+\
+\
+Read prediction file.
+
+```{python}
+#| label: fig3b-read-chipatlas-preds
+ca_preds_dir = tables_dir / "dfreeze_v2" / "predictions"
+ca_preds_path = (
+    ca_preds_dir / "ChIP-Atlas_predictions_20240606_merge_metadata_freeze1.csv.xz"
+)
+ca_preds_df = pd.read_csv(ca_preds_path, sep=",", low_memory=False, compression="xz")
+
+print(f"ChIP-Atlas: {ca_preds_df.shape[0]} total files")
+```
+
+Removing ChIP-Atlas experiment overlap with EpiATLAS
+
+```{python}
+#| label: fig3b-remove-epiatlas-overlap
+print(f"ChIP-Atlas: Initial {ca_preds_df.shape[0]} files")
+no_epiatlas_df = ca_preds_df[ca_preds_df["is_EpiAtlas_EpiRR"] == "0"]
+
+diff = ca_preds_df.shape[0] - no_epiatlas_df.shape[0]
+print(f"ChIP-Atlas: {diff} files with EpiAtlas EpiRR removed")
+print(f"ChIP-Atlas: {no_epiatlas_df.shape[0]} files without EpiAtlas EpiRR")
+```
+
+Ignoring non-core consensus files.
+
+```{python}
+#| label: fig3b-filter-core-consensus
+non_core_labels = ["non-core", "CTCF"]
+ca_core7_df = no_epiatlas_df[
+    ~no_epiatlas_df["target_majority_consensus"].isin((non_core_labels))
+]
+
+diff = no_epiatlas_df.shape[0] - ca_core7_df.shape[0]
+print(f"ChIP-Atlas: {diff} files with non-core consensus removed")
+print(f"ChIP-Atlas: {ca_core7_df.shape[0]} files with core consensus")
+
+display(ca_core7_df["target_majority_consensus"].value_counts(dropna=False))
+```
+
+![](../resources/fig3B.png){width=.column-body}
+
+Figure 3B: Inference of the Assay classifier on the ChIP-Atlas datasets represented as a multi-layer donut chart where the internal layer is depicting the availability status of the metadata as being provided/extracted (yellow) vs missing (grey), the central layer depicting the classifier prediction matching (green) or not (red) the expected metadata label, and the external layer containing the confidence level where prediction scores above 0.6 correspond to high-confidence predictions (light to dark blue >0.6, >0.8 and >0.9) vs low confidence predictions (brown). The high-confidence mismatching predictions were further divided between datasets predicted as Input (light orange) vs potential mislabels (dark red).
+
+
+#### High-confidence predictions
+
+```{python}
+#| label: fig3b-high-confidence-preds
+total_N = ca_core7_df.shape[0]
+high_confidence_pred_df = ca_core7_df[ca_core7_df["Max_pred_assay7"] >= 0.6]
+
+high_confidence_N = high_confidence_pred_df.shape[0]
+N_percent = high_confidence_N / total_N
+print(
+    f"ChIP-Atlas: {high_confidence_N}/{total_N} files ({high_confidence_N/total_N:.2%}) with high confidence assay prediction"
+)
+```
+
+
+#### Match between manual target consensus and MLP prediction
+
+```{python}
+#| label: fig3b-calculate-match
+total_N = high_confidence_pred_df.shape[0]
+
+match_rule = (
+    high_confidence_pred_df["target_majority_consensus"]
+    == high_confidence_pred_df["Predicted_class_assay7"]
+)
+match_df = high_confidence_pred_df[match_rule]
+mismatch_df = high_confidence_pred_df[~match_rule]
+
+agreement_N = match_df.shape[0]
+
+print(
+    f"ChIP-Atlas: {agreement_N}/{total_N} files ({agreement_N / total_N:.2%}) with agreement between consensus and predicted assay"
+)
+```
+
+
+#### Mismatch breakdown
+
+```{python}
+#| label: fig3b-mismatch-breakdown
+total_mismatch = mismatch_df.shape[0]
+input_rule = mismatch_df["Predicted_class_assay7"] == "input"
+input_pred_N = input_rule.sum()
+
+print(
+    f"ChIP-Atlas: {input_pred_N}/{total_mismatch} files ({input_pred_N / total_mismatch:.2%}) with mismatch predicted as input"
+)
+print(
+    f"ChIP-Atlas: {total_mismatch-input_pred_N}/{total_mismatch} files ({(total_mismatch-input_pred_N) / total_mismatch:.2%}) potential mislabels"
+)
+display(mismatch_df[~input_rule]["core7_DBs_consensus"].value_counts(dropna=False))
+```
+
+
+## Supplementary Figure 6 - Prediction score threshold impact
+
+See [Supplementary Figures page](./sec2-supp.html#sec-supp6).
+
+
+## Supplementary Figure 8
+
+### A,D - ENCODE core/non-core accuracy
+
+See [previous section](./sec3.html#sec-all-DB-metrics).
+
+
+### B - ENCODE non-core predictions with assay category mapping
+
+Load ENCODE predictions.
+
+```{python}
+#| label: supp-fig8b-read-encode-preds
+encode_preds_dir = base_pred_dir / "encode"
+encode_preds_path = (
+    encode_preds_dir / "complete_encode_predictions_augmented_2025-02_metadata.csv.gz"
+)
+encode_preds_df = pd.read_csv(
+    encode_preds_path, sep=",", low_memory=False, compression="gzip"
+)
+print(f"ENCODE: {encode_preds_df.shape[0]} total files")
+```
+
+Filter out overlap with EpiATLAS EpiRRs.
+
+```{python}
+#| label: supp-fig8b-filter-no-epiatlas
+encode_preds_df = encode_preds_df[encode_preds_df["in_epiatlas"].astype(str) == "False"]
+print(f"ENCODE: {encode_preds_df.shape[0]} total files with no EpiAtlas overlap")
+```
+
+Load ENCODE manually created assay categories, and merge them with ENCODE predictions data.
+
+```{python}
+#| label: supp-fig8b-load-categories
+encode_meta_dir = base_data_dir / "metadata" / "encode"
+
+non_core_categories_path = (
+    encode_meta_dir / "non-core_encode_assay_category_2024-08-29.csv"
+)
+
+non_core_categories_df = pd.read_csv(non_core_categories_path, sep=",", low_memory=False)
+print(f"ENCODE: {non_core_categories_df.shape[0]} non-core categories")
+
+non_core_map = non_core_categories_df.set_index("target").to_dict()["Assay category"]
+
+N_mapped = len([val for val in non_core_map.values() if val != "not_looked"])
+print(f"ENCODE: {N_mapped} non-core categories mapped to functional categories.")
+
+
+# Select non-core samples
+encode_non_core_df = encode_preds_df[
+    encode_preds_df[ASSAY].isin(["non-core", "ctcf"])
+].copy()
+
+# Map assays to categories
+encode_non_core_df["assay_category"] = (
+    encode_non_core_df["assay"].str.lower().replace(non_core_map)
+)
+```
+
+
+Graph.
+
+```{python}
+#| label: supp-fig8b-generate-plot
+#| column: body-outset-left
+assay_categories_order = [
+    "trx_reg",
+    "heterochrom",
+    "polycomb",
+    "splicing",
+    "insulator",
+    "other/mixed",
+    "not_looked",
+]
+
+assay_epiclass_order = [
+    "h3k27ac",
+    "h3k4me3",
+    "h3k4me1",
+    "h3k9me3",
+    "h3k27me3",
+    "h3k36me3",
+    "input",
+]
+assay_epiclass_order = {assay: i for i, assay in enumerate(assay_epiclass_order)}
+pred_col = f"Predicted class ({ASSAY}_7c)"
+max_pred_col = f"Max pred ({ASSAY}_7c)"
+
+min_pred = 0.6
+sub_df = encode_non_core_df[encode_non_core_df[max_pred_col] >= min_pred]
+groupby = (
+    sub_df.groupby(["assay_category", pred_col])
+    .size()
+    .reset_index(name="Count")
+    .sort_values(["assay_category", "Count"], ascending=[True, False])
+)
+groupby["Percentage"] = groupby.groupby("assay_category")["Count"].transform(
+    lambda x: (x / x.sum()) * 100
+)
+
+# Add order for plotting
+groupby["assay_order"] = groupby[pred_col].map(assay_epiclass_order)
+groupby = groupby.sort_values(
+    ["assay_category", "assay_order"], ascending=[False, True]
+)
+
+# Main plot
+fig = px.bar(
+    groupby,
+    x="assay_category",
+    y="Percentage",
+    color=pred_col,
+    barmode="stack",
+    category_orders={"assay_category": assay_categories_order},
+    color_discrete_map=assay_colors,
+    title=f"core7 predictions for non-core assays, predScore >= {min_pred:.2f}",
+    labels={"Percentage": "Percentage (%)", "assay_category": "Assay Category"},
+)
+
+# Modify x-axis labels
+total_counts = groupby.groupby("assay_category")["Count"].sum()
+ticktext = [
+    f"{assay_category} (N={total_counts[assay_category]})"
+    for assay_category in assay_categories_order
+]
+fig.update_xaxes(tickvals=assay_categories_order, ticktext=ticktext)
+fig.show()
+```
+
+Supplementary Figure 8B: Proportion of non-core ChIP-Seq datasets from ENCODE classified with high-confidence (>0.6) in the different functional categories predicted as one of the 7 core ChIP assays. Since none of the six histone modifications used for training are specifically associated with insulator factors, they were instead mostly predicted as Input.
+
+
+### C,F,I - PCAs
+
+PCAs were computed via `src/python/epiclass/utils/compute_pca.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/compute_pca.py)), using `IncrementalPCA` from `scikit-learn`.
+
+Graphing was done using code similar to `src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb)), which uses the output of `compute_pca.py`.
+
+
+### E - UpsetPlot of assay labels provided in 4 DBs
+
+The following function gives a consensus label to each ChIP-Atlas sample, using the target values given by ChIP-Atlas, cistromeDB, NGS-QC and GEO.
+
+The consensus description is based on the following rules:
+
+- "Identical" if all labels are the same
+- "Different" if at least one label is different
+- "1 source" if only one DB has a label
+- "Ignored - Potential non-core" if any label is not in the core assays
+
+```{python}
+#| label: supp-fig5e-define-consensus-function
+def create_4DB_consensus_description(
+    ca_core_df: pd.DataFrame, db_cols: List[str]
+) -> pd.Series:
+    """Create a description of the 4DB assay consensus labels.
+
+    Treat "Unclassified" from Chip-Atlas as absent samples for the target consensus evaluation.
+
+    The consensus description is based on the following rules:
+    - "Identical" if all labels are the same
+    - "Different" if at least one label is different
+    - "1 source" if only one DB has a label
+    - "Ignored - Potential non-core" if any label is not in the core assays
+
+    Args:
+        ca_core_df: ChIP-Atlas core7 DataFrame
+
+    Returns:
+        Series with the target consensus description
+    """
+    id_db_target = []
+    tmp_df = ca_core_df.loc[:, db_cols].copy()
+    tmp_df["C-A"].replace("unclassified", "----", inplace=True)
+
+    for labels in tmp_df.values:
+        missing_N = sum(label == "----" for label in labels)
+        db_labels = set(labels)
+
+        try:
+            db_labels.remove("----")
+        except KeyError:
+            pass
+        if any(label not in CORE_ASSAYS + ["ctrl"] for label in db_labels):
+            id_db_target.append("Ignored - Potential non-core")
+        elif missing_N == 3:
+            id_db_target.append("1 source")
+        elif len(db_labels) == 1:
+            id_db_target.append("Identical")
+        else:
+            id_db_target.append("Different")
+
+    return pd.Series(id_db_target, index=ca_core_df.index)
+```
+
+Define graphing function `make_db_upsetplot`.
+
+```{python}
+#| label: supp-fig5e-define-upsetplot-function
+def make_db_upsetplot(
+    df: pd.DataFrame, consensus_col: str, db_cols: List[str], title: str
+) -> upsetplot.UpSet:
+    """Make an upsetplot of the sample presence in the different databases."""
+    df = df.copy()
+
+    # Create a new DataFrame with boolean columns for each database
+    upset_df = pd.DataFrame()
+    for col in db_cols:
+        upset_df[col] = df[col] != "----"
+    upset_df[consensus_col] = df[consensus_col]
+
+    # Set the index for the UpSet plot
+    upset_df = upset_df.set_index(db_cols)
+
+    # Create the UpSet plot
+    upset = upsetplot.UpSet(
+        upset_df,
+        intersection_plot_elements=0,  # disable the default bar chart
+        sort_by="cardinality",
+        show_counts=True,  # type: ignore
+        orientation="horizontal",
+    )
+
+    # Add stacked bars
+    upset.add_stacked_bars(by=consensus_col, elements=15)
+
+    # Plot and set title
+    axes = upset.plot()
+    plt.suptitle(title)
+    axes["totals"].set_title("Total")
+    plt.legend(loc="center left")
+    plt.show()
+    return upset
+```
+
+Graph.
+
+```{python}
+#| label: supp-fig5e-generate-upsetplot
+#| column: body
+DB_COLS = ["GEO_target_mod", "C-A_target", "Cistrome_target", "NGS_target_mod"]
+consensus_col = "core7_DBs_consensus"
+title = "ChIP-Atlas core 7 samples presence in used DBs\nTarget Consensus - No EpiAtlas overlap"
+upset = make_db_upsetplot(
+    df=ca_core7_df, consensus_col=consensus_col, db_cols=DB_COLS, title=title
+)
+```
+
+Supplementary Figure 8E: Comparison of the four public sources used to extract assay metadata after excluding ChIP-Atlas datasets present in EpiATLAS. The 1 source category corresponds to 5,115 datasets where the assay label was extracted only from GEO because they are unlabeled in ChIP-Atlas. A total of 706 datasets got different ChIP target names.
+
+
+### G - ChIP-Atlas mislabeled datasets
+
+Genome browser screenshots, using coordinates and samples specified in the image, see [supplementary figures PDF](https://www.biorxiv.org/content/biorxiv/early/2025/09/04/2025.09.04.670545/DC1/embed/media-1.pdf).
+
+
+### H - Effect of EpiATLAS imputation on assay training and inference
+
+Read metadata for both ChIP-Atlas and imputed samples.
+```{python}
+#| label: supp-fig8h-setup-imputed-paths
+imputed_metadata_path = (
+    base_metadata_dir
+    / "epiatlas"
+    / "imputed"
+    / "hg38_epiatlas_imputed_pval_chip_2024-02.json"
+)
+metadata_imputed: pd.DataFrame = metadata_handler.load_any_metadata(imputed_metadata_path, as_dataframe=True)  # type: ignore
+
+ca_metadata_path = base_metadata_dir / "chip_atlas" / "CA.full_info_metadata.freeze1.tsv"
+metadata_ca = pd.read_csv(ca_metadata_path, sep="\t", low_memory=False)
+```
+
+Gather predictions from classifier training on observed core6 data (all pval, no input).
+
+```{python}
+#| label: supp-fig8h-gather-observed-preds
+data_dir = base_data_dir / "training_results" / "dfreeze_v2"
+pred_dfs = {}  # Gather all 4 cases
+
+observed_dir = (
+    data_dir
+    / "hg38_100kb_all_none"
+    / "assay_epiclass_1l_3000n"
+    / "chip-seq-only"
+    / "complete_no_valid_oversample"
+)
+observed_inf_imputed_path = next((observed_dir / "predict_imputed").glob("*.csv"))
+observed_inf_CA_path = next((observed_dir / "predict_C-A").glob("*.csv"))
+
+basename = "observed_core6_pval_inf"
+
+# Imputed preds
+df = pd.read_csv(observed_inf_imputed_path, header=0, index_col=0, low_memory=False)
+df = pd.merge(df, metadata_imputed, left_index=True, right_on="md5sum")
+df["True class"] = df[ASSAY]
+
+print(f"Imputed: {df.shape[0]} total files")
+pred_dfs[f"{basename}_imputed"] = df
+
+# C-A preds
+df = pd.read_csv(observed_inf_CA_path, header=0, index_col=0, low_memory=False)
+df = pd.merge(df, metadata_ca, left_index=True, right_on="ID")
+df["True class"] = df["expected_assay"]
+print(f"CA: {df.shape[0]} total files")
+
+display(df["expected_assay"].value_counts(dropna=False))
+pred_dfs[f"{basename}_C-A"] = df
+```
+
+Gather predictions from classifier training on imputed data (all pval, no input).
+
+```{python}
+#| label: supp-fig8h-gather-imputed-training-preds
+imputed_dir = (
+    data_dir
+    / "hg38_100kb_all_none_imputed"
+    / "assay_epiclass_1l_3000n"
+    / "chip-seq-only"
+    / "complete_no_valid_oversample"
+)
+imputed_inf_observed_path = next(
+    (imputed_dir / "predict_epiatlas_pval_chip-seq").glob("*.csv")
+)
+imputed_inf_CA_path = next((imputed_dir / "predict_C-A").glob("*.csv"))
+
+basename = "imputed_core6_pval_inf"
+
+# Observed (non-imputed) data preds
+df = pd.read_csv(imputed_inf_observed_path, header=0, index_col=0, low_memory=False)
+df = pd.merge(df, metadata_v2_df, left_index=True, right_on="md5sum")
+df["True class"] = df[ASSAY]
+
+print(f"EpiATLAS pval ChIP: {df.shape[0]} total files")
+pred_dfs[f"{basename}_obs_core6_pval"] = df
+
+# C-A preds
+df = pd.read_csv(imputed_inf_CA_path, header=0, index_col=0, low_memory=False)
+df = pd.merge(df, metadata_ca, left_index=True, right_on="ID")
+df["True class"] = df["expected_assay"]
+
+print(f"CA: {df.shape[0]} total files")
+pred_dfs[f"{basename}_C-A"] = df
+```
+
+Compute accuracy per assay.
+
+```{python}
+#| label: supp-fig8h-compute-accuracy
+core6_assays = ASSAY_ORDER[0:6]
+rows = []
+
+for name, df in pred_dfs.items():
+    if "Max pred" not in df.columns:
+        df["Max pred"] = df[core6_assays].max(axis=1)
+
+    task_name = f"train_{name}"
+
+    for label in core6_assays:
+        assay_df = df[df["True class"] == label]
+
+        for min_pred in ["0.0", "0.6", "0.9"]:
+            sub_df = assay_df[assay_df["Max pred"] > float(min_pred)]
+            acc = (sub_df["True class"] == sub_df["Predicted class"]).mean()
+            rows.append([task_name, label, min_pred, acc, len(sub_df)])
+
+df_acc_per_assay = pd.DataFrame(
+    rows, columns=["task_name", "assay", "min_predScore", "acc", "nb_samples"]
+)
+```
+
+Graphing results
+
+```{python}
+#| label: supp-fig8h-generate-imputation-plot
+#| column: screen-inset-left
+
+# Prepare data from graphing
+df_acc_per_assay["scatter_name"] = (
+    df_acc_per_assay["task_name"]
+    .replace("train_", "", regex=True)
+    .replace("imputed", "imp", regex=True)
+    .replace("observed", "obs", regex=True)
+)
+df_acc_per_assay["inf_target"] = df_acc_per_assay["scatter_name"].str.split("_").str[-1]
+
+df_acc_per_assay = df_acc_per_assay.sort_values(
+    ["assay", "min_predScore", "scatter_name"]
+)
+
+graph_df = df_acc_per_assay.copy()
+graph_df = graph_df.sort_values(["inf_target", "scatter_name"])
+
+# Prepare boxplot data
+tick_group = [
+    "obs_core6_pval_inf_imp",
+    "imp_core6_pval_inf_obs_core6_pval",
+    "obs_core6_pval_inf_C-A",
+    "imp_core6_pval_inf_C-A",
+]
+scatter_name_to_position = {name: i for i, name in enumerate(tick_group)}
+
+min_pred_values = ["0.0", "0.6", "0.9"]
+offset = [-0.25, 0, 0.25]  # Offset for each min_pred within a tick group
+
+# Define jitter magnitude (like 0.05 for left/right spacing)
+jitter = 0.05
+jitter_offsets = [-jitter, 0, jitter]
+
+min_predScore_color_map = {"0.0": "blue", "0.6": "orange", "0.9": "red"}
+
+minY = 0.7
+maxY = 1.005
+
+# Plot each trace
+fig = go.Figure()
+for name in tick_group:
+    group = graph_df[graph_df["scatter_name"] == name]
+
+    for i, min_pred in enumerate(min_pred_values):
+        df_subset = group[group["min_predScore"] == min_pred]
+
+        x_position = scatter_name_to_position[name] + offset[i]
+        x_positions = [x_position] * len(df_subset)
+        y_values = df_subset["acc"]
+        hover_texts = [
+            f"{row['assay']}<br>Samples: {row['nb_samples']}"
+            for _, row in df_subset.iterrows()
+        ]
+        colors = [assay_colors[assay] for assay in df_subset["assay"]]
+
+        # Add box plot without points
+        fig.add_trace(
+            go.Box(
+                x=x_positions,
+                y=y_values,
+                name=f"{name} - Min Pred Score: {min_pred}",
+                line=dict(
+                    color=min_predScore_color_map[min_pred],
+                ),
+                boxpoints="all",
+                marker=dict(
+                    opacity=0, size=1e-5
+                ),  # hide points, so whiskers don't go to min/max
+                boxmean=True,
+                showlegend=False,
+                hoverinfo="none",
+            )
+        )
+        # Add scatter plot for individual points
+        x_jittered = [
+            x + jitter_offsets[i % len(jitter_offsets)] for i, x in enumerate(x_positions)
+        ]
+
+        # sort x/y together
+        x_jittered, y_values, hover_texts = zip(
+            *sorted(zip(x_jittered, y_values, hover_texts))
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=x_jittered,
+                y=y_values,
+                mode="markers",
+                marker=dict(color=colors, size=8, line=dict(color="Black", width=1)),
+                name=f"{name} - Min Pred Score: {min_pred}",
+                showlegend=False,
+                text=hover_texts,
+                hoverinfo="text+y",
+            )
+        )
+
+# Update x-axis tick labels
+ticktext = []
+for tick in tick_group:
+    train, inf = tick.split("_inf_")
+    ticktext.append(f"<b>{train}</b> \u2192 <b>{inf}</b>")
+
+fig.update_xaxes(tickmode="array", ticktext=ticktext, tickvals=list(range(len(ticktext))))
+
+# Update layout
+fig.update_layout(
+    title="Accuracy per Task (6 core assays)",
+    xaxis_title="Task (training data \u2192 inference data)",
+    yaxis_title="Accuracy",
+    showlegend=True,
+    height=600,
+    width=1000,
+    yaxis=dict(tickformat=".2%", range=[minY, maxY]),
+)
+
+# Add a legend for minPred colors
+for val, color in min_predScore_color_map.items():
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker=dict(size=10, color=color, symbol="square"),
+            name=f"Min Pred Score: {val}",
+            showlegend=True,
+        )
+    )
+
+# Add a legend for assay colors
+for assay in sorted(core6_assays):
+    color = assay_colors[assay]
+    fig.add_trace(
+        go.Scatter(
+            x=[None],
+            y=[None],
+            mode="markers",
+            marker=dict(size=10, color=color),
+            name=assay,
+            legendgroup="assays",
+            showlegend=True,
+        )
+    )
+
+# Add legend for obs and imp
+fig.add_annotation(
+    x=1.2,
+    y=0.2,
+    yref="paper",
+    xref="paper",
+    text="obs = observed<br>imp = imputed",
+    showarrow=False,
+    font=dict(size=14),
+)
+
+fig.show()
+```
+
+The number of samples associated with each point is visible on hover.
+
+Supplementary Figure 8H: Accuracy comparison per assay (dots) between Assay classifiers trained on observed vs imputed data from EpiATLAS and applied to either EpiATLAS or ChIP-Atlas without prediction score threshold (brown), or with a threshold of 0.6 (light blue) or 0.9 (dark blue). These classifiers were both trained only using the p-value datasets as this is the only track type available for imputed data (therefore no Input assay) (Supplementary Table 13). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
