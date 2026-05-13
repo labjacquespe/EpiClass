@@ -1802,12 +1802,13 @@ def save_figure(
     scale: float = 2,
     width: int | None = None,
     height: int | None = None,
+    include_plotlyjs: bool | str = True,
 ) -> None:
     """Write a Plotly figure to html + svg + png."""
     logdir = Path(logdir)
     logdir.mkdir(parents=True, exist_ok=True)
 
-    fig.write_html(logdir / f"{filename}.html")
+    fig.write_html(logdir / f"{filename}.html", include_plotlyjs=include_plotlyjs)
     fig.write_image(logdir / f"{filename}.svg", width=width, height=height)
     fig.write_image(logdir / f"{filename}.png", width=width, height=height, scale=scale)
 
