@@ -20,11 +20,15 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
-def test_predict_single_sample(test_dir: Path, saccer3_hdf5_file_list: Path):
-    """Test if basic prediction succeeds (single-sample HDF5 path)."""
+def test_predict_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Path):
+    """Test if basic prediction succeeds (single-sample HDF5 path).
+
+    Uses the 100-sample subset — prediction is per-sample so 100 is enough
+    to exercise the load/predict/csv-write path end-to-end.
+    """
     sys.argv = [
         "predict.py",
-        str(saccer3_hdf5_file_list),
+        str(saccer3_small_hdf5_file_list),
         str(test_dir),  # logdir
         "--chromsize",
         str(SACCER3_CHROMS),

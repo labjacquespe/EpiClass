@@ -15,17 +15,19 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
-def test_compute_umap_single_sample(test_dir: Path, saccer3_hdf5_file_list: Path):
+def test_compute_umap_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Path):
     """Single-sample path: mmap (copy-on-write), build knn, fit one UMAP.
 
     ``--max_embeddings 1`` keeps the sweep to a single fit; the full
-    12-embedding sweep would take minutes.
+    12-embedding sweep would take minutes. We use the 100-sample subset
+    fixture because KNN(correlation) scales superlinearly with sample count
+    and dominates the test time on the full 1055-file list.
     """
     chroms = FIXTURES_DIR / "saccer3" / "saccer3.can.chrom.sizes"
 
     sys.argv = [
         "compute_umap.py",
-        str(saccer3_hdf5_file_list),
+        str(saccer3_small_hdf5_file_list),
         "--output",
         str(test_dir),
         "--chromsize",

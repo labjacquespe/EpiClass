@@ -199,6 +199,91 @@ def hdf5_file_list(
     return file_list
 
 
+# Subset size used by the small-dataset fixtures below. 100 samples is enough
+# to exercise the embedding/PCA/predict pipelines end-to-end without paying for
+# UMAP/IPCA scaling on the full 1055-file saccer3 dump.
+SACCER3_SUBSET_N = 100
+
+
+@pytest.fixture(scope="session", name="saccer3_small_hdf5_file_list")
+def fixture_saccer3_small_hdf5_file_list(
+    tmp_path_factory, extracted_hdf5_dir: Path
+) -> Path:
+    """First-N saccer3 HDF5 paths as a list file, session-scoped per worker.
+
+    For smoke tests (UMAP, PCA, predict-single) that don't care which samples
+    they get, just that the pipeline runs end-to-end. The full 1055-file list
+    makes UMAP/IPCA dominate test time without adding coverage.
+    """
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    out_dir = tmp_path_factory.getbasetemp() / f"saccer3_small_{worker_id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / "hdf5_files_small.list"
+    if out.exists():
+        return out
+
+    hdf5_files = sorted(extracted_hdf5_dir.glob("*.hdf5"))[:SACCER3_SUBSET_N]
+    out.write_text("".join(f"{p}\n" for p in hdf5_files))
+    return out
+
+
+@pytest.fixture(scope="session", name="saccer3_small_training_data")
+def fixture_saccer3_small_training_data(
+    tmp_path_factory, extracted_hdf5_dir: Path
+) -> tuple[Path, Path]:
+    """Stratified subset of saccer3 for the CV training smoke test.
+
+    Picks the top `assay` classes that have >=10 members and trims each to
+    SACCER3_SUBSET_N // n_classes samples. Writes a paired (hdf5_list,
+    metadata.json) pair that satisfies `--min_class_size 10` while keeping
+    total samples ~100 instead of 1055. Session-scoped per worker.
+
+    Returns (hdf5_list_path, metadata_path).
+    """
+    import json
+    from collections import Counter
+
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    out_dir = tmp_path_factory.getbasetemp() / f"saccer3_train_small_{worker_id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    hdf5_list_out = out_dir / "hdf5_files_train_small.list"
+    meta_out = out_dir / "saccer3_metadata_train_small.json"
+    if hdf5_list_out.exists() and meta_out.exists():
+        return hdf5_list_out, meta_out
+
+    src_meta = SACCER3_DIR / "saccer3_2016-07_metadata.json"
+    meta = json.loads(src_meta.read_text())
+
+    md5_to_path = {p.name.split("_")[0]: p for p in extracted_hdf5_dir.glob("*.hdf5")}
+
+    # Group entries by assay and pick classes with enough samples on disk.
+    by_assay: dict[str, list[dict]] = {}
+    for entry in meta["datasets"]:
+        if entry["md5sum"] in md5_to_path:
+            by_assay.setdefault(entry["assay"], []).append(entry)
+
+    eligible_classes = [a for a, entries in by_assay.items() if len(entries) >= 10]
+    # Stable ordering: most-populated assays first.
+    eligible_classes.sort(key=lambda a: -len(by_assay[a]))
+    n_classes = max(3, min(5, len(eligible_classes)))
+    eligible_classes = eligible_classes[:n_classes]
+    per_class = max(10, SACCER3_SUBSET_N // n_classes)
+
+    kept_entries = []
+    for assay in eligible_classes:
+        kept_entries.extend(by_assay[assay][:per_class])
+
+    kept_md5s = [e["md5sum"] for e in kept_entries]
+
+    meta_out.write_text(json.dumps({"datasets": kept_entries}))
+    hdf5_list_out.write_text(
+        "".join(f"{md5_to_path[md5]}\n" for md5 in kept_md5s)
+    )
+    # Sanity: stratification preserved
+    assert Counter(e["assay"] for e in kept_entries)
+    return hdf5_list_out, meta_out
+
+
 @pytest.fixture(scope="session", name="saccer3_chunked_dir")
 def fixture_saccer3_chunked_dir(tmp_path_factory, extracted_hdf5_dir: Path) -> Path:
     """Convert saccer3 single-sample HDF5s into chunked format for tests.

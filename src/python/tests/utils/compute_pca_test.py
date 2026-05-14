@@ -15,13 +15,17 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
-def test_compute_pca_single_sample(test_dir: Path, saccer3_hdf5_file_list: Path):
-    """Single-sample path: register HDF5s, preload mmap, run IPCA, save skops."""
+def test_compute_pca_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Path):
+    """Single-sample path: register HDF5s, preload mmap, run IPCA, save skops.
+
+    Uses the 100-sample subset fixture — IPCA scales linearly with samples
+    but the full 1055-file list adds 10s of overhead without coverage.
+    """
     chroms = FIXTURES_DIR / "saccer3" / "saccer3.can.chrom.sizes"
 
     sys.argv = [
         "compute_pca.py",
-        str(saccer3_hdf5_file_list),
+        str(saccer3_small_hdf5_file_list),
         str(test_dir),
         "--chromsize",
         str(chroms),

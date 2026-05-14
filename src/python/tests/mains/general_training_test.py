@@ -23,16 +23,25 @@ def fixture_test_dir(mk_logdir) -> Path:
     "ignore:The 'train_dataloader' does not have many workers.*:UserWarning"
 )
 @pytest.mark.slow
-def test_cross_validation_training(test_dir: Path, saccer3_hdf5_file_list: Path):
-    """Test if basic training succeeds."""
+def test_cross_validation_training(
+    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+):
+    """Test if basic training succeeds.
+
+    Uses the stratified 100-sample subset (3-5 assay classes, >=10 each)
+    instead of the full 1055-sample saccer3 dump — the test only asserts
+    that the CV flow produces fold dirs + prediction files, so the full
+    set just slows training without adding coverage.
+    """
+    hdf5_list, metadata = saccer3_small_training_data
     # fmt: off
     sys.argv = [
         "general_training.py",
         "assay",
         str(SACCER3_DIR / "saccer3_hparams.json"),
-        str(saccer3_hdf5_file_list),
+        str(hdf5_list),
         str(SACCER3_DIR / "saccer3.can.chrom.sizes"),
-        str(SACCER3_DIR / "saccer3_2016-07_metadata.json"),
+        str(metadata),
         str(test_dir),
         "--n_fold", "2",
         "--hl_units", "500",

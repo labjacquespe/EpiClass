@@ -35,13 +35,13 @@ def fixture_adapted_metadata(test_dir: Path) -> Path:
 
 @pytest.mark.slow
 def test_analyze_hdf5_vals_runs(
-    test_dir: Path, saccer3_hdf5_file_list: Path, adapted_metadata: Path
+    test_dir: Path, saccer3_small_hdf5_file_list: Path, adapted_metadata: Path
 ):
     """End-to-end: filter metadata, register HDF5s, preload mmap, write plots."""
     chroms = FIXTURES_DIR / "saccer3" / "saccer3.can.chrom.sizes"
     sys.argv = [
         "analyze_hdf5_vals.py",
-        str(saccer3_hdf5_file_list),
+        str(saccer3_small_hdf5_file_list),
         str(chroms),
         str(adapted_metadata),
         str(test_dir),
