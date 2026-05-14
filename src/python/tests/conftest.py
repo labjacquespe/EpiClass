@@ -276,9 +276,7 @@ def fixture_saccer3_small_training_data(
     kept_md5s = [e["md5sum"] for e in kept_entries]
 
     meta_out.write_text(json.dumps({"datasets": kept_entries}))
-    hdf5_list_out.write_text(
-        "".join(f"{md5_to_path[md5]}\n" for md5 in kept_md5s)
-    )
+    hdf5_list_out.write_text("".join(f"{md5_to_path[md5]}\n" for md5 in kept_md5s))
     # Sanity: stratification preserved
     assert Counter(e["assay"] for e in kept_entries)
     return hdf5_list_out, meta_out
