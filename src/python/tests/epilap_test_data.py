@@ -1,4 +1,5 @@
 """EpiAtlas data treatment testing module."""
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
 
 import multiprocessing
@@ -130,19 +131,24 @@ class EpiAtlasTreatmentTestData:
         )
 
     @classmethod
-    def default_test_data(
+    def test_data(
         cls,
         logdir=DEFAULT_TEST_LOGDIR,  # type: ignore
         test_set="test-epilap-empty-biotype-n40",
         label_category="biomaterial_type",
+        min_class_size=3,
+        n_fold=2
     ) -> EpiAtlasFoldFactory:
         """Create mock EpiAtlasFoldFactory"""
         md5_list = FIXTURES_DIR / f"{test_set}.md5"
         metadata_path = FIXTURES_DIR / f"{test_set}-metadata.json"
-
         logdir = Path(logdir) / uuid.uuid4().hex
         print(f"Creating test data in logdir: {logdir}")
-        return cls(metadata_path, md5_list, logdir).get_ea_handler(label_category)
+        return cls(metadata_path, md5_list, logdir).get_ea_handler(
+            label_category=label_category,
+            min_class_size=min_class_size,
+            n_fold=n_fold
+        )
 
 
 # standalone

@@ -34,7 +34,7 @@ class TestEpiAtlasFoldFactory:
     @pytest.fixture(scope="class", name="test_data")
     def test_data(self) -> EpiAtlasFoldFactory:
         """Mock test EpiAtlasFoldFactory."""
-        return EpiAtlasTreatmentTestData.default_test_data()
+        return EpiAtlasTreatmentTestData.test_data()
 
     @pytest.fixture(name="big_test_data")
     def big_test_data(self, tmp_path) -> EpiAtlasFoldFactory:

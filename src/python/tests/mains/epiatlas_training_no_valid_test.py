@@ -29,7 +29,7 @@ def test_training(test_dir: Path):
     """Test if basic training succeeds."""
     os.environ["MIN_CLASS_SIZE"] = "3"
 
-    datasource = EpiAtlasTreatmentTestData.default_test_data().epiatlas_dataset.datasource
+    datasource = EpiAtlasTreatmentTestData.test_data().epiatlas_dataset.datasource
 
     hparams_file = FIXTURES_DIR / "test_human_hparams.json"
 

@@ -127,7 +127,7 @@ def make_specific_logdir(tmp_path_factory):
 @pytest.fixture(scope="session", name="test_epiatlas_data_handler")
 def fixture_epiatlas_data_handler() -> EpiAtlasFoldFactory:
     """Return mock data handler. (in /tmp)."""
-    return EpiAtlasTreatmentTestData.default_test_data(logdir=RUN_LOGDIR)
+    return EpiAtlasTreatmentTestData.test_data(logdir=RUN_LOGDIR)
 
 
 @pytest.fixture(scope="session", name="test_epiatlas_dataset")

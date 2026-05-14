@@ -27,7 +27,7 @@ class Test_Hdf5Loader:
     @pytest.fixture(scope="class")
     def test_data(self) -> EpiAtlasDataset:
         """Mock test EpiAtlasFoldFactory."""
-        return EpiAtlasTreatmentTestData.default_test_data().epiatlas_dataset
+        return EpiAtlasTreatmentTestData.test_data().epiatlas_dataset
 
     @pytest.fixture(scope="function")
     def loader(self, test_data: EpiAtlasDataset, tmp_path: Path) -> Hdf5Loader:
