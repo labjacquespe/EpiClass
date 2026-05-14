@@ -310,8 +310,9 @@ def verify_dtypes(
 
     # In auto mode, the first classified chromosome sets the expected family
     # for the rest of the file. Subsequent chromosomes of the *other* family
-    # are reported as 'mixed'.
-    for chrom in expected_chromosomes:
+    # are reported as 'mixed'. Sort to give "first" a stable meaning — callers
+    # often pass a set, whose iteration order is hash-dependent.
+    for chrom in sorted(expected_chromosomes):
         dtype = dataset_dtypes.get(chrom)
         if dtype is None:
             # Missing datasets are handled by the caller; skip here.
