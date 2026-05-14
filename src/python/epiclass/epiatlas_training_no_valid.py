@@ -82,6 +82,11 @@ def parse_arguments() -> argparse.Namespace:
         action="store_true",
         help="Skips training, tries to restore existing models in logdir for further analysis. ",
     )
+    arg_parser.add_argument(
+        "--mmap_dir", type=Path, default=None,
+        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
+             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+    )
     # fmt: on
     return arg_parser.parse_args()
 
@@ -154,6 +159,9 @@ def main():
     restore_model = cli.restore
     n_fold = hparams.get("n_fold", 10)
 
+    mmap_dir = (
+        cli.mmap_dir if cli.mmap_dir is not None else Path(cli.logdir) / "mmap_cache"
+    )
     ea_handler = EpiAtlasFoldFactory.from_datasource(
         my_datasource,
         category,
@@ -163,6 +171,7 @@ def main():
         min_class_size=min_class_size,
         md5_list=list(my_metadata.md5s),
         force_filter=True,
+        mmap_dir=mmap_dir,
     )
     loading_time = time_now() - loading_begin
 

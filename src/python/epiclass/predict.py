@@ -62,7 +62,7 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
         help="Directory for the mmap cache (single format only). "
-             "Defaults to ./mmap_cache. On HPC, set to $SLURM_TMPDIR.",
+             "Defaults to <logdir>/mmap_cache. On HPC, set to $SLURM_TMPDIR.",
     )
     arg_parser.add_argument(
         "--hdf5_dir", type=Path,
@@ -93,10 +93,13 @@ def _build_loader(cli: argparse.Namespace) -> tuple[SignalLoader, list[str]]:
             "--chromsize is required for single-sample HDF5 format. "
             "Use --chunked if your data is in chunked format."
         )
+    mmap_dir = (
+        cli.mmap_dir if cli.mmap_dir is not None else Path(cli.logdir) / "mmap_cache"
+    )
     loader = LazyHdf5Loader(
         chrom_file=cli.chromsize,
         normalization=True,
-        mmap_dir=cli.mmap_dir,
+        mmap_dir=mmap_dir,
     )
     loader.register_hdf5s(cli.hdf5, hdf5_dir=cli.hdf5_dir, strict=True)
     loader.preload_all()

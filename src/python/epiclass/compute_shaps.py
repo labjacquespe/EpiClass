@@ -58,6 +58,11 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "-o", "--output_name", metavar="--output-name", default="", help="Name (not path) of outputted pickle file containing computed SHAP values",
     )
+    arg_parser.add_argument(
+        "--mmap_dir", type=Path, default=None,
+        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache, or ./mmap_cache if no logdir). "
+             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+    )
     # fmt: on
     return arg_parser.parse_args()
 
@@ -83,7 +88,12 @@ def compute_shap(
     output_name: str,
 ):
     """Compute SHAP values for the given NN handler."""
-    base_mmap = Path("./mmap_cache")
+    if cli.mmap_dir is not None:
+        base_mmap = cli.mmap_dir
+    elif cli.logdir is not None:
+        base_mmap = Path(cli.logdir) / "mmap_cache"
+    else:
+        base_mmap = Path("./mmap_cache")
     background_set = _load_lazy(
         cli.background_hdf5, cli.chromsize, base_mmap / "background"
     )

@@ -179,6 +179,11 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "--min_class_size", type=int, default=10, help="Min samples per class (default: 10).",
     )
+    arg_parser.add_argument(
+        "--mmap_dir", type=Path, default=None,
+        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
+             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+    )
     # fmt: on
     return arg_parser.parse_args()
 
@@ -331,7 +336,7 @@ def main():
         label_category=cli.category,
         min_class_size=cli.min_class_size,
         n_fold=cli.n_fold,
-        mmap_dir=logdir / "mmap_cache",
+        mmap_dir=cli.mmap_dir if cli.mmap_dir is not None else logdir / "mmap_cache",
     )
     print(f"Loading time: {time_now() - loading_begin}")
 
