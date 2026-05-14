@@ -27,10 +27,20 @@ class MyTrainer(pl.Trainer):
         super().fit(*args, **kwargs)
 
     def save_model_path(self):
-        """Save best checkpoint path to a file."""
+        """Save best checkpoint path to a file.
+
+        Falls back to `last_model_path` when `best_model_path` is empty —
+        ModelCheckpoint with `monitor=None` (no-validation training) never
+        populates `best_model_path`, only `last_model_path` via `save_last=True`.
+        """
         try:
             model_path = self.checkpoint_callback.best_model_path  # type: ignore
-            print(f"Saving model to {model_path}")
+            if not model_path:
+                model_path = self.checkpoint_callback.last_model_path  # type: ignore
+            if not model_path:
+                print("Cannot save model, no checkpoint was created.")
+                return
+            print(f"Saving model to '{model_path}'")
             with open(self.best_checkpoint_file, "a", encoding="utf-8") as ckpt_file:
                 ckpt_file.write(f"{model_path} {datetime.now()}\n")
         except AttributeError:

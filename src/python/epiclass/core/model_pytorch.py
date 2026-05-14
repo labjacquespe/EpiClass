@@ -189,7 +189,19 @@ class LightningDenseClassifier(pl.LightningModule):
             print("Reading checkpoint list and taking last line.")
         with open(path, "r", encoding="utf-8") as ckpt_file:
             lines = ckpt_file.read().splitlines()
-            ckpt_path = lines[-1].split(" ")[0]
+            if not lines:
+                raise FileNotFoundError(f"Empty checkpoint list: {path}")
+            ckpt_path = lines[-1].split(" ", maxsplit=1)[0]
+
+        if not ckpt_path:
+            raise FileNotFoundError(
+                f"Last entry of {path} has no checkpoint path. "
+                "Training likely did not save a checkpoint."
+            )
+        if not Path(ckpt_path).is_file():
+            raise FileNotFoundError(
+                f"Checkpoint path from {path} does not exist: {ckpt_path}"
+            )
 
         if verbose:
             print(f"Loading model from {ckpt_path}")

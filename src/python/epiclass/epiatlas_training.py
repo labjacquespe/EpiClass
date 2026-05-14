@@ -360,12 +360,10 @@ def do_one_experiment(
         logger.experiment.log_metric("Last epoch", my_model.current_epoch, step=split_nb)
     try:
         my_model = LightningDenseClassifier.restore_model(logger.save_dir)
-    except (FileNotFoundError, OSError) as e:
-        print(e)
-        print("Closing logger and skipping this split.")
+    except FileNotFoundError as e:
         logger.experiment.add_tag("ModelNotFoundError")
         logger.finalize(status="ModelNotFoundError")
-        return
+        raise e
 
     # --- OUTPUTS ---
     my_analyzer = analysis.Analysis(
