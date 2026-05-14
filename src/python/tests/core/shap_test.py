@@ -57,14 +57,28 @@ class Test_NN_SHAP_Handler:
             - Output is a numpy array (not list)
             - Shape matches (n_samples, n_features, n_classes)
             - Can access individual sample SHAP values via shap_values[i]
+
+        Uses 5/2-sample background/evaluation subsets — DeepExplainer's
+        per-eval-sample backprop dominates runtime, so shrinking the eval set
+        from the full validation split (~20 samples) to 2 drops the call from
+        ~18s to ~6s. ``num_workers=2`` is kept (rather than 1) so the
+        ProcessPoolExecutor / tensor_split parallel path is still exercised;
+        going to 1 worker would save ~0.4s but skip that branch entirely.
         """
         dset = test_epiatlas_dataset
+        background = dset.train.subsample(list(range(min(5, dset.train.num_examples))))
+        evaluation = dset.validation.subsample(
+            list(range(min(2, dset.validation.num_examples)))
+        )
         _, shap_values = handler.compute_shaps(
-            background_dset=dset.train, evaluation_dset=dset.validation, save=False
+            background_dset=background,
+            evaluation_dset=evaluation,
+            save=False,
+            num_workers=2,
         )
 
-        val_signals, _ = dset.validation.materialize()
-        n_samples, n_features = val_signals.shape
+        eval_signals, _ = evaluation.materialize()
+        n_samples, n_features = eval_signals.shape
         n_classes = len(handler.model_classes)
 
         # New SHAP 0.45+ format: single numpy array
