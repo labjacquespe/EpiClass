@@ -48,5 +48,4 @@ def test_cross_validation_training(test_dir: Path, saccer3_hdf5_file_list: Path)
         assert (fold_dir / "training_mapping.tsv").is_file()
         assert (fold_dir / "best_checkpoint.list").is_file()
         assert list(fold_dir.glob("*validation_prediction*"))
-
-    assert (test_dir / "hdf5_files.list").is_file()
+        assert len(list(fold_dir.glob("split*.md5"))) == 2

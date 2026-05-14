@@ -32,6 +32,7 @@ from epiclass.core.metadata import Metadata
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils.check_dir import create_dirs
+from epiclass.utils.my_logging import log_dset_composition
 from epiclass.utils.time import time_now
 from epiclass.utils.torch_data import create_torch_datasets
 
@@ -208,6 +209,8 @@ def do_one_experiment(
     create_dirs(fold_dir)
 
     logger = pl_loggers.CSVLogger(save_dir=str(fold_dir), name="logs")
+
+    log_dset_composition(my_data, logdir=fold_dir, logger=None, split_nb=split_nb)
 
     dsets_dict = create_torch_datasets(
         data=my_data,
