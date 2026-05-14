@@ -15,6 +15,7 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
+@pytest.mark.embedding
 def test_compute_umap_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Path):
     """Single-sample path: mmap (copy-on-write), build knn, fit one UMAP.
 
@@ -44,6 +45,7 @@ def test_compute_umap_single_sample(test_dir: Path, saccer3_small_hdf5_file_list
 
 
 @pytest.mark.slow
+@pytest.mark.embedding
 def test_compute_umap_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     """Chunked path: materialize via load_batch, build knn, fit one UMAP."""
     sys.argv = [

@@ -15,6 +15,7 @@ def fixture_test_dir(mk_logdir) -> Path:
 
 
 @pytest.mark.slow
+@pytest.mark.embedding
 def test_compute_pca_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Path):
     """Single-sample path: register HDF5s, preload mmap, run IPCA, save skops.
 
@@ -42,6 +43,7 @@ def test_compute_pca_single_sample(test_dir: Path, saccer3_small_hdf5_file_list:
 
 
 @pytest.mark.slow
+@pytest.mark.embedding
 def test_compute_pca_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     """Chunked path: partial_fit/transform per chunk file; no chromsize needed."""
     sys.argv = [
