@@ -24,7 +24,7 @@ class Test_Hdf5Loader:
         """Return temp hdf5 storage folder."""
         return mk_logdir("temp_hdf5s")
 
-    @pytest.fixture(scope="function")
+    @pytest.fixture(scope="class")
     def test_data(self) -> EpiAtlasDataset:
         """Mock test EpiAtlasFoldFactory."""
         return EpiAtlasTreatmentTestData.default_test_data().epiatlas_dataset
@@ -47,19 +47,28 @@ class Test_Hdf5Loader:
         hdf5_loader.preload_all()
         shutil.rmtree(hdf5_loader._mmap_dir)
 
-    def test_load_hdf5_corrupted(self, test_data: EpiAtlasDataset):
+    def test_load_hdf5_corrupted(self, test_data: EpiAtlasDataset, tmp_path: Path):
         """Verify that file corruption errors are caught/raised."""
+        # Copy the source HDF5 (and write a fresh list pointing at the copy) so
+        # corruption does not bleed into the class-shared fixture. The source is
+        # a symlink (see EpiAtlasTreatmentTestData.create_temp_hdf5s); resolve
+        # it so we don't mangle the real file via the link target.
         hdf5_list = Hdf5Loader.read_list(test_data.datasource.hdf5_file)
-        chosen_file = list(hdf5_list.values())[0]
+        chosen_src = next(iter(hdf5_list.values()))
+        chosen_copy = tmp_path / chosen_src.name
+        shutil.copy(chosen_src.resolve(), chosen_copy)
 
-        with open(chosen_file, "r+b") as f:
+        list_copy = tmp_path / "hdf5s.list"
+        list_copy.write_text(f"{chosen_copy}\n")
+
+        with open(chosen_copy, "r+b") as f:
             f.seek(0)
             f.write(os.urandom(1024))
 
         hdf5_loader = Hdf5Loader(test_data.datasource.chromsize_file, True)
 
         with pytest.raises(OSError, match="file signature not found"):
-            hdf5_loader.register_hdf5s(test_data.datasource.hdf5_file, strict=True)
+            hdf5_loader.register_hdf5s(list_copy, strict=True)
 
     def test_register_filters_by_md5(self, test_data: EpiAtlasDataset, tmp_path: Path):
         """Verify that only requested md5s are registered."""

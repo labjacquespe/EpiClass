@@ -27,6 +27,12 @@ RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
 
 SACCER3_DIR = FIXTURES_DIR / "saccer3"
 
+# Some scripts (epiatlas_training_no_valid.py) call LazyEpiAtlasFoldFactory
+# without passing mmap_dir, so the loader writes signals_*.npy under the cwd's
+# ./mmap_cache. A leftover from a previous run with different mock data shapes
+# causes preload_all() to skip generation and downstream loads to fail.
+LOCAL_MMAP_DIR = Path("./mmap_cache")
+
 
 def pytest_addoption(parser):
     """Add custom command line options to pytest."""
@@ -39,13 +45,20 @@ def pytest_addoption(parser):
 
 
 def pytest_exception_interact(node, call, report):
-    """Intercept test exceptions and customize FileNotFoundError messages."""
+    """Intercept FileNotFoundError only when it points at the (un)extracted
+    fixtures directory, so we don't swallow tracebacks for unrelated missing
+    files (e.g. stale mmap cache paths) that would otherwise be hard to debug.
+    """
     if isinstance(call.excinfo.value, FileNotFoundError):
-        report.longrepr = (
-            f"\nFileNotFoundError intercepted:\n"
-            f"  {call.excinfo.value}\n"
-            f"Hint: Did you forget to extract fixtures.tar.zstd? Use zstd -d fixtures.tar.zstd\n"
-        )
+        missing = str(call.excinfo.value.filename or call.excinfo.value)
+        fixtures_marker = str(FIXTURES_DIR)
+        if fixtures_marker in missing or "fixtures.tar" in missing:
+            report.longrepr = (
+                f"\nFileNotFoundError intercepted:\n"
+                f"  {call.excinfo.value}\n"
+                f"Hint: Did you forget to extract fixtures.tar.zstd? "
+                f"Use zstd -d fixtures.tar.zstd\n"
+            )
 
 
 def pytest_sessionstart(session):
@@ -53,6 +66,11 @@ def pytest_sessionstart(session):
     Called after the Session object has been created and before performing
     collection and entering the run test loop.
     """
+    # Wipe the cwd-relative mmap cache so stale signals_*.npy from a previous
+    # run (different dataset shape) don't poison preload_all().
+    if LOCAL_MMAP_DIR.exists():
+        shutil.rmtree(LOCAL_MMAP_DIR, ignore_errors=True)
+
     if not FIXTURES_DIR.exists() or not any(FIXTURES_DIR.iterdir()):
         # Stop tests immediately
         message = (
@@ -83,6 +101,10 @@ def pytest_sessionfinish(session, exitstatus):
     # Remove test logdir
     if RUN_LOGDIR.exists():
         shutil.rmtree(RUN_LOGDIR)
+
+    # Drop the cwd-relative mmap cache so the next session starts clean too.
+    if LOCAL_MMAP_DIR.exists():
+        shutil.rmtree(LOCAL_MMAP_DIR, ignore_errors=True)
 
 
 def nottest(obj):
@@ -177,19 +199,33 @@ def hdf5_file_list(
     return file_list
 
 
-@pytest.fixture(scope="function", name="saccer3_chunked_dir")
-def fixture_saccer3_chunked_dir(test_dir: Path, saccer3_hdf5_file_list: Path) -> Path:
+@pytest.fixture(scope="session", name="saccer3_chunked_dir")
+def fixture_saccer3_chunked_dir(tmp_path_factory, extracted_hdf5_dir: Path) -> Path:
     """Convert saccer3 single-sample HDF5s into chunked format for tests.
 
     Normalization mirrors what LazyHdf5Loader applies on the single-sample
-    path, so the chunked signals match the expected distribution. Shared
-    across predict_test and the embedding util tests.
+    path, so the chunked signals match the expected distribution. Session-
+    scoped (per xdist worker) so the ~3-9s conversion is paid once across
+    predict_test and the embedding util tests.
     """
     from epiclass.utils.preprocessing.hdf5_chunks_creation import convert
 
-    chunk_dir = test_dir / "chunked"
+    worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+    chunk_root = tmp_path_factory.getbasetemp() / f"chunked_{worker_id}"
+    chunk_dir = chunk_root / "chunked"
+
+    if chunk_dir.exists() and any(chunk_dir.glob("chunk_*.h5")):
+        return chunk_dir
+
+    # Build the hdf5 list once, reusing the per-worker extracted fixture.
+    chunk_root.mkdir(parents=True, exist_ok=True)
+    hdf5_list = chunk_root / "hdf5_files.list"
+    with hdf5_list.open("w") as f:
+        for hdf5_file in sorted(extracted_hdf5_dir.glob("*.hdf5")):
+            f.write(f"{hdf5_file}\n")
+
     convert(
-        hdf5_list=saccer3_hdf5_file_list,
+        hdf5_list=hdf5_list,
         chrom_file=SACCER3_DIR / "saccer3.can.chrom.sizes",
         output_dir=chunk_dir,
         samples_per_chunk=50,

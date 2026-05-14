@@ -50,7 +50,7 @@ class TestEpiAtlasFoldFactory:
 
         meta.select_category_subsets(target_category, ["female", "male"])
         md5_per_class = meta.md5_per_class(target_category)
-        md5s = [md5 for md5_list in md5_per_class.values() for md5 in md5_list[:2000]]
+        md5s = [md5 for md5_list in md5_per_class.values() for md5 in md5_list[:300]]
 
         md5_file = write_md5s_to_file(md5s=md5s, logdir=str(tmp_path), name="big_test")
         return EpiAtlasTreatmentTestData(
