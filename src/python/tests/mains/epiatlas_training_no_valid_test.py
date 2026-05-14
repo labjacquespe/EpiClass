@@ -26,10 +26,17 @@ def fixture_test_dir(mk_logdir) -> Path:
     "ignore:The number of training batches \\(2\\) is smaller than the logging interval Trainer\\(log_every_n_steps=50\\)."
 )
 def test_training(test_dir: Path):
-    """Test if basic training succeeds."""
-    os.environ["MIN_CLASS_SIZE"] = "3"
+    """Test if basic training succeeds.
 
-    datasource = EpiAtlasTreatmentTestData.test_data().epiatlas_dataset.datasource
+    Default test data is splitting into 2 folds because the fold factory
+    is made for cross-validation. This means you need at least 2 samples per class.
+    """
+    os.environ["MIN_CLASS_SIZE"] = "1"  # for main script
+
+    datasource = EpiAtlasTreatmentTestData.test_data(
+        test_set="test-epilap-empty-biotype-n8",
+        min_class_size=1,  # to avoid creating empty mock dataset
+    ).epiatlas_dataset.datasource
 
     hparams_file = FIXTURES_DIR / "test_human_hparams.json"
 
@@ -45,3 +52,9 @@ def test_training(test_dir: Path):
     ]
 
     main_module()
+
+    ckpt_list = test_dir / "best_checkpoint.list"
+    assert ckpt_list.is_file(), "best_checkpoint.list was not created"
+    ckpt_path = Path(ckpt_list.read_text(encoding="utf-8").splitlines()[-1].split(" ")[0])
+    assert ckpt_path.is_file(), f"checkpoint file not found: {ckpt_path}"
+    assert (test_dir / "training_mapping.tsv").is_file()
