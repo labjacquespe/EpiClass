@@ -157,7 +157,6 @@ def main():
     loading_begin = time_now()
 
     restore_model = cli.restore
-    n_fold = hparams.get("n_fold", 10)
 
     mmap_dir = (
         cli.mmap_dir if cli.mmap_dir is not None else Path(cli.logdir) / "mmap_cache"
@@ -166,7 +165,7 @@ def main():
         my_datasource,
         category,
         label_list,
-        n_fold=n_fold,
+        n_fold=2,  # minimum to avoid error, since class is made for cross-validation
         test_ratio=0,
         min_class_size=min_class_size,
         md5_list=list(my_metadata.md5s),
@@ -294,7 +293,7 @@ def train_without_valid(
             val_dataloaders=None,
             verbose=True,
         )
-
+        print("Training finished.")
         trainer.save_model_path()
         training_time = time_now() - before_train
         print(f"training time: {training_time}")
