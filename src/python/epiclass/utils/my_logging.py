@@ -54,9 +54,14 @@ def log_pre_training(
     print(f"The current experiment key is {exp_key}")
     logger.experiment.log_other("Experience key", str(exp_key))
 
-    # Save git commit.
-    os.chdir(Path(__file__).resolve().parent)
-    commit_label = subprocess.check_output(["git", "describe"], encoding="UTF-8").strip()
+    # Save git commit. Pass cwd= to subprocess instead of os.chdir so we don't
+    # leak a cwd change into downstream code (LazyHdf5Loader's default mmap_dir
+    # is a relative path and would silently move after a chdir).
+    commit_label = subprocess.check_output(
+        ["git", "describe"],
+        cwd=Path(__file__).resolve().parent,
+        encoding="UTF-8",
+    ).strip()
     print(f"The current commit is {commit_label}")
     logger.experiment.log_other("Code version / commit", f"{commit_label}")
 
