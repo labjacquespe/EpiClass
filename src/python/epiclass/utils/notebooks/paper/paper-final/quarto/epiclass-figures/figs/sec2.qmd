@@ -140,8 +140,6 @@ Define function that graphs performance accross classification tasks.
 #| label: func-nn-performance
 def NN_performance_across_classification_tasks(
     split_metrics: Dict[str, Dict[str, Dict[str, float]]],
-    name: str | None = None,
-    logdir: Path | None = None,
     exclude_categories: List[str] | None = None,
     y_range: List[float] | None = None,
     sort_by_acc: bool = False,
@@ -155,8 +153,6 @@ def NN_performance_across_classification_tasks(
 
     Args:
         split_metrics: A nested dictionary with structure {split: {classifier: {metric: score}}}.
-        logdir: The directory path to save the output plots. If None, only display the plot.
-        name: The base name for the output plot files.
         exclude_categories: Task categories to exclude from the plot.
         y_range: The y-axis range for the plots.
         sort_by_acc: Whether to sort the classifiers by accuracy.
@@ -216,6 +212,7 @@ def NN_performance_across_classification_tasks(
 
             fig.add_trace(
                 go.Box(
+                    x=[classifier_name] * len(values),
                     y=values,
                     name=f"{classifier_name} (N={classifiers_N[classifier_name]})",
                     fillcolor=colors[classifier_name],
@@ -250,7 +247,6 @@ def NN_performance_across_classification_tasks(
         yaxis_title="Value",
         boxmode="group",
         height=1200 * 0.8,
-        width=1750 * 0.8,
     )
 
     # Acc, F1
@@ -264,14 +260,6 @@ def NN_performance_across_classification_tasks(
 
     if y_range is not None:
         fig.update_yaxes(range=y_range)
-
-    # Save figure
-    if logdir:
-        if name is None:
-            name = "MLP_metrics_various_tasks"
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_html(logdir / f"{name}.html")
 
     fig.show()
 
@@ -312,7 +300,7 @@ Graph metrics.
 
 ```{python}
 #| label: plot-nn-performance
-#| column: screen-inset-left
+#| column: screen-inset
 metrics_full = ["Accuracy", "F1_macro", "AUC_micro", "AUC_macro"]
 fig_name = f"{hdf5_type}_perf_across_categories_full"
 sorted_task_names = NN_performance_across_classification_tasks(
@@ -410,42 +398,30 @@ Define graphing function `plot_shannon_entropy`.
 
 ```{python}
 #| label: fct-shannon-plot
-#| column: body-outset-left
 def plot_shannon_entropy(class_balance_df: pd.DataFrame, ordered_task_names: List[str]|None) -> None:
-    """Graph Shannon entropy values, in the order given by task_names"""
+    """Graph Shannon entropy values, in the order given by ordered_task_names."""
     df = class_balance_df.copy()
 
-    # Reorder df
-    task_names = df.index
     if ordered_task_names:
-        task_names = [
-            task_name for task_name in task_names if task_name in ordered_task_names
-    ]
-    df = df.loc[sorted_task_names]
+        df = df.loc[[t for t in ordered_task_names if t in df.index]]
 
-    # plot
     fig = px.scatter(
         df,
         x=df.index,
         y="Normalized Shannon Entropy",
-        labels={
-            "k": "Number of classes",
-            "Normalized Shannon Entropy": "Normalized Shannon Entropy",
-        },
         title="Class imbalance across tasks (higher is more balanced)",
     )
     fig.update_layout(
         yaxis=dict(range=[0, 1]),
         xaxis_title=None,
+        margin=dict(r=60),
     )
-
     fig.show()
 ```
 
 Graph.
 ```{python}
 #| label: plot-shannon-entropy
-#| column: body-outset-left
 plot_shannon_entropy(
     class_balance_df=df_class_balance,
     ordered_task_names=sorted_task_names,
@@ -789,8 +765,6 @@ Define function `zscore_merged_assays` that computes the chrY average signal met
 def zscore_merged_assays(
     zscore_df: pd.DataFrame,
     sex_mislabels: Dict[str, str],
-    name: str | None = None,
-    logdir: Path | None = None,
     min_pred: float | None = None,
     no_rna: bool = False,
 ) -> None:
@@ -803,8 +777,6 @@ def zscore_merged_assays(
     Args:
         zscore_df (pd.DataFrame): The dataframe with z-score data.
         sex_mislabels (Dict[str, str]): {EpiRR_no-v: corrected_sex_label}
-        logdir (Path): The directory path to save the output plots. If None, only display the plot.
-        name (str): The base name for the output plot files.
         min_pred (float|None): Minimum prediction value to include in the plot. Used on average EpiRR 'Max pred' values.
         no_rna (bool): Whether to exclude rna_seq from the plot.
     """
@@ -957,18 +929,8 @@ def zscore_merged_assays(
         title=dict(text=title, x=0.5),
         xaxis_title=SEX,
         yaxis_title="Average z-score",
-        width=750,
         height=750,
     )
-
-    # Save figure
-    if logdir:
-        this_name = f"{metric_label}_n{mean_chrY_values_df.shape[0]}"
-        if name:
-            this_name = f"{name}_{this_name}"
-        fig.write_image(logdir / f"{this_name}.svg")
-        fig.write_image(logdir / f"{this_name}.png")
-        fig.write_html(logdir / f"{this_name}.html")
 
     fig.show()
 ```
@@ -977,11 +939,9 @@ Graph zscores.
 
 ```{python}
 #| label: plot-zscore-merged-assays
-#| column: body-outset-left
 zscore_merged_assays(
     zscore_df=cross_val_analysis,
     sex_mislabels=create_mislabel_corrector(paper_dir)[1][SEX],
-    name="no_RNA",
     no_rna=True,
 )
 ```
@@ -1121,8 +1081,6 @@ Define graphing function `graph_gp_age`.
 #| label: func-graph-gpage
 def graph_gp_age(
     df_gp_age: pd.DataFrame,
-    logdir: Path | None = None,
-    name: str | None = None,
     title: str | None = None,
 ) -> None:
     """
@@ -1130,6 +1088,7 @@ def graph_gp_age(
 
     Args:
         df_gp_age: The dataframe with GP age data.
+        title: Optional suffix appended to the plot title.
     """
     df = df_gp_age.copy(deep=True)
 
@@ -1161,7 +1120,6 @@ def graph_gp_age(
         title=f"GP age predictions - Using MLP predicted labels ({title})",
         xaxis_title="Life stage",
         yaxis_title="GP-Age : Predicted age",
-        width=750,
         height=750,
         boxmode="group",
     )
@@ -1174,14 +1132,6 @@ def graph_gp_age(
 
     fig.update_xaxes(categoryorder="array", categoryarray=label_order)
     fig.update_xaxes(tickvals=[0, 1, 2], ticktext=axis_labels)
-
-    # Save figure
-    if logdir:
-        if name is None:
-            name = "GP_age_predictions"
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_html(logdir / f"{name}.html")
 
     fig.show()
 ```
@@ -1205,8 +1155,6 @@ For initially unknown labels, only predictions that were manually confirmed as m
 
 ```{python}
 #| label: plot-gpage-unknown-samples
-#| column: body-outset-left
-#|
 # Remove inconclusive predictions
 gp_graph_df = merged_dp_age[merged_dp_age[epiclass_pred_col] != "unknown"]
 
@@ -1215,7 +1163,6 @@ display_tissue_age_df(only_unknown_df)
 
 graph_gp_age(
     df_gp_age=only_unknown_df,
-    name="GP_age_predictions_unknown_only_MLP_predicted_labels",
     title="Samples with unknown life stage",
 )
 ```
@@ -1228,12 +1175,10 @@ Considering all samples that had a conclusive epiclass prediction (or existing l
 
 ```{python}
 #| label: plot-gpage-all-samples
-#| column: body-outset-left
 display_tissue_age_df(gp_graph_df)
 
 graph_gp_age(
     df_gp_age=gp_graph_df,
-    name="GP_age_predictions_all_samples_MLP_predicted_labels",
     title="All samples (has a life stage pred + gp-age)",
 )
 ```
@@ -1245,13 +1190,10 @@ Supp. Fig. 5D: Distribution of the age prediction from GP-age for the 565 epigen
 
 For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
 
-::: {.text-center}
-<iframe
-  src="../resources/global_chromscore.html"
-  width="510"
-  height="510"
-></iframe>
-:::
+<iframe src="../resources/global_chromscore.html"
+        scrolling="no"
+        style="display: block; margin: 0 auto; width: 100%; max-width: 510px; aspect-ratio: 1 / 1; border: 0; overflow: hidden;">
+</iframe>
 
 Fig 2G: Distribution of the average ChromScore values over the important Biospecimen classifier regions according to SHAP (blue) compared to the global distribution (pink). Statistical significance was assessed using a two-sided Welch's t-test. Boxplot elements are as in [Fig. 2A](./sec2.html#sec-2AB), with a violin representation on top.
 
@@ -1383,7 +1325,7 @@ Define graphing function `plot_go_heatmap`.
 
 ```{python}
 #| label: define-plot-fn
-def plot_go_heatmap(table: pd.DataFrame, width: int, height: int, title: str|None=None):
+def plot_go_heatmap(table: pd.DataFrame, height: int, title: str|None=None):
     """Plot a GO heatmap."""
     # Define colorbar
     sigma = "\u03c3"
@@ -1426,7 +1368,6 @@ def plot_go_heatmap(table: pd.DataFrame, width: int, height: int, title: str|Non
 
     fig.update_layout(
         title_text=title,
-        width=width,
         height=height,
         plot_bgcolor="black",
     )
@@ -1440,10 +1381,8 @@ Graph GO for 5 cell types.
 
 ```{python}
 #| label: plot-go-heatmap-5ct
-#| fig-align: center
 plot_go_heatmap(
     table=sub_table,
-    width=600,
     height=1000,
 )
 ```
@@ -1470,12 +1409,11 @@ Graph.
 
 ```{python}
 #| label: plot-go-heatmap-top5
-#| column: screen-inset-left
+#| column: screen-inset
 table_top_5_GO = table.loc[top_5_terms, :].copy()
 
 plot_go_heatmap(
     table=table_top_5_GO,
-    width=1300,
     height=2000,
 )
 ```
@@ -1491,7 +1429,7 @@ Images extracted from Epilogos viewer, using:
 - All biosamples
 - Saliency Metric: S1
 
-![](../resources/fig2I.png){width=column.page-left}
+![](../resources/fig2I.png){fig-align="center"}
 
 Fig. 2I: Epilogos visualization of one of the important Biospecimen classifier regions enriched in the `T cell receptor complex` GO term from [Fig. 2H](./sec2.html#sec-2H).
 
@@ -1525,12 +1463,11 @@ Define graphing function `plot_cnv_zscores`, which uses the CNA groups defined b
 
 ```{python}
 #| label: func-plot-cnv-zscores
-def plot_cnv_zscores(cnv_df: pd.DataFrame, logdir: Path | None = None) -> None:
+def plot_cnv_zscores(cnv_df: pd.DataFrame) -> None:
     """Plot z-scores of top SHAP features vs random feature sets, grouped by CNV groups.
 
     Args:
         cnv_df: The DataFrame with z-scores.
-        logdir: The output directory to save the plot.
     """
     n_beds = int(cnv_df.name.split("random")[1])
     signature_subset_name = "EpiATLAS cancer types"
@@ -1609,13 +1546,6 @@ def plot_cnv_zscores(cnv_df: pd.DataFrame, logdir: Path | None = None) -> None:
     # Add a horizontal line at y=0 for reference
     fig.add_hline(y=0, line_color="grey", line_width=1)
 
-    # Show and save the figure
-    if logdir:
-        name = "important_cancer_features_z_scores_boxplot"
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_html(logdir / f"{name}.html")
-
     fig.show()
 ```
 
@@ -1623,7 +1553,6 @@ Graph.
 
 ```{python}
 #| label: plot-cnv-zscores
-#| column: body-outset-left
 plot_cnv_zscores(cnv_df)
 ```
 
@@ -1631,12 +1560,11 @@ Define the graphing function `plot_cnv_zscores_alt`, which groups CNA by focal v
 
 ```{python}
 #| label: func-plot-cnv-zscores-alt
-def plot_cnv_zscores_alt(cnv_df: pd.DataFrame, logdir: Path | None = None) -> None:
+def plot_cnv_zscores_alt(cnv_df: pd.DataFrame) -> None:
     """Plot z-scores of top SHAP features vs random feature sets, grouped by focal vs chromosomal events.
 
     Args:
         cnv_df: The DataFrame with z-scores.
-        logdir: The output directory to save the plot.
     """
     n_beds = int(cnv_df.name.split("random")[1])
     signature_subset_name = "EpiATLAS cancer types"
@@ -1697,13 +1625,6 @@ def plot_cnv_zscores_alt(cnv_df: pd.DataFrame, logdir: Path | None = None) -> No
     # Add a horizontal line at y=0 for reference
     fig.add_hline(y=0, line_color="grey", line_width=1)
 
-    # Show and save the figure
-    if logdir:
-        name = "important_cancer_features_z_scores_boxplot_V2"
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_html(logdir / f"{name}.html")
-
     fig.show()
 ```
 
@@ -1711,7 +1632,6 @@ Graph.
 
 ```{python}
 #| label: plot-cnv-zscores-alt
-#| column: body-outset-left
 plot_cnv_zscores_alt(cnv_df)
 ```
 
@@ -1720,12 +1640,12 @@ Fig. 2J: Distribution of the z-score enrichment for copy number (CN) signatures 
 
 ## Supplementary Figures 5 to 7
 
-See [Supplementary Figures page](./sec2-supp.html) (separate to limit maximum website page size and loading times).
+See the [Additional Supplementary Figures page](./sec2-supp.html) (separate to limit maximum website page size and loading times).
 
 
 ## Annex A - Epilogos color legend {#sec-annex-a}
 
-![](../resources/epilogos_legend.png){width=.column-body}
+![](../resources/epilogos_legend.png){fig-align="center"}
 
 - biv = bivalent
 - Tx = Transcription

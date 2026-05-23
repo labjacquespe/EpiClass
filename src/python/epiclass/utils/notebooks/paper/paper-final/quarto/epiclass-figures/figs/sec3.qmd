@@ -182,7 +182,7 @@ print(f"ChIP-Atlas: {no_epiatlas_df.shape[0]} files without EpiAtlas EpiRR")
 ```
 
 Ignoring non-core consensus files.
-
+![](../resources/fig3B.png){fig-align="center"}
 ```{python}
 #| label: fig3b-filter-core-consensus
 non_core_labels = ["non-core", "CTCF"]
@@ -197,7 +197,6 @@ print(f"ChIP-Atlas: {ca_core7_df.shape[0]} files with core consensus")
 display(ca_core7_df["target_majority_consensus"].value_counts(dropna=False))
 ```
 
-![](../resources/fig3B.png){width=.column-body}
 
 Figure 3B: Inference of the Assay classifier on the ChIP-Atlas datasets represented as a multi-layer donut chart where the internal layer is depicting the availability status of the metadata as being provided/extracted (yellow) vs missing (grey), the central layer depicting the classifier prediction matching (green) or not (red) the expected metadata label, and the external layer containing the confidence level where prediction scores above 0.6 correspond to high-confidence predictions (light to dark blue >0.6, >0.8 and >0.9) vs low confidence predictions (brown). The high-confidence mismatching predictions were further divided between datasets predicted as Input (light orange) vs potential mislabels (dark red).
 
@@ -327,7 +326,7 @@ Graph.
 
 ```{python}
 #| label: supp-fig8b-generate-plot
-#| column: body-outset-left
+#| column: body
 assay_categories_order = [
     "trx_reg",
     "heterochrom",
@@ -493,7 +492,7 @@ def make_db_upsetplot(
     axes = upset.plot()
     plt.suptitle(title)
     axes["totals"].set_title("Total")
-    plt.legend(loc="center left")
+    plt.legend(loc="center right")
     plt.show()
     return upset
 ```
@@ -502,7 +501,7 @@ Graph.
 
 ```{python}
 #| label: supp-fig5e-generate-upsetplot
-#| column: body
+#| fig-align: center
 DB_COLS = ["GEO_target_mod", "C-A_target", "Cistrome_target", "NGS_target_mod"]
 consensus_col = "core7_DBs_consensus"
 title = "ChIP-Atlas core 7 samples presence in used DBs\nTarget Consensus - No EpiAtlas overlap"
@@ -638,7 +637,7 @@ Graphing results
 
 ```{python}
 #| label: supp-fig8h-generate-imputation-plot
-#| column: screen-inset-left
+#| column: body
 
 # Prepare data from graphing
 df_acc_per_assay["scatter_name"] = (
@@ -749,7 +748,6 @@ fig.update_layout(
     yaxis_title="Accuracy",
     showlegend=True,
     height=600,
-    width=1000,
     yaxis=dict(tickformat=".2%", range=[minY, maxY]),
 )
 

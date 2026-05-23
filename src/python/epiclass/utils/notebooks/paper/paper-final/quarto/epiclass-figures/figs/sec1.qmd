@@ -141,7 +141,7 @@ Performance of EpiClass Assay and Biospecimen classifiers.
 
 ### A - EpiClass training overview
 
-![](../resources/fig1A.png){width=.column-body}
+![](../resources/fig1A.png){fig-align="center"}
 
 Fig. 1A: Overview of the EpiClass training process for various classifiers and their inference on external data. Each classifier is trained independently.
 
@@ -206,15 +206,6 @@ Set selection.
 ```{python}
 #| label: fig1bc-prep-set-selection
 set_selection_name = "feature_sets_14"
-
-logdir = (
-    base_fig_dir
-    / "fig2_EpiAtlas_other"
-    / "fig2--reduced_feature_sets"
-    / "test"
-    / set_selection_name
-)
-logdir.mkdir(parents=True, exist_ok=True)
 ```
 
 Compute metrics.
@@ -276,12 +267,9 @@ Define graphing function `graph_feature_set_metrics`.
 def graph_feature_set_metrics(
     all_metrics: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
     input_sizes: Dict[str, int],
-    logdir: Path | None = None,
     sort_by_input_size: bool = False,
-    name: str | None = None,
     y_range: Tuple[float, float] | None = None,
     boxpoints: str = "all",
-    width: int = 1200,
     height: int = 1200,
 ) -> None:
     """Graph the metrics for all feature sets.
@@ -290,9 +278,7 @@ def graph_feature_set_metrics(
         all_metrics (Dict[str, Dict[str, Dict[str, Dict[str, float]]]): A dictionary containing all metrics for all feature sets.
             Format: {feature_set: {task_name: {split_name: metric_dict}}}
         input_sizes (Dict[str, int]): A dictionary containing the input sizes for all feature sets.
-        logdir (Path): The directory where the figure will be saved. If None, the figure will only be displayed.
         sort_by_input_size (bool): Whether to sort the feature sets by input size.
-        name (str|None): The name of the figure.
         y_range (Tuple[float, float]|None): The y-axis range for the figure.
         boxpoints (str): The type of boxpoints to display. Can be "all" or "outliers". Defaults to "all".
     """
@@ -412,10 +398,7 @@ def graph_feature_set_metrics(
 
         title = f"{metadata_categories[category_idx]} classification"
         title = title.replace(CELL_TYPE, "biospecimen")
-        if name is not None:
-            title += f" - {name}"
         category_fig.update_layout(
-            width=width,
             height=height,
             title_text=title,
             **main_title_settings
@@ -450,15 +433,6 @@ def graph_feature_set_metrics(
 
         category_fig.update_layout(**main_title_settings)
 
-        # Save figure
-        if logdir:
-            base_name = f"feature_set_metrics_{metadata_categories[category_idx]}"
-            if name is not None:
-                base_name = base_name + f"_{name}"
-            category_fig.write_html(logdir / f"{base_name}.html")
-            category_fig.write_image(logdir / f"{base_name}.svg")
-            category_fig.write_image(logdir / f"{base_name}.png")
-
         category_fig.show()
 ```
 
@@ -469,7 +443,7 @@ Graph 100kb resolution MLP metrics.
 ```{python}
 #| label: fig1b
 #| layout-nrow: 1
-#| column: page-left
+#| column: body
 metrics_fig1b = {name: all_metrics[name] for name in ["hg38_100kb_all_none"]}
 
 metrics_fig1b_1 = {
@@ -479,7 +453,6 @@ graph_feature_set_metrics(
     all_metrics=metrics_fig1b_1,  # type: ignore
     input_sizes=input_sizes,
     boxpoints="all",
-    width=425,
     height=400,
     y_range=(0.98, 1.001),
 )
@@ -491,7 +464,6 @@ graph_feature_set_metrics(
     all_metrics=metrics_fig1b_2,  # type: ignore
     input_sizes=input_sizes,
     boxpoints="all",
-    width=425,
     height=400,
     y_range=(0.93, 1.001),
 )
@@ -506,14 +478,13 @@ Graph.
 ```{python}
 #| label: fig1c
 #| layout-nrow: 2
-#| column: page-left
+#| column: body
 metrics_fig1c = {name: all_metrics[name] for name in fig1_sets}
 
 graph_feature_set_metrics(
     all_metrics=metrics_fig1c,  # type: ignore
     input_sizes=input_sizes,
     boxpoints="all",
-    width=900,
     height=600,
 )
 ```
@@ -570,9 +541,7 @@ Define graphing function `graph_feature_set_scatter` to plot performance metrics
 def graph_feature_set_scatter(
     all_metrics: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
     input_sizes: Dict[str, int],
-    logdir: Optional[Path] = None,
     metric_to_plot: str = "Accuracy",
-    name: Optional[str] = None,
     metric_range: Optional[Tuple[float, float]] = None,
     assay_task_key: str = ASSAY,
     sex_task_key: str = SEX,
@@ -590,9 +559,7 @@ def graph_feature_set_scatter(
     Args:
         all_metrics: Nested dict {feature_set: {task_name: {split_name: metric_dict}}}.
         input_sizes: Dict {feature_set: num_features}.
-        logdir: Directory to save figures. If None, display only.
         metric_to_plot: The metric key to use for the Y-axis ('Accuracy', 'F1_macro').
-        name: Optional suffix for figure titles and filenames.
         metric_range: Optional tuple (min, max) to set the Y-axis range.
         assay_task_key: Key used for the assay prediction task.
         sex_task_key: Key used for the sex prediction task.
@@ -842,8 +809,6 @@ def graph_feature_set_scatter(
         title_name = category_name.replace(CELL_TYPE, "biospecimen")
 
         plot_title = f"{metric_to_plot} vs Number of Features - {title_name}"
-        if name:
-            plot_title += f" - {name}"
         xaxis_title = "Number of Features (log scale)"
         xaxis_type = "log"
 
@@ -856,7 +821,6 @@ def graph_feature_set_scatter(
             xaxis_type=xaxis_type,
             yaxis_type=yaxis_type,
             yaxis_range=metric_range,
-            width=500,
             height=500,
             hovermode="closest",
             legend_title_text="Bin Size",
@@ -869,22 +833,6 @@ def graph_feature_set_scatter(
         elif category_name == ASSAY:
             fig.update_yaxes(range=[0.96, 1.001])
 
-        # --- Save or show figure ---
-        if logdir:
-            logdir.mkdir(parents=True, exist_ok=True)
-            # Include "modified" or similar in filename to distinguish
-            base_name = f"feature_scatter_MODIFIED_v2_{category_name}_{metric_to_plot}"
-            if name:
-                base_name += f"_{name}"
-            html_path = logdir / f"{base_name}.html"
-            svg_path = logdir / f"{base_name}.svg"
-            png_path = logdir / f"{base_name}.png"
-
-            print(f"Saving modified plot for {category_name} to {html_path}")
-            fig.write_html(html_path)
-            fig.write_image(svg_path)
-            fig.write_image(png_path)
-
         fig.show()
 ```
 
@@ -892,7 +840,7 @@ Graph
 
 ```{python}
 #| label: fig1c-scatter-plot
-#| column: screen-inset-left
+#| column: body
 #| layout-ncol: 2
 #| layout-nrow: 2
 for metric in ["Accuracy", "F1_macro"]:
@@ -914,18 +862,13 @@ Define function `create_confusion_matrix` to create and show a confusion matrix.
 #| label: fig1d-cm-function
 def create_confusion_matrix(
     df: pd.DataFrame,
-    name: str = "confusion_matrix",
-    logdir: Path | None = None,
     min_pred_score: float = 0,
     majority: bool = False,
-    verbose:bool=False
 ) -> None:
-    """Create a confusion matrix for the given DataFrame and save it to the logdir.
+    """Create a confusion matrix for the given DataFrame and display it.
 
     Args:
         df (pd.DataFrame): The DataFrame containing the results.
-        logdir (Path): The directory path for saving the figures.
-        name (str): The name for the saved figures.
         min_pred_score (float): The minimum prediction score to consider.
         majority (bool): Whether to use majority vote (uuid-wise) for the predicted class.
     """
@@ -958,15 +901,8 @@ def create_confusion_matrix(
 
     mat_writer = ConfusionMatrixWriter(labels=classes, confusion_matrix=confusion_mat)
 
-    if logdir is None:
-        logdir = Path(tempfile.gettempdir())
-
-    files = mat_writer.to_all_formats(logdir, name=f"{name}_n{len(filtered_df)}")
-
-    if verbose:
-        print(f"Saved confusion matrix to {logdir}:")
-        for file in files:
-            print(Path(file).name)
+    logdir = Path(tempfile.gettempdir())
+    files = mat_writer.to_all_formats(logdir, name=f"confusion_matrix_n{len(filtered_df)}")
 
     for file in files:
         if "png" in file.name:
@@ -987,25 +923,15 @@ df_with_meta = metadata_handler.join_metadata(concat_assay_df, metadata_v2)  # t
 if "Predicted class" not in df_with_meta.columns:
     raise ValueError("`Predicted class` not in DataFrame")
 
-classifier_name = "MLP"
 min_pred_score = 0
 majority = False
-
-name = f"{classifier_name}_pred>{min_pred_score}"
-
-logdir = base_fig_dir / "fig1_EpiAtlas_assay" / "fig1_supp_D-assay_c11_confusion_matrices"
-if majority:
-    logdir = logdir / "per_uuid"
-else:
-    logdir = logdir / "per_file"
-logdir.mkdir(parents=True, exist_ok=True)
 ```
 
 Graph.
 
 ```{python}
 #| label: fig1d-create-cm
-#| column: body-outset-left
+#| fig-align: center
 create_confusion_matrix(
     df=df_with_meta,
     min_pred_score=min_pred_score,
@@ -1017,7 +943,7 @@ Fig. 1D: Confusion matrix aggregating the cross-validation folds (therefore show
 
 ### E - Mislabeled target assays
 
-![](../resources/fig1E.png){width=.column-body}
+![](../resources/fig1E.png){fig-align="center"}
 
 Fig. 1E: Genome browser representation showing in black the datasets swap between H3K4me3 and H3K27ac for IHECRE00001897 in the metadata freeze v1.0, along with typical correct datasets over a representative region.
 
@@ -1038,19 +964,12 @@ Define graphing function `plot_multiple_models_split_metrics`.
 def plot_multiple_models_split_metrics(
     split_metrics: Dict[str, Dict[str, Dict[str, float]]],
     label_category: str,
-    logdir: Path | None = None,
-    filename: str = "fig1_all_classifiers_metrics",
 ) -> None:
     """Render to box plots the metrics per classifier/models and split, each in its own subplot.
 
     Args:
         split_metrics: A dictionary containing metric scores for each classifier and split.
         label_category: The label category for the classification task.
-        name: The name of the figure.
-        logdir: The directory to save the figure to. If None, the figure is only displayed.
-
-    Returns:
-        None: Displays the figure and saves it to the logdir if provided.
     """
     metrics = ["Accuracy", "F1_macro", "AUC_micro", "AUC_macro"]
     classifier_names = list(next(iter(split_metrics.values())).keys())
@@ -1117,12 +1036,6 @@ def plot_multiple_models_split_metrics(
 
     fig.update_layout(margin=dict(l=20, r=20))
 
-    # Save figure
-    if logdir:
-        fig.write_image(logdir / f"{filename}.svg")
-        fig.write_image(logdir / f"{filename}.png")
-        fig.write_html(logdir / f"{filename}.html")
-
     fig.show()
 ```
 
@@ -1130,7 +1043,7 @@ Graph.
 
 ```{python}
 #| label: supp-fig1ab-run-plots
-#| column: page-left
+#| column: body
 #| layout-nrow: 2
 merge_assays = True
 
@@ -1169,8 +1082,6 @@ Define graphing function `plot_roc_curves`. Computes macro-average ROC curves ma
 def plot_roc_curves(
     results_df: pd.DataFrame,
     label_category: str,
-    logdir: Path | None = None,
-    name: str = "roc_curve",
     title: str | None = None,
     colors_dict: Dict | None = None,  # Optional specific colors
     verbose: bool = False,
@@ -1185,8 +1096,6 @@ def plot_roc_curves(
                                    Must contain the `label_category` column (e.g., 'True class')
                                    and probability columns named after each class.
         label_category (str): The column name containing the true labels (e.g., 'True class', ASSAY, CELL_TYPE).
-        logdir (Path | None): Directory to save the figure. If None, only displays the figure.
-        name (str): Base name for saved files (e.g., "supp_fig1e").
         title (str | None): Title suffix for the plot. If None, a default title based on label_category is used.
         colors_dict (Dict | None): Optional dictionary mapping class names to colors. If None or a class
                                    is missing, default Plotly colors are used.
@@ -1359,7 +1268,6 @@ def plot_roc_curves(
         yaxis=dict(
             range=[0.0, 1.01], scaleanchor="x", scaleratio=1, constrain="domain"
         ),  # Make it square-ish, slight top margin
-        width=800,
         height=650,
         hovermode="closest",
         legend=dict(
@@ -1372,19 +1280,6 @@ def plot_roc_curves(
         ),
         margin=dict(l=60, r=30, t=0, b=0),
     )
-
-    # --- Save figure if logdir is provided ---
-    if logdir:
-        logdir.mkdir(parents=True, exist_ok=True)  # Ensure directory exists
-        filename_base = f"{name}_{label_category}_roc"
-        filepath_base = logdir / filename_base
-
-        fig.write_html(f"{filepath_base}.html")
-        fig.write_image(f"{filepath_base}.svg", width=800, height=750)
-        fig.write_image(f"{filepath_base}.png", width=800, height=750, scale=2)
-
-        print(f"Saved ROC curve plots for {label_category} to {logdir}")
-        print(f" -> {filename_base}.html / .svg / .png")
 
     fig.show()
 ```
@@ -1465,14 +1360,12 @@ Define graphing function `create_blklst_graphs`.
 #| label: supp-fig1d-blklst-function
 def create_blklst_graphs(
     feature_set_metrics_dict: Dict[str, Dict[str, Dict[str, Dict[str, float]]]],
-    logdir: Path | None = None,
 ) -> List[go.Figure]:
     """Create boxplots for blacklisted related feature sets.
 
     Args:
         feature_set_metrics_dict (Dict[str, Dict[str, Dict[str, Dict[str, float]]]]): The dictionary containing all metrics for all blklst related feature sets.
             format: {feature_set: {task_name: {split_name: metric_dict}}}
-        logdir (Path, Optional): The directory to save the figure to. If None, the figure is only displayed.
     """
     figs = []
 
@@ -1552,18 +1445,8 @@ def create_blklst_graphs(
         category_fig.update_layout(
             title_text=task_name,
             height=600,
-            width=500,
             **main_title_settings
         )
-
-        # Save figure
-        if logdir:
-            task_name = task_name.replace("_1l_3000n-10fold", "")
-            base_name = f"metrics_{task_name}"
-
-            category_fig.write_html(logdir / f"{base_name}.html")
-            category_fig.write_image(logdir / f"{base_name}.svg")
-            category_fig.write_image(logdir / f"{base_name}.png")
 
         figs.append(category_fig)
 
@@ -1608,7 +1491,7 @@ Graph.
 ```{python}
 #| label: supp-fig1dplot
 #| layout-ncol: 2
-#| column: screen-inset-left
+#| column: body
 figs = create_blklst_graphs(all_metrics_blklst)
 
 figs[0].show()
@@ -1631,8 +1514,6 @@ Define graphing function `plot_prediction_scores_distribution`.
 def plot_prediction_scores_distribution(
     results_df: pd.DataFrame,
     merge_assay_pairs: bool = True,
-    logdir: Path | None = None,
-    name: str = "prediction_score_distribution",
     group_by_column: str = "True class",
     min_y: float = 0.7,
     use_aggregate_vote: bool = True,
@@ -1645,10 +1526,7 @@ def plot_prediction_scores_distribution(
     Args:
         results_df (pd.DataFrame): DataFrame containing prediction results and metadata
         merge_assay_pairs (bool): Whether to merge similar assays (mrna/rna, wgbs-pbat/wgbs-standard)
-        logdir (Path | None): Directory to save figures. If None, only displays the figure
-        name (str): Base name for saved files
         group_by_column (str): Column name to use for grouping traces
-        merge_similar_assays (bool): Whether to merge similar assays (mrna/rna, wgbs-pbat/wgbs-standard)
         min_y (float): Minimum y-axis value
         use_aggregate_vote (bool): If True, aggregate by EpiRR. If False, use individual predictions
         title (str | None): Additional title text to append
@@ -1738,16 +1616,8 @@ def plot_prediction_scores_distribution(
             orientation="h",
         ),
         height=650,
-        width=900,
         margin=dict(t=60, r=10, l=10)
     )
-
-    # Save figure if logdir is provided
-    if logdir:
-        filename = f"{name}_epirr" if use_aggregate_vote else name
-        fig.write_html(logdir / f"{filename}.html")
-        fig.write_image(logdir / f"{filename}.svg")
-        fig.write_image(logdir / f"{filename}.png")
 
     fig.show()
 ```
@@ -1779,7 +1649,6 @@ Graph.
 
 ```{python}
 #| label: supp-fig1e-plot
-#| column: page-left
 plot_prediction_scores_distribution(
     results_df=concat_df_w_meta,
     group_by_column=ASSAY,
@@ -1809,7 +1678,6 @@ Graph.
 
 ```{python}
 #| label: supp-fig1f-plot
-#| column: page-left
 plot_prediction_scores_distribution(
     results_df=concat_df_w_meta,
     group_by_column=ASSAY,
@@ -1875,7 +1743,6 @@ Graph.
 
 ```{python}
 #| label: supp-fig1g-plot
-#| column: page-left
 plot_prediction_scores_distribution(
     results_df=augmented_df,
     group_by_column=ASSAY,
@@ -1890,16 +1757,17 @@ plot_prediction_scores_distribution(
 
 For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
-<!-- figures are supposed to be 700x600, but need some extra margin to not create scroll bar -->
-```{=html}
-<iframe width="710", height="615", src="../resources/threshold_impact_graph_global_assay_epiclass_11c-11_classes_cdn.html"></iframe>
+<iframe src="../resources/threshold_impact_graph_global_assay_epiclass_11c-11_classes_cdn.html"
+        scrolling="no"
+        style="display: block; margin: 0 auto; width: 100%; max-width: 710px; aspect-ratio: 710 / 615; border: 0; overflow: hidden;">
+</iframe>
 
-<iframe width="710", height="615", src="../resources/threshold_impact_graph_global_harmonized_sample_ontology_intermediate-16_classes_cdn.html"></iframe>
-```
+<iframe src="../resources/threshold_impact_graph_global_harmonized_sample_ontology_intermediate-16_classes_cdn.html"
+        scrolling="no"
+        style="display: block; margin: 0 auto; width: 100%; max-width: 710px; aspect-ratio: 710 / 615; border: 0; overflow: hidden;">
+</iframe>
 
-Supplementary Figure 1H,I: Distribution of aggregated accuracy, F1-score and corresponding file subset size across
-varying prediction score thresholds, based on pooled predictions from all cross-validation folds
-for the Assay (H) and Biospecimen (I) classifiers.
+Supplementary Figure 1H,I: Distribution of aggregated accuracy, F1-score and corresponding file subset size across varying prediction score thresholds, based on pooled predictions from all cross-validation folds for the Assay (H) and Biospecimen (I) classifiers.
 
 ## Supplementary Figure 2
 
@@ -1911,7 +1779,7 @@ Graph assay/biospecimen metrics per 10fold, for reference (no assay breakdown)
 
 ```{python}
 #| label: supp-fig2ab-plot
-#| column: page-left
+#| column: body
 #| layout-nrow: 2
 metrics_supp2 = {name: all_metrics[name] for name in feature_sets_14}
 
@@ -1919,7 +1787,6 @@ graph_feature_set_metrics(
     all_metrics=metrics_supp2,  # type: ignore
     input_sizes=input_sizes,
     boxpoints="all",
-    width=900,
     height=600,
 )
 ```
@@ -2002,9 +1869,7 @@ Define graphing function `graph_feature_set_metrics_per_assay`
 def graph_feature_set_metrics_per_assay(
     all_metrics_per_assay: Dict[str, Dict[str, Dict[str, Dict[str, Dict[str, float]]]]],
     input_sizes: Dict[str, int],
-    logdir: Path | None = None,
     sort_by_input_size: bool = False,
-    name: str | None = None,
     y_range: Tuple[float, float] | None = None,
     boxpoints: str = "outliers",
 ) -> None:
@@ -2014,9 +1879,7 @@ def graph_feature_set_metrics_per_assay(
         all_metrics_per_assay (Dict[str, Dict[str, Dict[str, Dict[str, Dict[str, float]]]]]): A dictionary containing all metrics per assay for all feature sets.
             Format: {assay: {feature_set: {task_name: {split_name: metric_dict}}}}
         input_sizes (Dict[str, int]): A dictionary containing the input sizes for all feature sets.
-        logdir (Path): The directory where the figures will be saved. If None, the figures will only be displayed.
         sort_by_input_size (bool): Whether to sort the feature sets by input size.
-        name (str|None): The name of the figure.
         y_range (Tuple[float, float]|None): The y-axis range for the plots.
         boxpoints (str): The type of points to display in the box plots. Defaults to "outliers".
     """
@@ -2154,11 +2017,8 @@ def graph_feature_set_metrics_per_assay(
                 )
 
             title = f"{category} - {metric_name} (per assay)"
-            if name is not None:
-                title += f" - {name}"
 
             fig.update_layout(
-                width=1250,
                 height=900,
                 title_text=title,
                 xaxis_title="Assay",
@@ -2184,14 +2044,6 @@ def graph_feature_set_metrics_per_assay(
             )
             if y_range:
                 fig.update_yaxes(range=y_range)
-
-            if logdir:
-                base_name = f"feature_set_metrics_{category}_{metric}_per_assay"
-                if name is not None:
-                    base_name = base_name + f"_{name}"
-                fig.write_html(logdir / f"{base_name}.html")
-                fig.write_image(logdir / f"{base_name}.svg")
-                fig.write_image(logdir / f"{base_name}.png")
 
             fig.show()
 ```
@@ -2235,7 +2087,7 @@ Graph.
 
 ```{python}
 #| label: supp-fig2rest-plot
-#| column: screen-inset-left
+#| column: screen-inset
 #| layout-nrow: 2
 graph_feature_set_metrics_per_assay(
     all_metrics_per_assay=metrics_per_assay,  # type: ignore
@@ -2252,7 +2104,7 @@ Supplementary Figure 2C,D: Distribution of accuracy calculated per assay for the
 
 Mislabeled datasets identified with EpiClass.
 
-![](../resources/Supp3.png){width=.column-body}
+![](../resources/Supp3.png){fig-align="center"}
 
 Supplementary Figure 3: Genome browser representation of the eight EpiATLAS originally mislabeled datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with representative correct datasets. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.
 
@@ -2260,6 +2112,6 @@ Supplementary Figure 3: Genome browser representation of the eight EpiATLAS orig
 
 Example of bad quality datasets identified using EpiClass
 
-![](../resources/Supp4.png){width=.column-body}
+![](../resources/Supp4.png){fig-align="center"}
 
 Supplementary Figure 4: Genome browser representation of some of the EpiATLAS bad quality datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with good quality ones from the same biospecimen. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.

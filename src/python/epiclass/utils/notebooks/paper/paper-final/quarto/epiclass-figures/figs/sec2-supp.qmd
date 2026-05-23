@@ -191,9 +191,7 @@ Define function `zscore_per_assay` to compute and graph the metric for each assa
 
 ```{python}
 #| label: func-zscore-per-assay
-def zscore_per_assay(
-    zscore_df: pd.DataFrame, logdir: Path | None = None, name: str | None = None
-) -> None:
+def zscore_per_assay(zscore_df: pd.DataFrame) -> None:
     """
     Plot the z-score distributions per assay.
 
@@ -319,17 +317,8 @@ def zscore_per_assay(
     fig.update_yaxes(range=[-1.5, 3], showticklabels=True)
 
     fig.update_layout(
-        width=1500,
         height=750,
     )
-
-    # Save figure
-    if logdir:
-        if name is None:
-            name = "zscore_distributions_per_assay"
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_html(logdir / f"{name}.html")
 
     fig.show()
 ```
@@ -338,14 +327,11 @@ Graph zscore per assay.
 
 ```{python}
 #| label: plot-zscore-per-assay
-#| column: screen-inset-left
+#| column: screen-inset
 zscore_per_assay(cross_val_analysis)
 ```
 
 Supp. Fig. 5B: Distribution of average z-score signal of epigenomes (dots) over chrY per sex (female in red, male in blue) for each assay individually (showing only the fold change track type for the ChIP datasets, and the two types of WGBS and RNA-seq were merged). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
-
-To see the RNA-Seq and WGBS results, scroll to the right using the horizontal scrollbar at the bottom of the graph.
-
 
 ### C - Female/Male chrY signal z-score cluster separation
 
@@ -353,16 +339,12 @@ Define function `merged_assays_separation_distance` that computes and graphs the
 
 ```{python}
 #| label: func-separation-distance
-def merged_assays_separation_distance(
-    zscore_df: pd.DataFrame, logdir: Path | None = None, name: str | None = None
-) -> None:
+def merged_assays_separation_distance(zscore_df: pd.DataFrame) -> None:
     """Complement to figure 2E, showing separation distance (mean, median)
     between male/female zscore clusters, for ChIP-seq (core7). Grouped by EpiRR.
 
     Args:
         zscore_df (pd.DataFrame): The dataframe with z-score data.
-        logdir (Path): The directory path to save the output plots.
-        name (str): The base name for the output plot files.
     """
     metric_label = "chrY_zscore_vs_assay_track"
 
@@ -461,14 +443,6 @@ def merged_assays_separation_distance(
         ),
     )
 
-    # Save figure
-    if logdir:
-        if name is None:
-            name = "zscore_cluster_separation_distance"
-        fig.write_image(logdir / f"{name}.svg")
-        fig.write_image(logdir / f"{name}.png")
-        fig.write_html(logdir / f"{name}.html")
-
     fig.show()
 ```
 
@@ -476,7 +450,6 @@ Graph.
 
 ```{python}
 #| label: plot-separation-distance
-#| column: body-outset-left
 merged_assays_separation_distance(cross_val_analysis)
 ```
 
@@ -497,7 +470,7 @@ Images extracted from Epilogos viewer, using specified coordinates (XIST and FIR
 - Pairwise: Male VS Female 100 samples
 - Saliency Metric: S1
 
-![](../resources/Supp5E.png){width=.column-body}
+![](../resources/Supp5E.png){fig-align="center"}
 
 Supp. Fig. 5E: Epilogos pairwise comparisons of male (top) vs female (bottom) showing portions of important regions for the Sex classifier, including the XIST (left) and FIRRE (right) genes.
 
@@ -506,7 +479,7 @@ See [Annex A](./sec2-supp.html#sec-annex-a) for a more detailled Epilogos color 
 
 ### F - Genome browser for biospecimen important regions
 
-![](../resources/Supp5F.png){width=.column-body}
+![](../resources/Supp5F.png){fig-align="center"}
 
 Supp. Fig. 5F: Genome browser representation of the important regions shown in [Figure 2I](./sec2.html#sec-2I).
 
@@ -515,13 +488,13 @@ Supp. Fig. 5F: Genome browser representation of the important regions shown in [
 
 For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
-<!-- figure supposed to be 1000x900, but need some extra margin to not create scroll bar -->
-::: {.column-screen-left}
-<iframe
-  src="../resources/all_threshold_graphs.html"
-  width="1010"
-  height="910"
-></iframe>
+:::{.column-screen-inset}
+
+<iframe src="../resources/all_threshold_graphs.html"
+        scrolling="no"
+        style="display: block; margin: 0; width: 100%; height: 1000px; border: none; overflow: hidden;">
+</iframe>
+
 :::
 
 Supplementary Figure 6: Impact of prediction score threshold on performance metrics. Impact of prediction score threshold on accuracy, F1-score and number of files for both EpiATLAS cross-validation performance and inference on datasets from other databases with provided or extracted labels. Performance for Assay, Sex, Cancer, Biomaterial type and Life stage classifiers are shown, for EpiATLAS, ENCODE core/non-core, ChIP-Atlas and Recount3 datasets. The number of classes (C) and the number of files analyzed (N) used to calculate the performances are shown at the bottom for each graph. The 11 classes of the Assay classifiers for EpiATLAS correspond to the six ChIP-Seq histone modifications, their control Input file, and two protocols of both RNA-Seq and WGBS, while for the 9 classes of ENCODE the two protocols were grouped, and indeed only the seven ChIP-related assays were used for ChIP-Atlas and RNA-Seq for Recount3. For the Sex classifier the third class corresponds to 'mixed', absent for ENCODE. The Cancer classifier is binary (where non-cancer is a mix of healthy and other diseases). For the Biomaterial classifier the 'primary cell culture' class is missing from all public sources (but 'primary cell', 'primary tissue' and 'cell line' are present), while the three classes (perinatal, pediatric, adult) were always used for the Life stage classifier.
@@ -533,20 +506,16 @@ For full code, since the processing is more complex, see `src/python/epiclass/ut
 
 This is the breakdown per cell type of [Figure 2G](./sec2.html#sec-2G).
 
-<!-- figure supposed to be 1000x900, but need some extra margin to not create scroll bar -->
-::: {.column-screen-left}
-<iframe
-  src="../resources/16ct_chromscore.html"
-  width="1010"
-  height="910"
-></iframe>
-:::
+<iframe src="../resources/16ct_chromscore.html"
+        scrolling="no"
+        style="display: block; margin: 0 auto; width: 100%; max-width: 1010px; aspect-ratio: 1010 / 910; border: 0; overflow: hidden;">
+</iframe>
 
 Supplementary Figure 7: Class-Specific ChromScore Distributions in Biospecimen Classifier Regions Identified by SHAP. Distribution of the average ChromScore values over the important Biospecimen classifier regions according to SHAP (blue) compared to the global distribution (pink), for each biospecimen class sorted according to the EpiATLAS order. The number of files and regions analyzed to calculate the p-values are shown. ChromScore values for each region are averaged over files of each class (one average value per feature). Statistical significance was assessed using a two-sided Welch's t-test where the number of regions was above 30, otherwise the reported p-value is the worst of Welch's t-test and non-parametric Brunner-Munzel. Dashed lines represent means, solid lines the medians, boxes the quartiles.
 
 ## Annex A - Epilogos color legend {#sec-annex-a}
 
-![](../resources/epilogos_legend.png){width=.column-body}
+![](../resources/epilogos_legend.png){fig-align="center"}
 
 - biv = bivalent
 - Tx = Transcription
