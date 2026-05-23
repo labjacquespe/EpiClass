@@ -23,13 +23,7 @@ The formatting of the figures may differ slightly from those in the paper, but t
 
 All code cells are folded by default. To view any cell, click **"Code"** to expand it, or use the code options near the main title above to unfold all at once.
 
-Some figures are not included here because:
-
-- The interactive versions would be too large (e.g., PCA figures)
-- They were created manually (no figure creation code available)
-
-These figures can be viewed directly in the [paper](https://www.biorxiv.org/content/10.1101/2025.09.04.670545v1) and the [supplementary figures PDF](https://www.biorxiv.org/content/biorxiv/early/2025/09/04/2025.09.04.670545/DC1/embed/media-1.pdf).
-
+Some figure-generation code is not included here because the interactive outputs would be too large (e.g. PCA figures). If a figure appears without accompanying code or explanation, it was created manually.
 
 ## Setup
 
@@ -103,6 +97,7 @@ if not base_pred_dir.exists():
     raise FileNotFoundError(f"Directory {base_pred_dir} does not exist.")
 ```
 
+
 ## Results context
 
 Predictions on external databases (ENCODE, ChIP-Atlas and Recount3) were all performed using the same classifiers trained on the labeled EpiAtlas samples.
@@ -139,17 +134,22 @@ The metadata for ENCODE predictions was created using the FILE + EXPERIMENT + BI
 For the initial extraction process, see: `src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/encode_metadata_creation.ipynb)).
 Final metadata file: `encode_full_metadata_2025-02_no_revoked.freeze1.csv(.xz)`
 
+
 ## Figure 3 and Supp Fig 8A,D - Public databases metrics {#sec-all-DB-metrics}
 
 ChIP-Atlas, ENCODE and recount3 metrics at various prediction score thresholds were generated using the `MetricsPerAssay` class, from `src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/metrics_per_assay.py)).
 
 ([Folder permalink](https://github.com/labjacquespe/EpiClass/tree/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper))
+
 - ChIP-Atlas: `src/python/epiclass/utils/notebooks/paper/c-a_pred_analysis.ipynb` (section `Summary metrics by assay`)
 - ENCODE: `src/python/epiclass/utils/notebooks/paper/encode_pred_analysis.ipynb` (section `All 5 tasks metrics summary`, run `Setup` section beforehand)
 - recount3: `src/python/epiclass/utils/notebooks/paper/recount3_pred_analysis.ipynb`
 
-
 Results were manually merged into Supplementary Table 9, and graphs were manually created using values from that table.
+
+### Figure 3A - ENCODE predictions
+
+Figure 3A: Accuracy of each metadata classifier breakdown per assay (dots) of the high-confidence predictions on the ENCODE data for which metadata was available, excluding those in EpiATLAS (Supplementary Table 9). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 ### Figure 3B - ChIP-Atlas assay (7classes) prediction
 
@@ -169,34 +169,43 @@ ca_preds_df = pd.read_csv(ca_preds_path, sep=",", low_memory=False, compression=
 print(f"ChIP-Atlas: {ca_preds_df.shape[0]} total files")
 ```
 
-Removing ChIP-Atlas experiment overlap with EpiATLAS
+Ignoring potentially non-core files.
 
 ```{python}
-#| label: fig3b-remove-epiatlas-overlap
-print(f"ChIP-Atlas: Initial {ca_preds_df.shape[0]} files")
-no_epiatlas_df = ca_preds_df[ca_preds_df["is_EpiAtlas_EpiRR"] == "0"]
+#| label: fig3b-filter-non-core
+DB_COLS = ["GEO_target_mod", "C-A_target", "Cistrome_target", "NGS_target_mod"]
+acceptable_targets = ['h3k4me3', 'h3k36me3', 'h3k27ac', 'h3k27me3', 'h3k9me3', 'h3k4me1', 'input', "ctrl", "----", "unclassified"]
 
-diff = ca_preds_df.shape[0] - no_epiatlas_df.shape[0]
-print(f"ChIP-Atlas: {diff} files with EpiAtlas EpiRR removed")
-print(f"ChIP-Atlas: {no_epiatlas_df.shape[0]} files without EpiAtlas EpiRR")
-```
+# Uniformize just in case
+ca_preds_df[DB_COLS] = ca_preds_df[DB_COLS].fillna("----").apply(lambda x: x.str.lower())
 
-Ignoring non-core consensus files.
-![](../resources/fig3B.png){fig-align="center"}
-```{python}
-#| label: fig3b-filter-core-consensus
-non_core_labels = ["non-core", "CTCF"]
-ca_core7_df = no_epiatlas_df[
-    ~no_epiatlas_df["target_majority_consensus"].isin((non_core_labels))
+ca_core7_df = ca_preds_df[
+    ca_preds_df[DB_COLS]
+        .isin(acceptable_targets)
+        .all(axis=1)
 ]
 
-diff = no_epiatlas_df.shape[0] - ca_core7_df.shape[0]
-print(f"ChIP-Atlas: {diff} files with non-core consensus removed")
-print(f"ChIP-Atlas: {ca_core7_df.shape[0]} files with core consensus")
+diff = ca_preds_df.shape[0] - ca_core7_df.shape[0]
+print(f"{diff} potentially non-core removed.")
+print(f"{ca_core7_df.shape[0]} files remaining.")
 
 display(ca_core7_df["target_majority_consensus"].value_counts(dropna=False))
 ```
 
+Removing ChIP-Atlas experiment overlap with EpiATLAS
+
+```{python}
+#| label: fig3b-remove-epiatlas-overlap
+print(f"ChIP-Atlas: Initial {ca_core7_df.shape[0]} files")
+no_epiatlas_df = ca_core7_df[ca_core7_df["is_EpiAtlas_EpiRR"] == "0"]
+
+diff = ca_core7_df.shape[0] - no_epiatlas_df.shape[0]
+print(f"ChIP-Atlas: {diff} files with EpiAtlas EpiRR removed")
+print(f"ChIP-Atlas: {no_epiatlas_df.shape[0]} files without EpiAtlas EpiRR")
+```
+
+
+![](../resources/fig3B.png){fig-align="center"}
 
 Figure 3B: Inference of the Assay classifier on the ChIP-Atlas datasets represented as a multi-layer donut chart where the internal layer is depicting the availability status of the metadata as being provided/extracted (yellow) vs missing (grey), the central layer depicting the classifier prediction matching (green) or not (red) the expected metadata label, and the external layer containing the confidence level where prediction scores above 0.6 correspond to high-confidence predictions (light to dark blue >0.6, >0.8 and >0.9) vs low confidence predictions (brown). The high-confidence mismatching predictions were further divided between datasets predicted as Input (light orange) vs potential mislabels (dark red).
 
@@ -205,13 +214,15 @@ Figure 3B: Inference of the Assay classifier on the ChIP-Atlas datasets represen
 
 ```{python}
 #| label: fig3b-high-confidence-preds
-total_N = ca_core7_df.shape[0]
-high_confidence_pred_df = ca_core7_df[ca_core7_df["Max_pred_assay7"] >= 0.6]
+total_N = no_epiatlas_df.shape[0]
+high_confidence_pred_df = no_epiatlas_df[no_epiatlas_df["Max_pred_assay7"] >= 0.6]
 
 high_confidence_N = high_confidence_pred_df.shape[0]
+low_confidence_N = total_N - high_confidence_N
 N_percent = high_confidence_N / total_N
 print(
-    f"ChIP-Atlas: {high_confidence_N}/{total_N} files ({high_confidence_N/total_N:.2%}) with high confidence assay prediction"
+    f"{high_confidence_N}/{total_N} files ({high_confidence_N/total_N:.2%}) with high confidence assay prediction\n"
+    f"{low_confidence_N}/{total_N} files ({low_confidence_N/total_N:.2%}) with low confidence assay prediction"
 )
 ```
 
@@ -223,8 +234,9 @@ print(
 total_N = high_confidence_pred_df.shape[0]
 
 match_rule = (
-    high_confidence_pred_df["target_majority_consensus"]
-    == high_confidence_pred_df["Predicted_class_assay7"]
+    high_confidence_pred_df[DB_COLS].eq(
+    high_confidence_pred_df["Predicted_class_assay7"], axis=0
+).any(axis=1)
 )
 match_df = high_confidence_pred_df[match_rule]
 mismatch_df = high_confidence_pred_df[~match_rule]
@@ -232,7 +244,7 @@ mismatch_df = high_confidence_pred_df[~match_rule]
 agreement_N = match_df.shape[0]
 
 print(
-    f"ChIP-Atlas: {agreement_N}/{total_N} files ({agreement_N / total_N:.2%}) with agreement between consensus and predicted assay"
+    f"ChIP-Atlas: {agreement_N}/{total_N} files ({agreement_N / total_N:.2%}) with agreement between predicted assay and any of the 4 sources"
 )
 ```
 
@@ -246,28 +258,62 @@ input_rule = mismatch_df["Predicted_class_assay7"] == "input"
 input_pred_N = input_rule.sum()
 
 print(
-    f"ChIP-Atlas: {input_pred_N}/{total_mismatch} files ({input_pred_N / total_mismatch:.2%}) with mismatch predicted as input"
+    f"ChIP-Atlas: {input_pred_N}/{total_mismatch} files ({input_pred_N / total_mismatch:.2%}) with mismatch predicted as input\n"
+    f"ChIP-Atlas: {total_mismatch-input_pred_N}/{total_mismatch} files ({(total_mismatch-input_pred_N) / total_mismatch:.2%}) potential mislabels\n"
 )
-print(
-    f"ChIP-Atlas: {total_mismatch-input_pred_N}/{total_mismatch} files ({(total_mismatch-input_pred_N) / total_mismatch:.2%}) potential mislabels"
-)
-display(mismatch_df[~input_rule]["core7_DBs_consensus"].value_counts(dropna=False))
+
+print("ChIP-Atlas: Distribution of consensus assay labels among the mismatches:")
+true_mismatch_df = mismatch_df[~input_rule]
+display(true_mismatch_df["core7_DBs_consensus"].value_counts(dropna=False))
 ```
 
+### Figure 3C-J - ChIP-Atlas and recount3 other predictions
 
-## Supplementary Figure 6 - Prediction score threshold impact
+![](../resources/fig3_C-J.png){width=100%}
 
-See [Supplementary Figures page](./sec2-supp.html#sec-supp6).
-
-
-## Supplementary Figure 8
-
-### A,D - ENCODE core/non-core accuracy
-
-See [previous section](./sec3.html#sec-all-DB-metrics).
+Figure 3C-J: Inference of the donor Sex (C,G), sample Cancer status (D,H), Biomaterial type (E,I) and donor Life stage (F,J) classifiers on the ChIP-Atlas (C-F) and Recount3 (G-J) sources represented as multi-layer donut charts as in panel B.
 
 
-### B - ENCODE non-core predictions with assay category mapping
+## Supplementary Figure 6 - Prediction score thresholds on predictions from various DBs
+
+See [Additional Supplementary Figures page](./sec2-supp.html#sec-supp6).
+
+Supplementary figures 5 and 7 are relevant to section 2 of results and not included here.
+
+
+## PCAs - Supp Fig8-9 {#sec-pca}
+
+The following applies to supplementary figures 8B, 9B and 9E.
+
+PCAs were computed via `src/python/epiclass/utils/compute_pca.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/compute_pca.py)), using `IncrementalPCA` from `scikit-learn`.
+
+Graphing was done using code similar to `src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb)), which uses the output of `compute_pca.py`.
+
+
+## Supplementary Figure 8 - ENCODE predictions
+
+EpiClass results on ENCODE datasets.
+
+
+### A,D - Core and non-core accuracy
+
+See [public databases metrics section](./sec3.html#sec-all-DB-metrics) for details.
+
+![](../resources/Supp8AD.png){width=100%}
+
+Supplementary Figure 8A,D: Inference of the Assay, Biospecimen source, donor Sex, sample Cancer status, Biomaterial type and donor Life stage classifiers on the ENCODE datasets from core assays (histones ChIP-Seq, RNA-Seq, WGBS) represented as multi-layer donut charts as in Fig. 3B. The Biospecimen source classifier was only applied on datasets from the 13 major biospecimen sources out of the 16 found in EpiATLAS training data (N = 1215 datasets). Panel D is as panel A but for non-core ENCODE datasets.
+
+
+### B - All assays PCA
+
+See [PCA section](./sec3.html#sec-pca) for details on the methodology.
+
+![](../resources/Supp9B.png){fig-align="center"}
+
+Supplementary Figure 8B: Distribution of the EpiATLAS and ENCODE data over their two first principal components.
+
+
+### C - Non-core predictions with assay category mapping
 
 Load ENCODE predictions.
 
@@ -394,14 +440,25 @@ fig.show()
 Supplementary Figure 8B: Proportion of non-core ChIP-Seq datasets from ENCODE classified with high-confidence (>0.6) in the different functional categories predicted as one of the 7 core ChIP assays. Since none of the six histone modifications used for training are specifically associated with insulator factors, they were instead mostly predicted as Input.
 
 
-### C,F,I - PCAs
+### E-F - Input-class probability and QC metrics
 
-PCAs were computed via `src/python/epiclass/utils/compute_pca.py` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/compute_pca.py)), using `IncrementalPCA` from `scikit-learn`.
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/d4d5419bd1d26770912f3e36b3a4aa816fca1d39/src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb)).
 
-Graphing was done using code similar to `src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/pca_plot.ipynb)), which uses the output of `compute_pca.py`.
+<iframe src="../resources/encode_qc_correlation_boxplots_cdn.html"
+        scrolling="no"
+        style="display: block; width: 100%; aspect-ratio: 2 / 1; border: 0; overflow: hidden;">
+</iframe>
+For non-core targets, the target name and number of samples are visible on hover.
+
+Supplementary Figure 8E-F: Spearman rank correlations per-target between EpiClass Input-class probability (from the ChIP-only classifier, 7 classes) and four ENCODE ChIP-seq quality control (QC) metrics: fraction of reads in peaks (FRiP), number of reproducible peaks, Jensen-Shannon distance from Input control (JSD), and normalized strand cross-correlation coefficient (NSC) for core histone marks (E) and non-core ChIP targets (F) including transcription factors, chromatin regulators, and RNA polymerase subunits. Each point represents one ChIP target, the boxplots summarize the distribution. Negative ρ indicates that higher Input-class probability is associated with lower QC metric values. The dashed line at ρ = 0 indicates no correlation. Boxplot dashed lines represent means, solid lines the medians, boxes the interquartile range, and whiskers the farthest points within 1.5× the interquartile range. H3K4me3 was excluded in panel E due to insufficient sample size after filtering (see Supplementary Methods).
 
 
-### E - UpsetPlot of assay labels provided in 4 DBs
+## Supplementary Figure 9 - Results on public datasets
+
+EpiClass results on public datasets.
+
+
+### A - UpsetPlot of assay labels provided in 4 DBs
 
 The following function gives a consensus label to each ChIP-Atlas sample, using the target values given by ChIP-Atlas, cistromeDB, NGS-QC and GEO.
 
@@ -505,20 +562,32 @@ Graph.
 DB_COLS = ["GEO_target_mod", "C-A_target", "Cistrome_target", "NGS_target_mod"]
 consensus_col = "core7_DBs_consensus"
 title = "ChIP-Atlas core 7 samples presence in used DBs\nTarget Consensus - No EpiAtlas overlap"
-upset = make_db_upsetplot(
-    df=ca_core7_df, consensus_col=consensus_col, db_cols=DB_COLS, title=title
+make_db_upsetplot(
+    df=no_epiatlas_df, consensus_col=consensus_col, db_cols=DB_COLS, title=title
 )
+
+print("Total for each category:")
+display(no_epiatlas_df[consensus_col].value_counts(dropna=False))
 ```
-
-Supplementary Figure 8E: Comparison of the four public sources used to extract assay metadata after excluding ChIP-Atlas datasets present in EpiATLAS. The 1 source category corresponds to 5,115 datasets where the assay label was extracted only from GEO because they are unlabeled in ChIP-Atlas. A total of 706 datasets got different ChIP target names.
-
-
-### G - ChIP-Atlas mislabeled datasets
-
-Genome browser screenshots, using coordinates and samples specified in the image, see [supplementary figures PDF](https://www.biorxiv.org/content/biorxiv/early/2025/09/04/2025.09.04.670545/DC1/embed/media-1.pdf).
+Supplementary Figure 8A: Comparison of the four public sources used to extract assay metadata after excluding ChIP-Atlas datasets present in EpiATLAS. The 1 source category corresponds to 3,320 datasets where the assay label was only available from GEO. A total of 706 datasets were labeled differently.
 
 
-### H - Effect of EpiATLAS imputation on assay training and inference
+### B - Core ChIP-Seq PCA
+
+See [PCA section](./sec3.html#sec-pca) for details on the methodology.
+
+![](../resources/Supp9B.png){fig-align="center"}
+
+Supplementary Figure 9B: Distribution of the ChIP-Seq data from EpiATLAS and ENCODE over their two first principal components.
+
+
+### C - ChIP-Atlas mislabeled datasets
+
+![](../resources/Supp9C.png){height="1000px" fig-align="center"}
+
+Supplementary Figure 9C: Genome browser representation of a few high-confidence potential mislabeled candidates from ChIP-AtlasGSE106660. This study includes WT and Knock-out (KO) conditions that were conducted in triplicates for a total of 78 ChIP-Seq experiments, including 6 datasets for H3K9me3 (WT1 and KO1) and 12 for H3K27ac  (WT1-2 and KO1-2). The authors also generated and submitted to GEO 26 signal files combining the 3 biological replicates per condition. To discard potential errors during ChIP-Atlas reprocessing, we downloaded the raw data from GEO and reprocessed them on hg38 with the ChIP-Seq GenPipes version 6.1.049[PMC6559338]. The image is showing the combined signal generated by the authors (dark colors), the rep1 of each condition from ChIP-Atlas data, as well as reprocessed rep1 data (hatched colors) from GSE106660 (rep2 and 3 are not shown but are almost identical to rep1), as well as two representatives H3K9me3 from a different study at the bottom. This is demonstrating that the swap between H3K27ac and H3K9me3 occurred during submission of the raw data on GEO/SRA and only involved WT1 and KO1 as WT2 and KO2 signals are as expected.
+
+### D - Effect of EpiATLAS imputation on assay training and inference
 
 Read metadata for both ChIP-Atlas and imputed samples.
 ```{python}
@@ -796,3 +865,12 @@ fig.show()
 The number of samples associated with each point is visible on hover.
 
 Supplementary Figure 8H: Accuracy comparison per assay (dots) between Assay classifiers trained on observed vs imputed data from EpiATLAS and applied to either EpiATLAS or ChIP-Atlas without prediction score threshold (brown), or with a threshold of 0.6 (light blue) or 0.9 (dark blue). These classifiers were both trained only using the p-value datasets as this is the only track type available for imputed data (therefore no Input assay) (Supplementary Table 13). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+
+
+### E - RNA-Seq PCA
+
+See [PCA section](./sec3.html#sec-pca) for details on the methodology.
+
+![](../resources/Supp9E.png){fig-align="center"}
+
+Supplementary Figure 9E: Distribution of a random selection of ~15% datasets from Recount3 along with all RNA-seq datasets from EpiATLAS and ENCODE data over their two first principal components.
