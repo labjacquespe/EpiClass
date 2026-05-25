@@ -43,6 +43,7 @@ import plotly.graph_objects as go
 import skops.io as skio
 import upsetplot
 from IPython.display import display
+import numpy as np
 
 from epiclass.utils.notebooks.paper.paper_utilities import (
     ASSAY,
@@ -149,7 +150,183 @@ Results were manually merged into Supplementary Table 9, and graphs were manuall
 
 ### Figure 3A - ENCODE predictions
 
+Load public DBs prediction metrics summary.
+
+```{python}
+#| label: fig3a-read-summary
+gen_path = tables_dir / "dfreeze_v2" / "predictions"
+table_path = gen_path / "ST9-Public_DBs_predictions_summary.csv"
+df_encode = pd.read_csv(table_path, low_memory=False, skiprows=1)
+```
+
+Filter for high-confidence (prediction score >= 0.6) ENCODE metrics
+
+```{python}
+#| label: fig3a-filter-summary
+mask1 = df_encode["Dataset source"] == "ENCODE"
+mask2 = df_encode["min_predScore"].astype(str) == "0.6" # 'high-confidence' threshold
+mask3 = df_encode["Fig3A"] == "Y" # others might be redundant, but this is explicit
+
+df_encode = df_encode[mask1 & mask2 & mask3]
+
+df_encode["assay"].replace("avg-non-core", "non-core", inplace=True)
+```
+
+Define graphing function.
+
+```{python}
+#| label: fig3a-define-graph-function
+def reproduce_encode_plot(df: pd.DataFrame, assay_colors: dict):
+    """
+    Reproduces the ENCODE Core and non-core data boxplot with default right-side legend.
+
+    Expected columns in df: 'task_name', 'assay', 'acc', 'nb_samples'
+    Note: It assumes 'acc' is on a 0-100 scale. If it's 0-1, it scales it automatically.
+    """
+    all_assays_ordered = ASSAY_ORDER + ["non-core"]
+    assay_colors["non-core"] = "rgb(255,0,255)"
+
+    # Scale accuracy to 0-100% if it seems to be in 0-1 range
+    if df["acc"].max() <= 1.0:
+        df = df.copy()
+        df["acc"] = df["acc"] * 100
+
+    # Order of categories on the x-axis
+    category_order = [
+        "assay_epiclass_9c",
+        "biospecimen_intermediate",
+        "sex",
+        "cancer_status",
+        "biomaterial_type",
+        "lifestage_merged",
+    ]
+    cat_to_int = {cat: i for i, cat in enumerate(category_order)}
+
+    # Predefine a fixed horizontal offset for each assay
+    # Spread them evenly between -0.35 and 0.35 relative to the integer box center
+    offsets = np.linspace(-0.35, 0.35, num=len(all_assays_ordered))
+    assay_to_offset = {assay: offsets[i] for i, assay in enumerate(all_assays_ordered)}
+
+    fig = go.Figure()
+
+    # --- LAYER 1: The summary boxes (White fill, black borders, no points) ---
+    # We use mapped integer X values so it aligns with our custom float scatter coordinates later
+    fig.add_trace(
+        go.Box(
+            x=df["task_name"].map(cat_to_int),
+            y=df["acc"],
+            boxpoints="outliers",  # Force 1.5x IQR whiskers
+            marker=dict(opacity=0, size=0.00001),  # invisible dots
+            line=dict(color="black", width=1.5),
+            fillcolor="white",  # White box over grey background
+            boxmean=True,  # Adds dashed line for the mean
+            showlegend=False,  # Hide this underlying trace from the legend
+            name="Summary",
+            hoverinfo="skip",  # We will handle hover info with the scatter points instead
+        )
+    )
+
+    # --- LAYER 2: The colored scatter points ---
+    # Iterate using the ordered list to preserve legend order
+    for assay in all_assays_ordered:
+        df_assay = df[df["assay"] == assay].copy()
+        if df_assay.empty:
+            print(f"Warning: No data for assay '{assay}'. Skipping.")
+            continue
+
+        # Calculate precise X positions: Integer category center + Assay-specific offset
+        base_x = df_assay["task_name"].map(cat_to_int)
+        exact_x = base_x + assay_to_offset[assay]
+
+        # Calculate dynamic point sizes based on log10 of sample size
+        point_sizes = 2 + 4 * np.log10(df_assay["nb_samples"])
+
+        fig.add_trace(
+            go.Scatter(
+                x=exact_x,
+                y=df_assay["acc"],
+                mode="markers",
+                name=assay,
+                marker=dict(
+                    color=assay_colors[assay],
+                    size=point_sizes,
+                    opacity=1,  # Non unique size removes default 1 opacity, gotta set it back to 1
+                    line=dict(color="black", width=1),
+                ),
+                showlegend=True,
+                customdata=df_assay[["nb_samples"]],
+                hovertemplate=(
+                    "<b>Assay:</b> " + assay + "<br>"
+                    "<b>Accuracy:</b> %{y:.1f}%<br>"
+                    "<b>Samples:</b> %{customdata[0]}<br>"
+                    "<extra></extra>"
+                ),
+            )
+        )
+
+    # --- LAYER 3: Aesthetics and Layout ---
+    def calculate_marker_size(n):
+        return 2 + 4 * np.log10(np.clip(n, a_min=1, a_max=None))
+
+    reference_sizes = [50, 100, 500, 1000, 5000]
+
+    for n in reference_sizes:
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],  # Invisible coordinates, only renders in legend
+                mode="markers",
+                name=f"{n:,}",  # e.g., "1,000"
+                legend="legend2",  # Assign to the SECOND legend
+                marker=dict(
+                    color="black",  # Fully black reference circles
+                    size=calculate_marker_size(n),
+                    opacity=1,
+                    line=dict(color="black", width=1),
+                ),
+                showlegend=True,
+                hoverinfo="skip",  # No tooltip needed for fake traces
+            )
+        )
+
+    fig.update_layout(
+        boxmode="overlay",  # Crucial: ensures the invisible point boxes sit directly on top of the boxes
+        title_font_size=20,
+        yaxis_title="Accuracy (%)",
+        xaxis=dict(
+            title="Classifier",
+            title_font_size=18,
+            tickfont_size=14,
+            # Map the integers back to the original task_name values!
+            tickmode="array",
+            tickvals=list(range(len(category_order))),
+            ticktext=category_order,
+            range=[-0.6, len(category_order) - 0.4],
+        ),
+        legend=dict(
+            title_text="Assay",
+            itemsizing="constant",
+        ),
+        legend2=dict(
+            title_text="Samples",
+            itemsizing="trace",
+            yanchor="top",
+            y=0.2,  # Position Middle-Right (below main legend)
+            xanchor="left",
+            x=1.02,
+        ),
+    )
+
+    fig.show()
+```
+
+```{python}
+#| label: fig3a-generate-plot
+reproduce_encode_plot(df_encode, assay_colors)
+```
+
 Figure 3A: Accuracy of each metadata classifier breakdown per assay (dots) of the high-confidence predictions on the ENCODE data for which metadata was available, excluding those in EpiATLAS (Supplementary Table 9). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+
 
 ### Figure 3B - ChIP-Atlas assay (7classes) prediction
 
