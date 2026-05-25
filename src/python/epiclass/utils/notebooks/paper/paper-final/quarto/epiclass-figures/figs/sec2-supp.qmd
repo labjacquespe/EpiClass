@@ -492,7 +492,7 @@ For full code, since the processing is more complex, see `src/python/epiclass/ut
 
 <iframe src="../resources/all_threshold_graphs.html"
         scrolling="no"
-        style="display: block; margin: 0; width: 100%; height: 1000px; border: none; overflow: hidden;">
+        style="display: block; margin: 0 auto; width: 1400px; max-width: none; height: 1000px; border: none; overflow: hidden;">
 </iframe>
 
 :::
