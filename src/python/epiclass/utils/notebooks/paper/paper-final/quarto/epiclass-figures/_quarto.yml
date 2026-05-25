@@ -1,6 +1,6 @@
 project:
-  output-dir: "../../../../../../../../../docs/epiclass-paper"
-  post-render: "./remove-website-resources.sh"
+  output-dir: "./epiclass-paper" # if it's not a child of the quarto project (_quarto.yml), it won't clean up the unused site-libs properly.
+  post-render: "./remove-website-resources.sh" # we remove them since since they are embedded
   type: website
   preview:
     watch-inputs: true   # automatically rebuild on save
