@@ -495,7 +495,7 @@ Supplementary Figure 8B: Distribution of the EpiATLAS and ENCODE data over their
 Load ENCODE predictions.
 
 ```{python}
-#| label: supp-fig8b-read-encode-preds
+#| label: supp-fig8c-read-encode-preds
 encode_preds_dir = base_pred_dir / "encode"
 encode_preds_path = (
     encode_preds_dir / "complete_encode_predictions_augmented_2025-02_metadata.csv.gz"
@@ -509,7 +509,7 @@ print(f"ENCODE: {encode_preds_df.shape[0]} total files")
 Filter out overlap with EpiATLAS EpiRRs.
 
 ```{python}
-#| label: supp-fig8b-filter-no-epiatlas
+#| label: supp-fig8c-filter-no-epiatlas
 encode_preds_df = encode_preds_df[encode_preds_df["in_epiatlas"].astype(str) == "False"]
 print(f"ENCODE: {encode_preds_df.shape[0]} total files with no EpiAtlas overlap")
 ```
@@ -517,7 +517,7 @@ print(f"ENCODE: {encode_preds_df.shape[0]} total files with no EpiAtlas overlap"
 Load ENCODE manually created assay categories, and merge them with ENCODE predictions data.
 
 ```{python}
-#| label: supp-fig8b-load-categories
+#| label: supp-fig8c-load-categories
 encode_meta_dir = base_data_dir / "metadata" / "encode"
 
 non_core_categories_path = (
@@ -548,7 +548,7 @@ encode_non_core_df["assay_category"] = (
 Graph.
 
 ```{python}
-#| label: supp-fig8b-generate-plot
+#| label: supp-fig8c-generate-plot
 #| column: body
 assay_categories_order = [
     "trx_reg",
@@ -614,7 +614,7 @@ fig.update_xaxes(tickvals=assay_categories_order, ticktext=ticktext)
 fig.show()
 ```
 
-Supplementary Figure 8B: Proportion of non-core ChIP-Seq datasets from ENCODE classified with high-confidence (>0.6) in the different functional categories predicted as one of the 7 core ChIP assays. Since none of the six histone modifications used for training are specifically associated with insulator factors, they were instead mostly predicted as Input.
+Supplementary Figure 8C: Proportion of non-core ChIP-Seq datasets from ENCODE classified with high-confidence (>0.6) in the different functional categories predicted as one of the 7 core ChIP assays. Since none of the six histone modifications used for training are specifically associated with insulator factors, they were instead mostly predicted as Input.
 
 
 ### E-F - Input-class probability and QC metrics
@@ -647,7 +647,7 @@ The consensus description is based on the following rules:
 - "Ignored - Potential non-core" if any label is not in the core assays
 
 ```{python}
-#| label: supp-fig5e-define-consensus-function
+#| label: supp-fig9a-define-consensus-function
 def create_4DB_consensus_description(
     ca_core_df: pd.DataFrame, db_cols: List[str]
 ) -> pd.Series:
@@ -694,7 +694,7 @@ def create_4DB_consensus_description(
 Define graphing function `make_db_upsetplot`.
 
 ```{python}
-#| label: supp-fig5e-define-upsetplot-function
+#| label: supp-fig9a-define-upsetplot-function
 def make_db_upsetplot(
     df: pd.DataFrame, consensus_col: str, db_cols: List[str], title: str
 ) -> upsetplot.UpSet:
@@ -734,7 +734,7 @@ def make_db_upsetplot(
 Graph.
 
 ```{python}
-#| label: supp-fig5e-generate-upsetplot
+#| label: supp-fig9a-generate-upsetplot
 #| fig-align: center
 DB_COLS = ["GEO_target_mod", "C-A_target", "Cistrome_target", "NGS_target_mod"]
 consensus_col = "core7_DBs_consensus"
@@ -746,7 +746,7 @@ make_db_upsetplot(
 print("Total for each category:")
 display(no_epiatlas_df[consensus_col].value_counts(dropna=False))
 ```
-Supplementary Figure 8A: Comparison of the four public sources used to extract assay metadata after excluding ChIP-Atlas datasets present in EpiATLAS. The 1 source category corresponds to 3,320 datasets where the assay label was only available from GEO. A total of 706 datasets were labeled differently.
+Supplementary Figure 9A: Comparison of the four public sources used to extract assay metadata after excluding ChIP-Atlas datasets present in EpiATLAS. The 1 source category corresponds to 3,320 datasets where the assay label was only available from GEO. A total of 706 datasets were labeled differently.
 
 
 ### B - Core ChIP-Seq PCA
@@ -768,7 +768,7 @@ Supplementary Figure 9C: Genome browser representation of a few high-confidence 
 
 Read metadata for both ChIP-Atlas and imputed samples.
 ```{python}
-#| label: supp-fig8h-setup-imputed-paths
+#| label: supp-fig9d-setup-imputed-paths
 imputed_metadata_path = (
     base_metadata_dir
     / "epiatlas"
@@ -784,7 +784,7 @@ metadata_ca = pd.read_csv(ca_metadata_path, sep="\t", low_memory=False)
 Gather predictions from classifier training on observed core6 data (all pval, no input).
 
 ```{python}
-#| label: supp-fig8h-gather-observed-preds
+#| label: supp-fig9d-gather-observed-preds
 data_dir = base_data_dir / "training_results" / "dfreeze_v2"
 pred_dfs = {}  # Gather all 4 cases
 
@@ -821,7 +821,7 @@ pred_dfs[f"{basename}_C-A"] = df
 Gather predictions from classifier training on imputed data (all pval, no input).
 
 ```{python}
-#| label: supp-fig8h-gather-imputed-training-preds
+#| label: supp-fig9d-gather-imputed-training-preds
 imputed_dir = (
     data_dir
     / "hg38_100kb_all_none_imputed"
@@ -856,7 +856,7 @@ pred_dfs[f"{basename}_C-A"] = df
 Compute accuracy per assay.
 
 ```{python}
-#| label: supp-fig8h-compute-accuracy
+#| label: supp-fig9d-compute-accuracy
 core6_assays = ASSAY_ORDER[0:6]
 rows = []
 
@@ -882,7 +882,7 @@ df_acc_per_assay = pd.DataFrame(
 Graphing results
 
 ```{python}
-#| label: supp-fig8h-generate-imputation-plot
+#| label: supp-fig9d-generate-imputation-plot
 #| column: body
 
 # Prepare data from graphing
@@ -1041,7 +1041,7 @@ fig.show()
 
 The number of samples associated with each point is visible on hover.
 
-Supplementary Figure 8H: Accuracy comparison per assay (dots) between Assay classifiers trained on observed vs imputed data from EpiATLAS and applied to either EpiATLAS or ChIP-Atlas without prediction score threshold (brown), or with a threshold of 0.6 (light blue) or 0.9 (dark blue). These classifiers were both trained only using the p-value datasets as this is the only track type available for imputed data (therefore no Input assay) (Supplementary Table 13). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Supplementary Figure 9D: Accuracy comparison per assay (dots) between Assay classifiers trained on observed vs imputed data from EpiATLAS and applied to either EpiATLAS or ChIP-Atlas without prediction score threshold (brown), or with a threshold of 0.6 (light blue) or 0.9 (dark blue). These classifiers were both trained only using the p-value datasets as this is the only track type available for imputed data (therefore no Input assay) (Supplementary Table 14). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
 ### E - RNA-Seq PCA

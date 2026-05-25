@@ -2,6 +2,6 @@
 title: "About"
 ---
 
-This website renders the figures from of the [EpiClass paper](https://doi.org/10.1101/2025.09.04.670545) originally created using Python and Plotly.
+This website renders the figures from the [EpiClass paper](https://doi.org/10.1101/2025.09.04.670545) originally created using Python and Plotly.
 
 Most figures are interactive, thanks to Plotly. The related code is present on Github, at [labjacquespe/EpiClass](https://github.com/labjacquespe/EpiClass/tree/master).
