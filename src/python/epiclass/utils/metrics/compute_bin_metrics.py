@@ -36,7 +36,7 @@ warnings.filterwarnings("once", message=".*Cannot read file directly with.*")
 import numpy as np
 
 from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.data.data import Hdf5Loader
+from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -81,12 +81,13 @@ def main():
     chromsize_path = epiml_options.chromsize
     logdir = epiml_options.logdir
 
-    # md5:signal dict
-    signals = (
-        Hdf5Loader(chromsize_path, normalization=False)
-        .load_hdf5s(hdf5_list_path, strict=True, verbose=False)
-        .signals
+    loader = LazyHdf5Loader(
+        chrom_file=chromsize_path, normalization=False, mmap_dir=logdir / "mmap_cache"
     )
+    loader.register_hdf5s(data_file=hdf5_list_path, strict=True, verbose=False)
+    loader.preload_all(verbose=False)
+    mmap_array = loader.as_mmap()
+    signals: Dict[str, np.ndarray] = dict(zip(loader.file_paths.keys(), mmap_array))
 
     metrics = compute_metrics(signals)
 
@@ -95,10 +96,10 @@ def main():
     np.savez(log_file, **metrics)
     print(f"Metrics written to {log_file}")
 
-    md5s = list(signals.keys())
+    signal_ids = list(signals.keys())
     output_list = logdir / f"{hdf5_list_path.stem}_metrics_files.list"
     with open(output_list, "w", encoding="utf8") as f:
-        f.write("\n".join(md5s))
+        f.write("\n".join(signal_ids))
 
 
 if __name__ == "__main__":
