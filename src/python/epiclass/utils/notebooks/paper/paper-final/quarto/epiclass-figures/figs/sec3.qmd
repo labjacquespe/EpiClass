@@ -619,7 +619,7 @@ Supplementary Figure 8C: Proportion of non-core ChIP-Seq datasets from ENCODE cl
 
 ### E-F - Input-class probability and QC metrics
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/d4d5419bd1d26770912f3e36b3a4aa816fca1d39/src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/974e78cfdacd24bd6045fa595ace8981a0431385/src/python/epiclass/utils/notebooks/paper/encode_chip_QC.ipynb)).
 
 <iframe src="../resources/encode_qc_correlation_boxplots_cdn.html"
         scrolling="no"
