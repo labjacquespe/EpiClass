@@ -7,7 +7,6 @@ e.g. find cell type using project+assay+other
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 from typing import Any, Dict, List, Set, Tuple
 
 import numpy as np
@@ -15,6 +14,7 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
+from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder
 from sklearn.svm import SVC
 
@@ -79,11 +79,9 @@ def define_input_bias_categories(target_category: str) -> List[List[str]]:
 
 def create_models() -> List:
     """Create models for bias analysis."""
-    lr_model_1 = LogisticRegression(
-        solver="lbfgs", max_iter=1000, multi_class="multinomial", random_state=42
-    )
-    lr_model_2 = LogisticRegression(
-        solver="lbfgs", max_iter=1000, multi_class="ovr", random_state=42
+    lr_model_1 = LogisticRegression(solver="lbfgs", max_iter=1000, random_state=42)
+    lr_model_2 = OneVsRestClassifier(
+        LogisticRegression(solver="lbfgs", max_iter=1000, random_state=42)
     )
     rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
     svm_model = SVC(kernel="linear", random_state=42)
@@ -206,6 +204,14 @@ def parse_arguments() -> argparse.Namespace:
     arg_parser.add_argument(
         "logdir", type=DirectoryChecker(), help="A directory for the results."
     )
+    arg_parser.add_argument(
+        "paper_dir", type=DirectoryChecker(),
+        help="Paper data directory (contains data/metadata/epiatlas/... and BadQual-mislabels/)."
+    )
+    arg_parser.add_argument(
+        "--metadata-version", default="v2", choices=["v1", "v2", "v2-encode"],
+        help="Metadata version key understood by MetadataHandler. Default: v2."
+    )
     arg_parser.add_argument("--input-only", action="store_true", default=False)
     # fmt: on
     return arg_parser.parse_args()
@@ -216,17 +222,12 @@ def main():
     cli_args = parse_arguments()
     training_results_dir = cli_args.training_results_dir
     logdir = cli_args.logdir
-
-    # TODO: remove hardcoded portions (do not use MetadataHandler ideally)
-    base_dir = Path("/lustre07/scratch/rabyj/metadata_bias")
-    if not base_dir.exists():
-        raise FileNotFoundError(f"Directory {base_dir} does not exist.")
-
-    paper_dir = base_dir / "paper"
+    paper_dir = cli_args.paper_dir
+    metadata_version = cli_args.metadata_version
 
     metadata_handler = MetadataHandler(paper_dir)
-    metadata_df = metadata_handler.load_metadata_df("v2")
-    metadata = metadata_handler.load_metadata("v2")
+    metadata_df = metadata_handler.load_metadata_df(metadata_version)
+    metadata = metadata_handler.load_metadata(metadata_version)
 
     split_results_handler = SplitResultsHandler()
 
