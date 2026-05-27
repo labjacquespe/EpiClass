@@ -18,8 +18,9 @@ from epiclass.core.epiatlas_constants import (
 )
 from epiclass.core.lazy.lazy_fold_factory import (
     LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
+    LazyEpiAtlasMetadata,
 )
-from epiclass.core.metadata import Metadata
+from epiclass.core.metadata import Metadata, UUIDMetadata
 from epiclass.utils.general_utility import write_signal_ids_to_file
 from epiclass.utils.metadata_utils import count_labels_from_dset
 from tests.epilap_test_data import FIXTURES_DIR, EpiAtlasTreatmentTestData
@@ -289,3 +290,70 @@ class TestEpiAtlasFoldFactory:
                 assert (
                     len(set(counts)) == 1
                 ), f"UUID {uuid} siblings have inconsistent duplication: {sibling_counts}"
+
+
+class TestLazyEpiAtlasMetadata:
+    """Regression tests for the metadata-only variant.
+
+    Reproduces the bug where LazyEpiAtlasMetadata produced an empty dataset
+    because the parent constructor sourced signal IDs from the (intentionally
+    unpopulated) loader's `file_paths`. The failure surfaced downstream as
+    `ValueError: No data in training and validation.` when wrapping the empty
+    dataset in `LazyEpiAtlasFoldFactory`.
+    """
+
+    @pytest.fixture(name="datasource_and_metadata")
+    def fixture_datasource_and_metadata(
+        self, test_data
+    ) -> tuple[EpiDataSource, UUIDMetadata]:
+        """Reuse the existing fold-factory fixture's datasource and a fresh metadata."""
+        datasource = test_data.epiatlas_dataset.datasource
+        meta = UUIDMetadata(datasource.metadata_file)
+        return datasource, meta
+
+    @pytest.fixture(name="test_data")
+    def fixture_test_data(self) -> EpiAtlasFoldFactory:
+        """Shared mock fold factory (for its datasource + metadata path)."""
+        return EpiAtlasTreatmentTestData.test_data()
+
+    def test_dataset_is_not_empty(self, datasource_and_metadata):
+        """LazyEpiAtlasMetadata must populate the dataset from metadata IDs.
+
+        Was silently producing zero IDs before the `_select_dataset_ids` hook.
+        """
+        datasource, meta = datasource_and_metadata
+        full_dataset = LazyEpiAtlasMetadata(
+            datasource=datasource,
+            metadata=meta,
+            label_category="biomaterial_type",
+            min_class_size=3,
+            force_filter=True,
+        )
+        assert len(full_dataset.dataset) > 0, (
+            "LazyEpiAtlasMetadata.dataset was empty — _select_dataset_ids "
+            "regression. Loader is intentionally unpopulated; IDs must come "
+            "from metadata."
+        )
+        # IDs should match the filtered metadata exactly
+        assert set(full_dataset.dataset.ids) == set(full_dataset.metadata.signal_ids)
+
+    def test_foldfactory_does_not_raise_with_metadata_only(self, datasource_and_metadata):
+        """LazyEpiAtlasFoldFactory must accept a metadata-only dataset.
+
+        Pre-fix, this raised `ValueError: No data in training and validation.`
+        because the wrapped dataset had zero rows.
+        """
+        datasource, meta = datasource_and_metadata
+        full_dataset = LazyEpiAtlasMetadata(
+            datasource=datasource,
+            metadata=meta,
+            label_category="biomaterial_type",
+            min_class_size=3,
+            force_filter=True,
+        )
+        handler = EpiAtlasFoldFactory(
+            epiatlas_dataset=full_dataset,
+            n_fold=2,
+            test_ratio=0,
+        )
+        assert len(handler.train_val_dset) > 0

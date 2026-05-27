@@ -92,7 +92,7 @@ class LazyEpiAtlasDataset:
         self._loader = self._create_loader(mmap_dir)
 
         # Create dataset object (no signal loading)
-        signal_ids = list(self._loader.file_paths.keys())
+        signal_ids = self._select_dataset_ids()
         labels = [self._metadata[sid][self._label_category] for sid in signal_ids]
 
         self._dataset: LazyKnownData = LazyKnownData(
@@ -154,6 +154,16 @@ class LazyEpiAtlasDataset:
         loader.preload_all()
         return loader
 
+    def _select_dataset_ids(self) -> List[str]:
+        """IDs that populate the dataset.
+
+        Default sources from validated loader entries — drops IDs whose HDF5
+        files failed `register_hdf5s` validation. Subclasses (e.g.
+        :class:`LazyEpiAtlasMetadata`) override when the loader is intentionally
+        unpopulated.
+        """
+        return list(self._loader.file_paths.keys())
+
     def _filter_metadata(
         self, min_class_size: int, metadata: UUIDMetadata, verbose: bool
     ) -> UUIDMetadata:
@@ -173,7 +183,12 @@ class LazyEpiAtlasDataset:
 
 
 class LazyEpiAtlasMetadata(LazyEpiAtlasDataset):
-    """Metadata-only variant that doesn't create a loader or call preload_all."""
+    """Metadata-only variant that skips HDF5 registration and preload.
+
+    For analyses that only need the dataset structure (e.g. fold splits,
+    label counts) and never read signals. Signal-IDs are sourced from
+    metadata rather than the (intentionally empty) loader.
+    """
 
     def _create_loader(self, mmap_dir: Path | str | None) -> LazyHdf5Loader:
         """Create a minimal loader without registering files."""
@@ -184,6 +199,10 @@ class LazyEpiAtlasMetadata(LazyEpiAtlasDataset):
         )
         # Don't register files for metadata-only usage
         return loader
+
+    def _select_dataset_ids(self) -> List[str]:
+        """Source dataset IDs from metadata since the loader is unpopulated."""
+        return list(self._metadata.signal_ids)
 
 
 class LazyEpiAtlasFoldFactory:
