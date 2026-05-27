@@ -36,13 +36,35 @@ pip install -e .[dev]      # install with dev tools (black, isort, pylint, pre-c
 
 ### Running Tests
 
+Tests live in `src/python/tests/` and mirror the package layout
+(`core/`, `mains/`, `utils/`). pytest's config lives in
+`src/python/pyproject.toml` under `[tool.pytest.ini_options]`, and
+pytest finds it automatically from any cwd as long as you pass a path
+under `src/python/tests/` — so any of these work:
+
 ```bash
-# Uncompress fixtures first (only needed once)
+# One-time: uncompress fixtures
 cd src/python/tests && tar -xf fixtures.tar.xz
 
-# Run all tests (from src/python/)
-pytest tests -n auto
+# All three invocation styles resolve the same rootdir + configfile:
+cd src/python      && pytest tests -n auto
+cd src/python/tests && pytest -n auto
+pytest src/python/tests -n auto                # from repo root
+
+# Examples (paths relative to src/python/):
+pytest tests/path/to/file_test.py -v           # single test file
+pytest tests/path/to/file_test.py::TestClass::test_method
+pytest tests -m slow -s                        # slow-marked tests, show prints
+pytest tests -m "not slow" -n auto             # skip slow tests
 ```
+
+Avoid bare `pytest` (no path) from the repo root — it would try to
+collect from the whole repo with no config.
+
+Test markers (declared in `src/python/pyproject.toml`):
+
+- `slow`: integration / long-running tests (skipped unless explicitly selected)
+- `embedding`: PCA / UMAP smoke tests (JIT-heavy, dominate suite time)
 
 The `tests/justfile` provides multi-version test orchestration via `uv`:
 
@@ -52,6 +74,32 @@ just test 3.11              # run tests for Python 3.11
 just test 3.11 "test_name"  # filter tests
 just test-all               # run tests for Python 3.10, 3.11, 3.12 in parallel
 ```
+
+### Pre-commit checks (run after editing)
+
+**IMPORTANT — Run pre-commit from the repo root.** If you pass `--files`
+paths that don't resolve from the repo root, pre-commit silently reports
+"no files to check" for every hook and exits 0 — looking exactly like a
+successful run. Either `cd` to the repo root or pass absolute paths.
+
+After modifying any `.py` or `.ipynb` file, validate it with the same
+pylint config the pre-commit hook uses — ad-hoc `pylint <file>` skips
+the project rcfile and gives different results.
+
+```bash
+# Validate only the files you touched (recommended after each task):
+pre-commit run --files <path1> <path2> ...
+
+# Or just pylint, same args as the hook:
+pylint --rcfile=src/python/pyproject.toml --recursive=y -sn <paths>
+
+# Notebooks have a separate hook (nbqa-pylint); --files runs it too:
+pre-commit run --files src/python/.../some_notebook.ipynb
+```
+
+`pre-commit run --files ...` also exercises isort, black, nbqa, and the
+file-hygiene hooks — catches everything the commit will catch, without
+having to actually attempt the commit.
 
 ## Code Style
 

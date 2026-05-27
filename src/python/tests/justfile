@@ -161,7 +161,7 @@ clean:
     echo "Press Ctrl+C to cancel, or Enter to continue..."
     read -r
     echo "🧹 Cleaning up..."
-    for dir in logs envs ./venv __pycache__ .pytest_cache; do
+    for dir in logs envs ./venv __pycache__ .pytest_cache ../.pytest_cache; do
         if [ -d "$dir" ]; then
             echo "Removing $dir..."
             rm -rf "$dir"
