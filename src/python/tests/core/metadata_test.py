@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 
 import pytest
 
@@ -73,17 +72,18 @@ def test_env_filtering_remove_tracks(test_meta: UUIDMetadata):
     assert len(test_meta) < nb_before
 
 
-def test_save_load_marshal(test_meta: UUIDMetadata):
-    """Test save and load through Marshal."""
-    meta_save_file = tempfile.NamedTemporaryFile(  # pylint: disable=consider-using-with
-        mode="wb", delete=False
-    )
-    test_meta.save_marshal(meta_save_file.name)
-    meta_save_file.close()
+def test_copy_independence(test_meta: UUIDMetadata):
+    """Metadata.copy() returns an independent UUIDMetadata equal to the original."""
+    clone = test_meta.copy()
 
-    for _ in range(2):
-        meta = UUIDMetadata.from_marshal(meta_save_file.name)
-        assert meta == test_meta
-        assert len(meta) == len(test_meta)
+    assert isinstance(clone, UUIDMetadata)
+    assert clone == test_meta
+    assert clone is not test_meta
 
-    os.remove(meta_save_file.name)
+    sid = next(iter(clone.signal_ids))
+    clone[sid]["assay"] = "MUTATED"
+    assert test_meta[sid]["assay"] != "MUTATED"
+
+    extra = next(iter(clone.signal_ids))
+    del clone[extra]
+    assert extra in test_meta

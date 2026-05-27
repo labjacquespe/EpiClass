@@ -15,12 +15,10 @@ The following analyses are performed:
 from __future__ import annotations
 
 import argparse
-import copy
 import itertools
 import json
 import multiprocessing
 import re
-import tempfile
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -81,7 +79,7 @@ def analyze_shap_fold(
     shap_matrices, eval_signal_ids, classes = extract_shap_values_and_info_output
 
     if copy_metadata:
-        meta = copy.deepcopy(metadata)
+        meta = metadata.copy()
     else:
         meta = metadata
 
@@ -90,16 +88,9 @@ def analyze_shap_fold(
         if sid not in set(eval_signal_ids):
             del meta[sid]
 
-    # Since metadata gets modified in get_shap_matrix, instead
-    # of copying the metadata with deepcopy internally, we just reload it
-    # from the saved file beforehand, avoids many copies
-    saved_eval_meta_file = (
-        tempfile.NamedTemporaryFile(  # pylint: disable=consider-using-with
-            mode="wb", delete=False
-        )
-    )
-    meta.save_marshal(saved_eval_meta_file.name)
-    saved_eval_meta_file.close()
+    # Snapshot the filtered metadata; get_shap_matrix mutates the object passed
+    # in, so each class loop iteration needs a fresh independent copy.
+    eval_meta_snapshot = meta.copy()
 
     if len(meta) < 5:
         print(f"Not enough samples (5) to perform analysis on {label_category}.")
@@ -114,7 +105,7 @@ def analyze_shap_fold(
         class_int = int(class_int)
         print(f"\n\nClass: {class_label} ({class_int})")
 
-        meta = Metadata.from_marshal(saved_eval_meta_file.name)
+        meta = eval_meta_snapshot.copy()
 
         # Get the SHAP matrix for the current class,
         # and only select samples that also correspond to that class
@@ -223,13 +214,6 @@ def analyze_subsamplings(
         verbose=False,
     )
 
-    # Create a temporary metadata file to save the current metadata state, avoids further copies
-    saved_meta_file = tempfile.NamedTemporaryFile(  # pylint: disable=consider-using-with
-        mode="wb", delete=False
-    )
-    metadata.save_marshal(saved_meta_file.name)
-    saved_meta_file.close()
-
     # To ignore invalid subsamplings
     valid_assay_track_combos = set(count_combinations(metadata, [ASSAY, TRACK]).keys())
 
@@ -243,7 +227,7 @@ def analyze_subsamplings(
                 print(f"Skipping analysis for {sub_output_folder} as it is not empty")
                 continue
 
-            meta = Metadata.from_marshal(saved_meta_file.name)
+            meta = metadata.copy()
 
             _ = analyze_shap_fold(
                 extract_shap_values_and_info_output=extract_shap_values_and_info_output,
@@ -277,7 +261,7 @@ def analyze_subsamplings(
             combo_folder_name = "_".join(label_combo)
             print(f"\n\nSubsampling: {combo_folder_name}")
 
-            meta = Metadata.from_marshal(saved_meta_file.name)
+            meta = metadata.copy()
             for cat, label in zip(categories, label_combo):
                 try:
                     meta.select_category_subsets(cat, [label])

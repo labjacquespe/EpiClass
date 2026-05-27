@@ -47,22 +47,25 @@ class Metadata:
         obj._rest = {}
         return obj
 
-    @classmethod
-    def from_marshal(cls, path: Path | str) -> Metadata:
-        """Load a metadata dict from a marshal file format."""
-        with open(path, "rb") as file:
-            metadata_dict = marshal.load(file)
+    def copy(self) -> Metadata:
+        """Return an independent copy of this Metadata.
 
-        first_key = list(metadata_dict.keys())[0]
-        if len(first_key) != 32:
-            raise ValueError(
-                f"Unexpected signal ID format (expected 32-char string). Is: {first_key}"
-            )
-
-        obj = cls.__new__(cls)
-        obj._metadata = metadata_dict
-        obj._rest = {}
+        Uses marshal for the inner dataset dict, which is ~4× faster than
+        :func:`copy.deepcopy` on metadata at dfreeze scale. Assumes all
+        dataset values are marshal-supported basic types (str/int/float/
+        bool/None/list/dict of same) — true for JSON-loaded IHEC metadata.
+        """
+        # pylint: disable=protected-access
+        obj = type(self).__new__(type(self))
+        obj._metadata = marshal.loads(marshal.dumps(self._metadata))
+        obj._rest = marshal.loads(marshal.dumps(self._rest))
         return obj
+
+    def __copy__(self) -> Metadata:
+        return self.copy()
+
+    def __deepcopy__(self, memo) -> Metadata:
+        return self.copy()
 
     def empty(self):
         """Remove all entries."""
@@ -284,11 +287,6 @@ class Metadata:
             if label in converter:
                 dataset[category] = converter[label]
 
-    def save_marshal(self, path: Path | str) -> None:
-        """Save the metadata to path, in marshal format. Only saves dataset information."""
-        with open(path, "wb") as file:
-            marshal.dump(self._metadata, file)
-
 
 class UUIDMetadata(Metadata):
     """Metadata class for UUID datasets, e.g. epiatlas."""
@@ -317,23 +315,6 @@ class UUIDMetadata(Metadata):
         """Create UUIDMetadata from Metadata."""
         meta = dict(metadata.items)
         return cls.from_dict(meta)
-
-    @classmethod
-    def from_marshal(cls, path: Path | str) -> UUIDMetadata:
-        """Load a metadata dict from a marshal file format."""
-        with open(path, "rb") as file:
-            metadata_dict = marshal.load(file)
-
-        first_key = list(metadata_dict.keys())[0]
-        if len(first_key) != 32:
-            raise ValueError(
-                f"Unexpected signal ID format (expected 32-char string). Is: {first_key}"
-            )
-
-        obj = cls.__new__(cls)
-        obj._metadata = metadata_dict
-        obj._rest = {}
-        return obj
 
     def __eq__(self, other):
         if isinstance(other, UUIDMetadata):
