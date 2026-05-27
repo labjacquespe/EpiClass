@@ -18,7 +18,7 @@ from typing import Iterable, List, Tuple
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.metadata import Metadata
-from epiclass.utils.general_utility import write_hdf5_paths_to_file
+from epiclass.utils.general_utility import find_signal_id_lists, write_hdf5_paths_to_file
 from epiclass.utils.time import time_now
 
 CELL_TYPE = "harmonized_sample_ontology_intermediate"
@@ -219,13 +219,18 @@ def main():
     for split_folder in split_folders:
         split_nb = int(split_folder.name.split("split")[-1])
 
-        # Find training and valid signal ID lists
-        training_id_path = list(split_folder.glob(f"split{split_nb}_training_*.md5"))
+        # Find training and valid signal ID lists (accepts new `_ids.list`
+        # and legacy `.md5` suffixes).
+        training_id_path = find_signal_id_lists(
+            split_folder, f"split{split_nb}_training_*"
+        )
         if len(training_id_path) != 1:
             raise ValueError(f"Invalid training_id_path: {training_id_path}")
         training_id_path = training_id_path[0]
 
-        valid_id_path = list(split_folder.glob(f"split{split_nb}_validation_*.md5"))
+        valid_id_path = find_signal_id_lists(
+            split_folder, f"split{split_nb}_validation_*"
+        )
         if len(valid_id_path) != 1:
             raise ValueError(f"Invalid valid_id_path: {valid_id_path}")
         valid_id_path = valid_id_path[0]

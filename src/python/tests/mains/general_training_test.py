@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from epiclass.general_training import main as main_module
+from epiclass.utils.general_utility import find_signal_id_lists
 from tests.epilap_test_data import FIXTURES_DIR
 
 SACCER3_DIR = FIXTURES_DIR / "saccer3"
@@ -57,4 +58,4 @@ def test_cross_validation_training(
         assert (fold_dir / "training_mapping.tsv").is_file()
         assert (fold_dir / "best_checkpoint.list").is_file()
         assert list(fold_dir.glob("*validation_prediction*"))
-        assert len(list(fold_dir.glob("split*.md5"))) == 2
+        assert len(find_signal_id_lists(fold_dir, "split*")) == 2
