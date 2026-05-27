@@ -90,32 +90,34 @@ def main():
     my_meta = Metadata(datasource.metadata_file)
 
     # exclude samples that are not in ACCEPTED_TRACKS
-    md5_per_track_type = my_meta.md5_per_class("track_type")
-    md5_to_exclude = []
-    for track_type, md5_list in md5_per_track_type.items():
+    ids_per_track_type = my_meta.ids_per_class("track_type")
+    ids_to_exclude = []
+    for track_type, id_list in ids_per_track_type.items():
         if track_type not in ACCEPTED_TRACKS:
             print(f"Excluding samples for track type: {track_type}")
-            md5_to_exclude.extend(md5_list)
+            ids_to_exclude.extend(id_list)
 
-    md5s_to_analyze = set(LazyHdf5Loader.read_list(hdf5_list_path).keys())
-    for md5 in md5_to_exclude:
+    signal_ids_to_analyze = set(LazyHdf5Loader.read_list(hdf5_list_path).keys())
+    for sid in ids_to_exclude:
         try:
-            md5s_to_analyze.remove(md5)
-            del my_meta[md5]
+            signal_ids_to_analyze.remove(sid)
+            del my_meta[sid]
         except KeyError:
             continue
 
     # Check that we have metadata on all left samples.
-    for md5 in md5s_to_analyze:
-        if md5 not in my_meta:
-            raise IndexError(f"Missing metadata for {md5}")
+    for sid in signal_ids_to_analyze:
+        if sid not in my_meta:
+            raise IndexError(f"Missing metadata for {sid}")
 
     # Create metadata dataframe
-    df_md5_metadata = pd.DataFrame([my_meta[md5] for md5 in md5s_to_analyze])
-    df_md5_metadata.set_index("md5sum", inplace=True)
-    print(f"Analysis will be done into following files {df_md5_metadata.shape[0]} files:")
-    print(df_md5_metadata[TRACK_TYPE].value_counts())
-    print(df_md5_metadata[ASSAY].value_counts())
+    df_signal_metadata = pd.DataFrame([my_meta[sid] for sid in signal_ids_to_analyze])
+    df_signal_metadata.set_index("md5sum", inplace=True)
+    print(
+        f"Analysis will be done into following files {df_signal_metadata.shape[0]} files:"
+    )
+    print(df_signal_metadata[TRACK_TYPE].value_counts())
+    print(df_signal_metadata[ASSAY].value_counts())
 
     # Load the hdf5 files into a dataframe
     hdf5_loader = LazyHdf5Loader(
@@ -123,9 +125,11 @@ def main():
         normalization=True,
         mmap_dir=logdir / "mmap_cache",
     )
-    hdf5_loader.register_hdf5s(hdf5_list_path, md5s=list(md5s_to_analyze), strict=True)
+    hdf5_loader.register_hdf5s(
+        hdf5_list_path, signal_ids=list(signal_ids_to_analyze), strict=True
+    )
     hdf5_loader.preload_all()
-    signals = {md5: hdf5_loader.load_signal(md5) for md5 in hdf5_loader.file_paths}
+    signals = {sid: hdf5_loader.load_signal(sid) for sid in hdf5_loader.file_paths}
     df = pd.DataFrame.from_dict(signals, orient="index")
 
     # Compute descriptive statistics
@@ -139,7 +143,7 @@ def main():
     allowed_metrics = metrics - set(["count", "mean", "std"])
 
     # Add metadata to the stats dataframe
-    stats_df = stats_df.join(df_md5_metadata)
+    stats_df = stats_df.join(df_signal_metadata)
 
     # Save results plots.
     make_plots(stats_df, allowed_metrics, logdir, name="all")

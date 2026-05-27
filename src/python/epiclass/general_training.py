@@ -80,17 +80,17 @@ class GeneralFoldFactory:
         )
         loader.register_hdf5s(
             data_file=datasource.hdf5_file,
-            md5s=list(meta.md5s),
+            signal_ids=list(meta.signal_ids),
             strict=True,
             verbose=True,
         )
         loader.preload_all()
 
-        md5s = list(loader.file_paths.keys())
-        labels = [meta[md5][label_category] for md5 in md5s]
+        signal_ids = list(loader.file_paths.keys())
+        labels = [meta[sid][label_category] for sid in signal_ids]
 
         self._dataset = LazyKnownData(
-            ids=md5s,
+            ids=signal_ids,
             loader=loader,
             y_str=labels,
             y=np.array(
@@ -99,7 +99,7 @@ class GeneralFoldFactory:
             metadata=meta,
         )
 
-        print(f"\nLoaded {len(md5s)} samples across {len(self._classes)} classes.")
+        print(f"\nLoaded {len(signal_ids)} samples across {len(self._classes)} classes.")
         meta.display_labels(label_category)
 
     @property

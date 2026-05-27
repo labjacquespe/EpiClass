@@ -9,7 +9,7 @@ from typing import Dict
 from pytorch_lightning import loggers as pl_loggers
 
 from epiclass.core.data.dataset import DataSet
-from epiclass.utils.general_utility import write_md5s_to_file
+from epiclass.utils.general_utility import write_signal_ids_to_file
 from epiclass.utils.time import time_now_str
 
 
@@ -79,7 +79,7 @@ def log_dset_composition(
     This function logs
     - training/validation set size
     - total number of unique files (training + validation),
-    - training/valid unique md5 composition (to a file)
+    - training/valid unique signal ID composition (to a file)
 
     Args:
         my_data (DataSet): The dataset to log.
@@ -120,4 +120,4 @@ def log_dset_composition(
     for ids, name in zip([ids_train, ids_valid], ["training", "validation"]):
         if len(ids) > 0:
             name = f"split{split_nb}_{name}_{time_now_str()}"
-            write_md5s_to_file(sorted(ids), save_dir, name)  # type: ignore
+            write_signal_ids_to_file(sorted(ids), save_dir, name)  # type: ignore

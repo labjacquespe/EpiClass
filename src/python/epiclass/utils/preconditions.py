@@ -72,13 +72,13 @@ def check_epitatlas_uuid_premise(metadata: Metadata):
     """Check that there is only one file per track type, for a given uuid."""
 
     uuid_to_track_count = collections.defaultdict(collections.Counter)
-    uuid_to_md5s = collections.defaultdict(list)
-    for md5, dset in metadata.items:
+    uuid_to_signal_ids = collections.defaultdict(list)
+    for signal_id, dset in metadata.items:
         uuid = dset["uuid"]
         track_type = dset["track_type"]
 
         uuid_to_track_count[uuid].update([track_type])
-        uuid_to_md5s[uuid].append((md5, track_type))
+        uuid_to_signal_ids[uuid].append((signal_id, track_type))
 
     is_okay = True
     bad_uuid = []
@@ -95,8 +95,8 @@ def check_epitatlas_uuid_premise(metadata: Metadata):
     for uuid in bad_uuid:
         print(f"Problematic uuid: {uuid}")
         print(uuid_to_track_count[uuid])
-        for md5, track_type in uuid_to_md5s[uuid]:
-            print(md5, track_type)
+        for signal_id, track_type in uuid_to_signal_ids[uuid]:
+            print(signal_id, track_type)
 
     return is_okay
 

@@ -221,7 +221,7 @@ class LazyKnownData(LazyData):
 
             new_meta = copy.deepcopy(self.metadata)
             ok_ids = set(new_ids)
-            for sample_id in list(new_meta.md5s):
+            for sample_id in list(new_meta.signal_ids):
                 if sample_id not in ok_ids:
                     del new_meta[sample_id]
         except IndexError as e:

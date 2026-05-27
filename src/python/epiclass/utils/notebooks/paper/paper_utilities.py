@@ -416,14 +416,17 @@ class SplitResultsHandler:
             dfs (Dict[str, pd.DataFrame]): {classifier_name: results_df}
                 Results dataframes need to have md5sums as index.
         """
-        md5s = {}
+        signal_id_sets = {}
         for key, df in dfs.items():
-            md5s[key] = set(df.index)
+            signal_id_sets[key] = set(df.index)
 
         first_key = list(dfs.keys())[0]
-        base_md5s = set(dfs[first_key].index)
-        if not base_md5s.intersection(*list(md5s.values())) == base_md5s:
-            raise AssertionError("Not all dataframes have the same md5sums")
+        base_signal_ids = set(dfs[first_key].index)
+        if (
+            not base_signal_ids.intersection(*list(signal_id_sets.values()))
+            == base_signal_ids
+        ):
+            raise AssertionError("Not all dataframes have the same signal IDs")
 
     @staticmethod
     def compute_acc_per_assay(

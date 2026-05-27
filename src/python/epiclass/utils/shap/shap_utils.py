@@ -1,5 +1,5 @@
 """Module containing utility functions for shap files handling and a bit of analysis."""
-# pylint: disable=use-dict-literal
+# pylint: disable=use-dict-literal, too-many-positional-arguments
 from __future__ import annotations
 
 import copy
@@ -61,25 +61,25 @@ def extract_shap_values_and_info(
 
     Returns:
         shap_matrices (np.ndarray): SHAP matrices.
-        eval_md5s (List[str]): List of evaluation MD5s.
+        eval_signal_ids (List[str]): List of evaluation signal IDs.
         classes (List[Tuple[str, str]]): List of classes. Each class is a tuple containing the class index and the class label.
     """
-    # Extract shap values and md5s from archive
+    # Extract shap values and signal IDs from archive
     shap_values_archive, _ = get_archives(shap_logdir)
     try:
-        eval_md5s: List[str] = shap_values_archive["evaluation_md5s"]
+        eval_signal_ids: List[str] = shap_values_archive["evaluation_md5s"]
     except KeyError:
-        eval_md5s: List[str] = shap_values_archive["evaluation_ids"]
+        eval_signal_ids: List[str] = shap_values_archive["evaluation_ids"]
     shap_matrices: np.ndarray = shap_values_archive["shap_values"]
 
     # Print basic statistics about the loaded SHAP values
     if verbose:
         print(f"nb classes: {len(shap_matrices)}")
-        print(f"nb samples: {len(eval_md5s)}")
+        print(f"nb samples: {len(eval_signal_ids)}")
         print(f"dim shap value matrix: {shap_matrices[0].shape}")
         print(f"Output classes of classifier:\n {shap_values_archive['classes']}")
 
-    return shap_matrices, eval_md5s, shap_values_archive["classes"]
+    return shap_matrices, eval_signal_ids, shap_values_archive["classes"]
 
 
 def select_random_shap_samples(
@@ -121,23 +121,23 @@ def select_random_shap_samples(
     return selected_shap_samples
 
 
-def subsample_md5s(
-    md5s: List[str],
+def subsample_signal_ids(
+    signal_ids: List[str],
     metadata: Metadata,
     category_label: str,
     labels: List[str],
     copy_metadata: bool = True,
 ) -> List[int]:
-    """Subsample md5s index based on metadata filtering provided, for a given category and filtering labels.
+    """Subsample signal_ids index based on metadata filtering provided, for a given category and filtering labels.
 
     Args:
-        md5s (list): A list of MD5 hashes.
+        signal_ids (list): A list of signal IDs.
         metadata (Metadata): A metadata object containing the data to be filtered.
         category_label (str): The category label to be used for filtering the metadata.
         labels (list): A list of labels to be used for selecting category subsets in the metadata.
 
     Returns:
-        list: A list of indices corresponding to the selected md5s.
+        list: A list of indices corresponding to the selected signal IDs.
     """
     if copy_metadata:
         meta = copy.deepcopy(metadata)
@@ -146,8 +146,8 @@ def subsample_md5s(
 
     meta.select_category_subsets(category_label, labels)
     chosen_idxs = []
-    for i, md5 in enumerate(md5s):
-        if md5 in meta:
+    for i, sid in enumerate(signal_ids):
+        if sid in meta:
             chosen_idxs.append(i)
     return chosen_idxs
 
@@ -155,7 +155,7 @@ def subsample_md5s(
 def get_shap_matrix(
     meta: Metadata,
     shap_matrices: np.ndarray,
-    eval_md5s: List[str],
+    eval_signal_ids: List[str],
     label_category: str,
     selected_labels: List[str],
     class_idx: int,
@@ -166,13 +166,13 @@ def get_shap_matrix(
     This function selects a subset of samples based on specified criteria
     and then generates a SHAP matrix for these selected samples. It filters
     the metadata if a specific target subsample is provided, and selects a
-    subset of samples that are identified by their md5 hash. It then selects
+    subset of samples that are identified by their signal ID. It then selects
     the SHAP values of these samples under the matrix of the given class number.
 
     Args:
         meta (metadata.Metadata): Metadata object containing information about the samples.
         shap_matrices (np.ndarray): Array of SHAP matrices for each class.
-        eval_md5s (List[str]): List of md5 hashes identifying the evaluation samples.
+        eval_signal_ids (List[str]): List of signal IDs identifying the evaluation samples.
         label_category (str): Name of the category in the metadata that contains the desired labels.
         selected_labels (List[str]): Name of the classes for which samples will be considered.
         class_idx (int): Index of the class for which the shap values matrix will be used.
@@ -190,8 +190,8 @@ def get_shap_matrix(
     else:
         my_meta = meta
 
-    chosen_idxs = subsample_md5s(
-        md5s=eval_md5s,
+    chosen_idxs = subsample_signal_ids(
+        signal_ids=eval_signal_ids,
         metadata=my_meta,
         category_label=label_category,
         labels=selected_labels,

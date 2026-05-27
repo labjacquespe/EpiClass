@@ -106,17 +106,17 @@ def compute_coherence_on_all(meta: Metadata):
     df.to_csv("test.csv", index=False)
 
 
-def create_json_from_md5_list(md5_list: Path, metadata: Metadata):
+def create_json_from_signal_id_list(signal_id_list: Path, metadata: Metadata):
     """Save json with metadata from selected signals."""
     metadata = copy.deepcopy(metadata)
-    with open(md5_list, "r", encoding="utf8") as f:
-        md5_set = set(md5.strip() for md5 in f.readlines())
+    with open(signal_id_list, "r", encoding="utf8") as f:
+        wanted_ids = set(line.strip() for line in f.readlines())
 
-    for md5 in list(metadata.md5s):
-        if md5 not in md5_set:
-            del metadata[md5]
+    for signal_id in list(metadata.signal_ids):
+        if signal_id not in wanted_ids:
+            del metadata[signal_id]
 
-    new_path = md5_list.parent / f"{md5_list.stem}-metadata.json"
+    new_path = signal_id_list.parent / f"{signal_id_list.stem}-metadata.json"
     metadata.save(new_path)
 
 
@@ -192,8 +192,8 @@ def main():
     path = base / "hg38_2023_epiatlas_dfreeze_plus_encode_noncore_formatted_JR.json"
     my_metadata = Metadata(path)
 
-    # md5_list = "/home/local/USHERBROOKE/rabj2301/Projects/sources/epiclass/src/python/tests/fixtures/test-epilap-empty-biotype-n40.md5"
-    # create_json_from_md5_list(Path(md5_list), my_metadata)
+    # signal_id_list = "/home/local/USHERBROOKE/rabj2301/Projects/sources/epiclass/src/python/tests/fixtures/test-epilap-empty-biotype-n40.md5"
+    # create_json_from_signal_id_list(Path(signal_id_list), my_metadata)
 
     # my_metadata.display_labels("track_type")
     # my_metadata.display_labels("harmonized_sample_ontology_intermediate")

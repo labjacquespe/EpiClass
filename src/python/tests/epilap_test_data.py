@@ -33,7 +33,7 @@ if not FIXTURES_DIR.exists():
 class EpiAtlasTreatmentTestData:
     """Create and handle mock/test EpiAtlasFoldFactory"""
 
-    def __init__(self, metadata_path: Path, md5_list_path: Path, logdir: Path):
+    def __init__(self, metadata_path: Path, signal_id_list_path: Path, logdir: Path):
         self.hdf5_logdir = Path(logdir) / "hdf5"
         print(f"Using hdf5 logdir: {self.hdf5_logdir}")
         self.hdf5_logdir.mkdir(exist_ok=True, parents=True)
@@ -42,7 +42,7 @@ class EpiAtlasTreatmentTestData:
         self.chroms_file = self.dir.parents[3] / "input-format/hg38.noy.chrom.sizes"
         self.chroms = LazyHdf5Loader.load_chroms(self.chroms_file)
 
-        tmp_hdf5 = self.create_temp_hdf5s(md5_list_path.resolve())
+        tmp_hdf5 = self.create_temp_hdf5s(signal_id_list_path.resolve())
 
         self.datasource = self.create_mock_datasource(
             metadata_path, tmp_hdf5, self.chroms_file
@@ -67,27 +67,27 @@ class EpiAtlasTreatmentTestData:
             pass
 
     def create_temp_hdf5s(
-        self, md5_list_path: Path, name="_100kb_all_none_value.hdf5"
+        self, signal_id_list_path: Path, name="_100kb_all_none_value.hdf5"
     ) -> List[Path]:
         """Create temporary files and returns paths"""
         tmp_files = []
-        with open(md5_list_path, "r", encoding="utf8") as md5_list:
-            md5s = [md5.strip() for md5 in md5_list.readlines()]
+        with open(signal_id_list_path, "r", encoding="utf8") as f:
+            signal_ids = [line.strip() for line in f.readlines()]
 
-        if len(md5s) < 100:
-            for md5 in md5s:
-                md5 = md5.strip()
-                tmp_file = self.hdf5_logdir / f"{md5 + name}"
+        if len(signal_ids) < 100:
+            for signal_id in signal_ids:
+                signal_id = signal_id.strip()
+                tmp_file = self.hdf5_logdir / f"{signal_id + name}"
                 tmp_files.append(tmp_file)
-                self.write_mock_hdf5(tmp_file, md5)
+                self.write_mock_hdf5(tmp_file, signal_id)
         else:
-            md5 = md5s[0]
-            real_tmp_file = self.hdf5_logdir / f"{md5 + name}"
+            signal_id = signal_ids[0]
+            real_tmp_file = self.hdf5_logdir / f"{signal_id + name}"
             tmp_files.append(real_tmp_file)
-            self.write_mock_hdf5(real_tmp_file, md5)
+            self.write_mock_hdf5(real_tmp_file, signal_id)
 
-            for md5 in md5s[1:]:
-                tmp_file = self.hdf5_logdir / f"{md5 + name}"
+            for signal_id in signal_ids[1:]:
+                tmp_file = self.hdf5_logdir / f"{signal_id + name}"
                 tmp_files.append(tmp_file)
 
             with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
@@ -98,12 +98,12 @@ class EpiAtlasTreatmentTestData:
 
         return tmp_files
 
-    def write_mock_hdf5(self, path: Path, md5: str):
+    def write_mock_hdf5(self, path: Path, signal_id: str):
         """Write a hdf5 file to the given path with the expected general structure."""
         if path.exists():
             raise FileExistsError(f"Mock hdf5 already exists at '{path}'")
         with h5py.File(name=path, mode="w") as f:
-            grp = f.create_group(md5)
+            grp = f.create_group(signal_id)
             for chrom in self.chroms:
                 grp.create_dataset(name=chrom, data=[1, 2], dtype=int)
         f.close()
@@ -137,44 +137,44 @@ class EpiAtlasTreatmentTestData:
         test_set="test-epilap-empty-biotype-n40",
         label_category="biomaterial_type",
         min_class_size=3,
-        n_fold=2
+        n_fold=2,
     ) -> EpiAtlasFoldFactory:
         """Create mock EpiAtlasFoldFactory"""
-        md5_list = FIXTURES_DIR / f"{test_set}.md5"
+        signal_id_list = FIXTURES_DIR / f"{test_set}.md5"
         metadata_path = FIXTURES_DIR / f"{test_set}-metadata.json"
         logdir = Path(logdir) / uuid.uuid4().hex
         print(f"Creating test data in logdir: {logdir}")
-        return cls(metadata_path, md5_list, logdir).get_ea_handler(
-            label_category=label_category,
-            min_class_size=min_class_size,
-            n_fold=n_fold
+        return cls(metadata_path, signal_id_list, logdir).get_ea_handler(
+            label_category=label_category, min_class_size=min_class_size, n_fold=n_fold
         )
 
 
 # standalone
-def create_test_metadata(metadata_source_path: Path, md5_list: Path):
+def create_test_metadata(metadata_source_path: Path, signal_id_list_path: Path):
     """Create a metadata json file with a subset of information, for testing purposes."""
     my_metadata = Metadata(metadata_source_path)
 
-    with open(md5_list, "r", encoding="utf8") as f:
-        md5_set = set(md5.strip() for md5 in f.readlines())
+    with open(signal_id_list_path, "r", encoding="utf8") as f:
+        wanted_ids = set(line.strip() for line in f.readlines())
 
-    for md5 in list(my_metadata.md5s):
-        if md5 not in md5_set:
-            del my_metadata[md5]
+    for signal_id in list(my_metadata.signal_ids):
+        if signal_id not in wanted_ids:
+            del my_metadata[signal_id]
 
-    my_metadata.save(md5_list.parent / (md5_list.stem + "-metadata.json"))
+    my_metadata.save(
+        signal_id_list_path.parent / (signal_id_list_path.stem + "-metadata.json")
+    )
 
 
 def main():
     """Create test data."""
     test_set = "test-epilap-empty-biotype-n40"
-    md5_list = FIXTURES_DIR / f"{test_set}.md5"
+    signal_id_list = FIXTURES_DIR / f"{test_set}.md5"
     metadata_path = FIXTURES_DIR / f"{test_set}-metadata.json"
 
     label_category = "biomaterial_type"
 
-    tester = EpiAtlasTreatmentTestData(metadata_path, md5_list, logdir=DEFAULT_TEST_LOGDIR)  # type: ignore
+    tester = EpiAtlasTreatmentTestData(metadata_path, signal_id_list, logdir=DEFAULT_TEST_LOGDIR)  # type: ignore
     print(tester.get_ea_handler(label_category).classes)
 
 

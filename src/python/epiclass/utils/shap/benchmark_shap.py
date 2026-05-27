@@ -62,20 +62,22 @@ def test_background_effect(
     assay_list = ["h3k9me3", "h3k36me3", "rna_seq"]
     my_metadata.select_category_subsets("assay", assay_list)
 
-    md5_per_classes = my_metadata.md5_per_class("assay")
-    background_1_md5s = md5_per_classes["h3k9me3"][0:10]
-    background_2_md5s = md5_per_classes["rna_seq"][0:10]
+    ids_per_class = my_metadata.ids_per_class("assay")
+    background_1_signal_ids = ids_per_class["h3k9me3"][0:10]
+    background_2_signal_ids = ids_per_class["rna_seq"][0:10]
 
-    evaluation_md5s = (
-        md5_per_classes["h3k9me3"][10:20]
-        + md5_per_classes["rna_seq"][10:20]
-        + md5_per_classes["h3k36me3"][0:10]
+    evaluation_signal_ids = (
+        ids_per_class["h3k9me3"][10:20]
+        + ids_per_class["rna_seq"][10:20]
+        + ids_per_class["h3k36me3"][0:10]
     )
-    all_md5s = set(background_1_md5s + background_2_md5s + evaluation_md5s)
+    all_signal_ids = set(
+        background_1_signal_ids + background_2_signal_ids + evaluation_signal_ids
+    )
 
-    for md5 in list(my_metadata.md5s):
-        if md5 not in all_md5s:
-            del my_metadata[md5]
+    for sid in list(my_metadata.signal_ids):
+        if sid not in all_signal_ids:
+            del my_metadata[sid]
 
     full_data = DataSetFactory.from_epidata(
         datasource=my_datasource,
@@ -90,12 +92,12 @@ def test_background_effect(
     background_1_idxs = [
         i
         for i, signal_id in enumerate(full_data.train.ids)
-        if signal_id in set(background_1_md5s)
+        if signal_id in set(background_1_signal_ids)
     ]
     background_2_idxs = [
         i
         for i, signal_id in enumerate(full_data.train.ids)
-        if signal_id in set(background_2_md5s)
+        if signal_id in set(background_2_signal_ids)
     ]
     evaluation_idxs = list(
         set(range(full_data.train.num_examples))

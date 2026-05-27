@@ -70,34 +70,36 @@ class Test_Hdf5Loader:
         with pytest.raises(OSError, match="file signature not found"):
             hdf5_loader.register_hdf5s(list_copy, strict=True)
 
-    def test_register_filters_by_md5(self, test_data: EpiAtlasDataset, tmp_path: Path):
-        """Verify that only requested md5s are registered."""
+    def test_register_filters_by_signal_id(
+        self, test_data: EpiAtlasDataset, tmp_path: Path
+    ):
+        """Verify that only requested signal IDs are registered."""
         all_files = Hdf5Loader.read_list(test_data.datasource.hdf5_file)
-        subset_md5s = list(all_files.keys())[:2]
+        subset_ids = list(all_files.keys())[:2]
 
         hdf5_loader = Hdf5Loader(
             test_data.datasource.chromsize_file, True, mmap_dir=tmp_path / "mmap"
         )
         hdf5_loader.register_hdf5s(
-            test_data.datasource.hdf5_file, md5s=subset_md5s, strict=True
+            test_data.datasource.hdf5_file, signal_ids=subset_ids, strict=True
         )
 
-        assert set(hdf5_loader.file_paths.keys()) == set(subset_md5s)
+        assert set(hdf5_loader.file_paths.keys()) == set(subset_ids)
 
-    def test_register_absent_md5s(
+    def test_register_absent_signal_ids(
         self, test_data: EpiAtlasDataset, tmp_path: Path, capsys
     ):
-        """Verify that absent md5s are reported."""
-        fake_md5 = "a" * 32
+        """Verify that absent signal IDs are reported."""
+        fake_id = "a" * 32
         hdf5_loader = Hdf5Loader(
             test_data.datasource.chromsize_file, True, mmap_dir=tmp_path / "mmap"
         )
         hdf5_loader.register_hdf5s(
-            test_data.datasource.hdf5_file, md5s=[fake_md5], verbose=True
+            test_data.datasource.hdf5_file, signal_ids=[fake_id], verbose=True
         )
 
         captured = capsys.readouterr()
-        assert fake_md5 in captured.out
+        assert fake_id in captured.out
         assert len(hdf5_loader.file_paths) == 0
 
     # --- Preload and mmap ---
@@ -141,8 +143,8 @@ class Test_Hdf5Loader:
     def test_load_signal_returns_array(self, loader: Hdf5Loader):
         """Verify that load_signal returns a numpy array."""
         loader.preload_all()
-        md5 = next(iter(loader.file_paths))
-        signal = loader.load_signal(md5)
+        signal_id = next(iter(loader.file_paths))
+        signal = loader.load_signal(signal_id)
 
         assert isinstance(signal, np.ndarray)
         assert signal.dtype == np.float32
@@ -150,10 +152,10 @@ class Test_Hdf5Loader:
     def test_load_signal_consistent(self, loader: Hdf5Loader):
         """Verify that loading the same signal twice gives identical results."""
         loader.preload_all()
-        md5 = next(iter(loader.file_paths))
+        signal_id = next(iter(loader.file_paths))
 
-        signal1 = loader.load_signal(md5)
-        signal2 = loader.load_signal(md5)
+        signal1 = loader.load_signal(signal_id)
+        signal2 = loader.load_signal(signal_id)
 
         np.testing.assert_array_equal(signal1, signal2)
 
@@ -161,8 +163,8 @@ class Test_Hdf5Loader:
         """Verify that all signals have the same length."""
         loader.preload_all()
         lengths = set()
-        for md5 in loader.file_paths:
-            signal = loader.load_signal(md5)
+        for signal_id in loader.file_paths:
+            signal = loader.load_signal(signal_id)
             lengths.add(len(signal))
 
         assert len(lengths) == 1
@@ -175,8 +177,8 @@ class Test_Hdf5Loader:
         hdf5_loader.register_hdf5s(test_data.datasource.hdf5_file, strict=True)
         hdf5_loader.preload_all()
 
-        md5 = next(iter(hdf5_loader.file_paths))
-        signal = hdf5_loader.load_signal(md5)
+        signal_id = next(iter(hdf5_loader.file_paths))
+        signal = hdf5_loader.load_signal(signal_id)
 
         np.testing.assert_almost_equal(signal.mean(), 0.0, decimal=5)
         np.testing.assert_almost_equal(signal.std(), 1.0, decimal=5)
@@ -195,20 +197,20 @@ class Test_Hdf5Loader:
         loader_raw.register_hdf5s(test_data.datasource.hdf5_file, strict=True)
         loader_raw.preload_all()
 
-        md5 = next(iter(loader_norm.file_paths))
-        sig_norm = loader_norm.load_signal(md5)
-        sig_raw = loader_raw.load_signal(md5)
+        signal_id = next(iter(loader_norm.file_paths))
+        sig_norm = loader_norm.load_signal(signal_id)
+        sig_raw = loader_raw.load_signal(signal_id)
 
         assert not np.array_equal(sig_norm, sig_raw)
 
     def test_load_signal_before_preload(self, loader: Hdf5Loader):
         """Verify that load_signal raises if preload_all was not called."""
-        md5 = next(iter(loader.file_paths))
+        signal_id = next(iter(loader.file_paths))
         with pytest.raises(FileNotFoundError, match="Run preload_all"):
-            loader.load_signal(md5)
+            loader.load_signal(signal_id)
 
-    def test_load_signal_unregistered_md5(self, loader: Hdf5Loader):
-        """Verify that load_signal raises for unregistered md5."""
+    def test_load_signal_unregistered_signal_id(self, loader: Hdf5Loader):
+        """Verify that load_signal raises for unregistered signal ID."""
         loader.preload_all()
         with pytest.raises(KeyError, match="not registered"):
             loader.load_signal("f" * 32)

@@ -7,28 +7,30 @@ from typing import Iterable, List
 
 
 def write_hdf5_paths_to_file(
-    md5s: Iterable[str], parent: str, suffix: str, filepath: str | Path
+    signal_ids: Iterable[str], parent: str, suffix: str, filepath: str | Path
 ) -> List[Path]:
-    """Write a list of md5s to a file, with a prefix and suffix.
-    Creates files of the format: Path(prefix=parent)/{md5}_{suffix}.hdf5
+    """Write a list of signal IDs to a file, with a prefix and suffix.
+    Creates files of the format: Path(prefix=parent)/{signal_id}_{suffix}.hdf5
 
     Returns a list of the paths written to the file.
     """
     files = []
     with open(filepath, "w", encoding="utf8") as f:
-        for md5 in md5s:
-            path = Path(parent) / (f"{md5}_{suffix}.hdf5")
+        for signal_id in signal_ids:
+            path = Path(parent) / (f"{signal_id}_{suffix}.hdf5")
             f.write(f"{path}\n")
             files.append(path)
     return files
 
 
-def write_md5s_to_file(md5s: Iterable[str], logdir: str | Path, name: str) -> Path:
-    """Write a list of md5s to a file. Return filepath."""
+def write_signal_ids_to_file(
+    signal_ids: Iterable[str], logdir: str | Path, name: str
+) -> Path:
+    """Write a list of signal IDs to a file. Return filepath."""
     filename = Path(logdir) / f"{name}.md5"
     with open(filename, "w", encoding="utf8") as f:
-        for md5 in md5s:
-            f.write(f"{md5}\n")
+        for signal_id in signal_ids:
+            f.write(f"{signal_id}\n")
     return filename
 
 

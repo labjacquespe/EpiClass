@@ -168,7 +168,7 @@ def main():
         n_fold=2,  # minimum to avoid error, since class is made for cross-validation
         test_ratio=0,
         min_class_size=min_class_size,
-        md5_list=list(my_metadata.md5s),
+        signal_id_list=list(my_metadata.signal_ids),
         force_filter=True,
         mmap_dir=mmap_dir,
     )

@@ -20,7 +20,7 @@ def temp_input_structure(tmpdir) -> Path:
         # Generate test data
         N_samples = 3
         N_classes = 5
-        evaluation_md5s = [f"md5_{split_nb}_{j:02d}" for j in range(N_samples)]
+        evaluation_signal_ids = [f"md5_{split_nb}_{j:02d}" for j in range(N_samples)]
         classes = [(str(k), chr(97 + k)) for k in range(N_classes)]
         shap_values = [
             np.array(
@@ -35,14 +35,14 @@ def temp_input_structure(tmpdir) -> Path:
         # Save npz file
         np.savez_compressed(
             file=split_dir / f"shap_evaluation_split{split_nb}.npz",
-            evaluation_md5s=evaluation_md5s,
+            evaluation_md5s=evaluation_signal_ids,
             shap_values=shap_values,
             classes=classes,
         )
 
         np.savez_compressed(
             file=split_dir / f"explainer_background_split{split_nb}.npz",
-            background_md5s=evaluation_md5s,
+            background_md5s=evaluation_signal_ids,
             background_expectation=list(range(len(classes))),
             classes=classes,
         )
@@ -66,16 +66,16 @@ def test_shap_rank_conversion(temp_input_folder: Path):
     output_data = np.load(output_file, allow_pickle=True)
 
     # Check if all expected keys are present
-    assert set(output_data.keys()) == {"ranks", "md5s", "classes"}
+    assert set(output_data.keys()) == {"ranks", "signal_ids", "classes"}
 
     # Verify concatenation order
     N_samples = 3
     N_classes = 5
     N_splits = 3
-    expected_md5s = [
+    expected_signal_ids = [
         f"md5_{i}_{j:02d}" for i in range(N_splits) for j in range(N_samples)
     ]
-    assert np.array_equal(output_data["md5s"], expected_md5s)
+    assert np.array_equal(output_data["signal_ids"], expected_signal_ids)
 
     # Verify classes
     expected_classes = [(str(k), chr(97 + k)) for k in range(N_classes)]

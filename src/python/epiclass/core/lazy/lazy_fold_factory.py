@@ -41,7 +41,7 @@ class LazyEpiAtlasDataset:
         label_category: str,
         label_list: List[str] | None = None,
         min_class_size: int = 10,
-        md5_list: List[str] | None = None,
+        signal_id_list: List[str] | None = None,
         force_filter: bool = True,
         metadata: UUIDMetadata | None = None,
         mmap_dir: Path | str | None = None,
@@ -53,8 +53,8 @@ class LazyEpiAtlasDataset:
             label_category: Target label category
             label_list: Optional list of labels to include
             min_class_size: Minimum samples per class
-            md5_list: Optional list of MD5s to include
-            force_filter: Filter metadata even if md5_list provided
+            signal_id_list: Optional list of signal IDs to include
+            force_filter: Filter metadata even if signal_id_list provided
             metadata: Optional pre-loaded metadata
             mmap_dir: Directory for the memory-mapped .npy file. Defaults to
                 ./mmap_cache. On HPC, set to $SLURM_TMPDIR for fast local storage.
@@ -67,13 +67,15 @@ class LazyEpiAtlasDataset:
         meta = metadata
         if meta is None:
             meta = UUIDMetadata(self._datasource.metadata_file)
-        if md5_list:
+        if signal_id_list:
             try:
-                meta = UUIDMetadata.from_dict({md5: meta[md5] for md5 in md5_list})
+                meta = UUIDMetadata.from_dict({sid: meta[sid] for sid in signal_id_list})
             except KeyError as e:
-                raise KeyError(f"md5 {e} from md5 list not found in metadata") from e
+                raise KeyError(
+                    f"signal_id {e} from signal_id_list not found in metadata"
+                ) from e
 
-        if force_filter or not md5_list:
+        if force_filter or not signal_id_list:
             meta = self._filter_metadata(min_class_size, meta, verbose=True)
 
         self._metadata = meta
@@ -84,17 +86,17 @@ class LazyEpiAtlasDataset:
 
         # UUID info
         self._metadata.display_uuid_per_class(self._label_category)
-        self._uuid_mapping = self._metadata.uuid_to_md5()
+        self._uuid_mapping = self._metadata.uuid_to_signal_ids()
 
         # Create lazy loader (doesn't load signals!)
         self._loader = self._create_loader(mmap_dir)
 
         # Create dataset object (no signal loading)
-        md5s = list(self._loader.file_paths.keys())
-        labels = [self._metadata[md5][self._label_category] for md5 in md5s]
+        signal_ids = list(self._loader.file_paths.keys())
+        labels = [self._metadata[sid][self._label_category] for sid in signal_ids]
 
         self._dataset: LazyKnownData = LazyKnownData(
-            ids=md5s,
+            ids=signal_ids,
             loader=self._loader,
             y_str=labels,
             y=[self._classes_mapping[label] for label in labels],
@@ -145,7 +147,7 @@ class LazyEpiAtlasDataset:
         )
         loader.register_hdf5s(
             data_file=self.datasource.hdf5_file,
-            md5s=self.metadata.md5s,
+            signal_ids=self.metadata.signal_ids,
             strict=True,
             verbose=True,
         )
@@ -229,7 +231,7 @@ class LazyEpiAtlasFoldFactory:
         min_class_size: int = 10,
         test_ratio: float = 0,
         n_fold: int = 10,
-        md5_list: List[str] | None = None,
+        signal_id_list: List[str] | None = None,
         force_filter: bool = True,
         metadata: UUIDMetadata | None = None,
         mmap_dir: Path | str | None = None,
@@ -240,7 +242,7 @@ class LazyEpiAtlasFoldFactory:
             label_category,
             label_list,
             min_class_size,
-            md5_list,
+            signal_id_list,
             force_filter,
             metadata,
             mmap_dir,
@@ -275,14 +277,14 @@ class LazyEpiAtlasFoldFactory:
     @staticmethod
     def _label_uuid(dset: LazyKnownData) -> Tuple[NDArray, NDArray, NDArrayInt]:
         """Return uuids, unique uuids and uuid to int mapping."""
-        uuids = [dset.metadata[md5]["uuid"] for md5 in dset.ids]
+        uuids = [dset.metadata[sid]["uuid"] for sid in dset.ids]
         unique_uuids, uuid_to_int = np.unique(uuids, return_inverse=True)
         return np.array(uuids), unique_uuids, uuid_to_int
 
     @staticmethod
     def _label_epirr(dset: LazyKnownData) -> Tuple[NDArray, NDArray, NDArrayInt]:
         """Return epirrs, unique epirrs and epirr-to-int mapping for grouping."""
-        epirrs = [dset.metadata[md5][EPIRR_LABEL] for md5 in dset.ids]
+        epirrs = [dset.metadata[sid][EPIRR_LABEL] for sid in dset.ids]
         unique_epirrs, epirr_to_int = np.unique(epirrs, return_inverse=True)
         return np.array(epirrs), unique_epirrs, epirr_to_int
 
@@ -293,8 +295,8 @@ class LazyEpiAtlasFoldFactory:
     ) -> NDArrayInt:
         """For each unique UUID, return the integer index of its parent EpiRR."""
         uuid_epirr = {}
-        for md5 in dset.ids:
-            meta = dset.metadata[md5]
+        for sid in dset.ids:
+            meta = dset.metadata[sid]
             uuid_epirr[meta["uuid"]] = meta[EPIRR_LABEL]
 
         epirr_per_uuid = [uuid_epirr[uuid] for uuid in uuids_unique]
@@ -321,7 +323,7 @@ class LazyEpiAtlasFoldFactory:
         _, _, uuids_inverse = self._label_uuid(dset)
 
         # Force track type as the class label
-        labels = [dset.metadata[md5]["track_type"] for md5 in dset.ids]
+        labels = [dset.metadata[sid]["track_type"] for sid in dset.ids]
 
         skf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
 

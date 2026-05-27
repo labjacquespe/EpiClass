@@ -1,5 +1,5 @@
 """Functions to perform more complex operations on the metadata."""
-
+# pylint: disable=too-many-positional-arguments
 import collections
 import copy
 import datetime
@@ -44,12 +44,12 @@ def keep_major_cell_types(my_metadata: Metadata):
         my_metadata.remove_small_classes(10, category)
 
     # Find big enough cell types in each assay
-    md5s_per_assay = my_metadata.md5_per_class("assay")
+    ids_per_assay = my_metadata.ids_per_class("assay")
     cell_types_in_assay = {}
-    for assay, md5s in md5s_per_assay.items():
+    for assay, signal_ids in ids_per_assay.items():
         # count cell_type occurence in assay
         cell_types_count = collections.Counter(
-            my_metadata[md5]["cell_type"] for md5 in md5s
+            my_metadata[sid]["cell_type"] for sid in signal_ids
         )
 
         # remove small classes from counter
@@ -62,9 +62,9 @@ def keep_major_cell_types(my_metadata: Metadata):
             cell_types_count = {}
 
         # delete small classes from metadata
-        for md5 in md5s:
-            if my_metadata[md5]["cell_type"] not in cell_types_count:
-                del my_metadata[md5]
+        for sid in signal_ids:
+            if my_metadata[sid]["cell_type"] not in cell_types_count:
+                del my_metadata[sid]
 
         # keep track of big enough classes
         if cell_types_count:
@@ -77,11 +77,11 @@ def keep_major_cell_types(my_metadata: Metadata):
             cell_type_counter[cell_type] += 1
 
     # Remove signals which are not part of common+big cell_types
-    for md5 in list(my_metadata.md5s):
-        dset = my_metadata[md5]
+    for signal_id in list(my_metadata.signal_ids):
+        dset = my_metadata[signal_id]
         good_cell_type = cell_type_counter.get(dset["cell_type"], 0) > 1
         if not good_cell_type:
-            del my_metadata[md5]
+            del my_metadata[signal_id]
 
     return my_metadata
 
@@ -103,8 +103,8 @@ def keep_major_cell_types_alt(my_metadata: Metadata):
         temp_meta = copy.deepcopy(my_meta)
         temp_meta.select_category_subsets("assay", [assay])
         temp_meta.remove_small_classes(10, "cell_type")
-        for md5 in temp_meta.md5s:
-            new_meta[md5] = temp_meta[md5]
+        for signal_id in temp_meta.signal_ids:
+            new_meta[signal_id] = temp_meta[signal_id]
 
     return new_meta
 
@@ -203,15 +203,15 @@ def special_case(my_metadata):
     """
     my_metadata = five_cell_types_selection(my_metadata)
 
-    # get some thyroid examples md5s, there are none in rna_seq
+    # get some thyroid signal IDs, there are none in rna_seq
     temp_meta = copy.deepcopy(my_metadata)
     temp_meta.select_category_subsets("assay", ["h3k9me3"])
-    md5s = temp_meta.md5_per_class("cell_type")["thyroid"][0:3]
+    thyroid_ids = temp_meta.ids_per_class("cell_type")["thyroid"][0:3]
 
     # select only rna_seq examples + 3 thyroid examples for model making
     my_metadata.select_category_subsets("assay", ["rna_seq"])
-    for md5 in md5s:
-        my_metadata[md5] = temp_meta[md5]
+    for signal_id in thyroid_ids:
+        my_metadata[signal_id] = temp_meta[signal_id]
 
     return my_metadata
 
@@ -226,16 +226,16 @@ def special_case_2(my_metadata):
         ["mrna_seq"],
     )
 
-    cell_types = my_metadata.md5_per_class("cell_type").keys()
+    cell_types = my_metadata.ids_per_class("cell_type").keys()
     to_del = []
     for cell_type in cell_types:
         temp_meta = copy.deepcopy(my_metadata)
         temp_meta.select_category_subsets("cell_type", [cell_type])
-        for md5s in temp_meta.md5_per_class("assay").values():
-            to_del.extend(md5s[0:2])
+        for signal_ids in temp_meta.ids_per_class("assay").values():
+            to_del.extend(signal_ids[0:2])
 
-    for md5 in to_del:
-        del my_metadata[md5]
+    for signal_id in to_del:
+        del my_metadata[signal_id]
 
     return my_metadata
 
@@ -333,14 +333,14 @@ def merge_pair_end_info(metadata: Metadata):
     Convert FALSE/TRUE to 'single_end' and 'paired_end'
     """
     rna_dset = []
-    for md5, dset in metadata.items:
+    for signal_id, dset in metadata.items:
         try:
-            rna_dset.append((md5, dset["paired"]))
+            rna_dset.append((signal_id, dset["paired"]))
         except KeyError:
             continue
 
-    for md5, label in rna_dset:
-        metadata[md5]["paired_end_mode"] = label
+    for signal_id, label in rna_dset:
+        metadata[signal_id]["paired_end_mode"] = label
 
     converter = {"TRUE": "paired_end", "FALSE": "single_end"}
     metadata.convert_classes("paired_end_mode", converter)
@@ -357,18 +357,18 @@ def fix_roadmap(metadata: Metadata):
 
 def add_fake_epiatlas_metadata(metadata: Metadata) -> None:
     """Add uuid and track_type info to non epiatlas metadata.
-    uuid will be md5sum, and track_type will be raw.
+    uuid will be the signal ID, and track_type will be raw.
     """
-    for md5, dset in list(metadata.items):
+    for signal_id, dset in list(metadata.items):
         if "uuid" not in dset:
-            metadata[md5]["uuid"] = md5
+            metadata[signal_id]["uuid"] = signal_id
         if "track_type" not in dset:
-            metadata[md5]["track_type"] = "raw"
+            metadata[signal_id]["track_type"] = "raw"
 
 
 def add_formated_date(metadata: Metadata) -> None:
     """Add 'upload_date_2' category to dsets with YYYY-MM format."""
-    for md5, dset in metadata.items:
+    for signal_id, dset in metadata.items:
         upload_date = dset.get("upload_date")
         try:
             date = str(datetime.datetime.strptime(upload_date, "%m-%d-%Y").date())
@@ -376,7 +376,7 @@ def add_formated_date(metadata: Metadata) -> None:
             continue
 
         date = date.rsplit("-", 1)[0]
-        metadata[md5]["upload_date_2"] = date
+        metadata[signal_id]["upload_date_2"] = date
 
 
 def add_random_group(metadata: Metadata, seed=42, n_split=23) -> str:

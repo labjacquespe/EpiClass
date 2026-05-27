@@ -100,7 +100,7 @@ def augment_line(
 ):
     """Augment a non-header line with new metadata labels and additional info on 2nd highest prob."""
 
-    md5 = line[0]
+    signal_id = line[0]
     true_class, predicted_class = line[1:3]
     is_same = true_class == predicted_class
 
@@ -124,11 +124,11 @@ def augment_line(
 
     # get all labels for given categories
     # fmt: off
-    new_labels = [metadata[md5].get(category, "--empty--") for category in categories]
+    new_labels = [metadata[signal_id].get(category, "--empty--") for category in categories]
     if new_labels:
-        new_line = [md5] + new_labels + line[1:not_pred_idx] + [is_same, preds[i_1], class_2, diff, ratio] + preds
+        new_line = [signal_id] + new_labels + line[1:not_pred_idx] + [is_same, preds[i_1], class_2, diff, ratio] + preds
     else:
-        new_line = [md5] + line[1:not_pred_idx] + [is_same, preds[i_1], class_2, diff, ratio] + preds
+        new_line = [signal_id] + line[1:not_pred_idx] + [is_same, preds[i_1], class_2, diff, ratio] + preds
     # fmt: on
     return new_line
 
@@ -237,8 +237,8 @@ def correct_true(path: Path, category: str, metadata: Metadata):
     """Read file and replace 'True class' labels with metadata values for given category."""
     df = pd.read_csv(path, sep=",", header=0, index_col=0)
     for row in df.itertuples():
-        md5 = row.Index
-        df.at[md5, "True class"] = metadata[md5][category]
+        signal_id = row.Index
+        df.at[signal_id, "True class"] = metadata[signal_id][category]
     df.to_csv(path, sep=",")
 
 

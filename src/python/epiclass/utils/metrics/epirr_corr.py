@@ -8,7 +8,6 @@ from typing import Collection, Dict, FrozenSet, List, Tuple
 import numpy as np
 import pandas as pd
 
-#
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core.data_source import EpiDataSource
@@ -73,25 +72,25 @@ def print_unique_target_sets_distribution(epirr_dict: Dict[str, Dict]):
 
 def load_signals(
     datasource: EpiDataSource,
-    md5sums: List[str],
+    signal_ids: List[str],
     mmap_dir: Path | None = None,
 ) -> Dict[str, np.ndarray]:
     """
     Load signals from HDF5 files using the provided EpiDataSource and
-    a list of MD5 checksums which identify the files.
+    a list of signal IDs which identify the files.
 
     Returns:
-        dict: A dictionary containing the loaded signals, where the keys are the md5sums
+        dict: A dictionary containing the loaded signals, where the keys are the signal IDs
         and the values are the corresponding signals.
     """
     hdf5_loader = LazyHdf5Loader(
         datasource.chromsize_file, normalization=True, mmap_dir=mmap_dir
     )
     hdf5_loader.register_hdf5s(
-        datasource.hdf5_file, md5s=md5sums, strict=True, verbose=True
+        datasource.hdf5_file, signal_ids=signal_ids, strict=True, verbose=True
     )
     hdf5_loader.preload_all()
-    return {md5: hdf5_loader.load_signal(md5) for md5 in hdf5_loader.file_paths}
+    return {sid: hdf5_loader.load_signal(sid) for sid in hdf5_loader.file_paths}
 
 
 def define_accepted_tracks() -> FrozenSet[str]:
@@ -112,7 +111,7 @@ class EpirrSignals:
         accepted_targets: Collection,
     ):
         self.target_mapping = self.create_target_mapping(sorted(accepted_targets))
-        self._epirr_signals, self._epirr_md5s = self.create_epirr_signals(
+        self._epirr_signals, self._epirr_ids = self.create_epirr_signals(
             epirr_dict=self.group_by_epirr(metadata),
             signals_dict=hdf5_signals,
             targets_id=self.target_mapping,
@@ -122,7 +121,7 @@ class EpirrSignals:
 
         Args:
             metadata (Metadata): A Metadata instance containing information about the experiments.
-            hdf5_signals (Dict[str, np.ndarray]): A dict mapping md5sums to signal arrays.
+            hdf5_signals (Dict[str, np.ndarray]): A dict mapping ids to signal arrays.
             accepted_targets (Collection): A collection of accepted targets/assays ("assay_epiclass")
         """
 
@@ -132,9 +131,9 @@ class EpirrSignals:
         return self._epirr_signals
 
     @property
-    def epirr_md5s(self):
-        """md5s used to create the epiRR signals."""
-        return self._epirr_md5s
+    def epirr_signal_ids(self):
+        """Signal IDs used to create the epiRR signals."""
+        return self._epirr_ids
 
     @staticmethod
     def group_by_epirr(metadata: Metadata) -> Dict[str, List]:
@@ -208,12 +207,12 @@ class EpirrSignals:
 
         Args:
             epirr_dict (Dict[str, List]): A dict mapping EpiRR IDs to their list of datasets.
-            signals_dict (Dict[str, np.ndarray]): A dict mapping md5sums to signals.
+            signals_dict (Dict[str, np.ndarray]): A dict mapping ids to signals.
             targets_id (Dict[str, int]): A dictionary mapping target strings to integer indices.
 
         Returns:
             Dict[str, np.ndarray]: A dictionary mapping EpiRR IDs to signal arrays.
-            List[str]: A list of all md5sums used in the creation of the different arrays.
+            List[str]: A list of all ids used in the creation of the different arrays.
         """
         nb_bins = list(signals_dict.values())[0].shape[0]
         array_length = len(targets_id) * nb_bins
@@ -225,12 +224,12 @@ class EpirrSignals:
             epirr_signal[:] = np.nan
             for dset in dset_list:
                 target_id = targets_id[dset["assay_epiclass"]]
-                md5sum = dset["md5sum"]
-                used_signals.append((epirr, md5sum))
+                sid = dset["md5sum"]
+                used_signals.append((epirr, sid))
 
                 start_index = target_id * nb_bins
                 end_index = start_index + nb_bins
-                epirr_signal[start_index:end_index] = signals_dict[md5sum]
+                epirr_signal[start_index:end_index] = signals_dict[sid]
 
             epirr_signals[epirr] = epirr_signal
 
@@ -251,7 +250,7 @@ def main():
     my_metadata.select_category_subsets("assay_epiclass", epiatlas_assays)
 
     hdf5_signals = load_signals(
-        my_datasource, list(my_metadata.md5s), mmap_dir=Path(log) / "mmap_cache"
+        my_datasource, list(my_metadata.signal_ids), mmap_dir=Path(log) / "mmap_cache"
     )
     my_metadata.select_category_subsets(
         "md5sum", list(hdf5_signals.keys())
@@ -265,7 +264,7 @@ def main():
 
     correlated_signals.to_csv(log / "epirr_correlated_signals.csv")
 
-    pd.DataFrame(epirr_signals_maker.epirr_md5s).to_csv(
+    pd.DataFrame(epirr_signals_maker.epirr_signal_ids).to_csv(
         log / "epirr_correlated_signals.md5", index=False, header=False
     )
 

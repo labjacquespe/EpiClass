@@ -11,7 +11,7 @@ The following analyses are performed:
     - Subsampled by assay
     - Subsampled by cell type and assay
 """
-# pylint: disable=too-many-locals, too-many-branches, too-many-statements
+# pylint: disable=too-many-locals, too-many-branches, too-many-statements, too-many-positional-arguments
 from __future__ import annotations
 
 import argparse
@@ -78,7 +78,7 @@ def analyze_shap_fold(
         Dict[str, Dict]: A dictionary containing important features for each analyzed class label.
         The keys are class labels, and values are dictionaries of important features for different percentiles.
     """
-    shap_matrices, eval_md5s, classes = extract_shap_values_and_info_output
+    shap_matrices, eval_signal_ids, classes = extract_shap_values_and_info_output
 
     if copy_metadata:
         meta = copy.deepcopy(metadata)
@@ -86,9 +86,9 @@ def analyze_shap_fold(
         meta = metadata
 
     # Filter metadata to include only the samples that exist in the SHAP value archives
-    for md5 in list(meta.md5s):
-        if md5 not in set(eval_md5s):
-            del meta[md5]
+    for sid in list(meta.signal_ids):
+        if sid not in set(eval_signal_ids):
+            del meta[sid]
 
     # Since metadata gets modified in get_shap_matrix, instead
     # of copying the metadata with deepcopy internally, we just reload it
@@ -121,7 +121,7 @@ def analyze_shap_fold(
         shap_matrix, chosen_idxs = get_shap_matrix(
             meta=meta,
             shap_matrices=shap_matrices,
-            eval_md5s=eval_md5s,
+            eval_signal_ids=eval_signal_ids,
             label_category=label_category,
             selected_labels=[class_label],
             class_idx=class_int,

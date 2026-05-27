@@ -49,13 +49,13 @@ def fixture_adapted_metadata(test_dir: Path) -> Path:
 def fixture_adapted_hdf5_list(
     test_dir: Path, saccer3_hdf5_file_list: Path, adapted_metadata: Path
 ) -> Path:
-    """Restrict the HDF5 list to the md5s actually kept in adapted_metadata."""
+    """Restrict the HDF5 list to the signal IDs actually kept in adapted_metadata."""
     meta = json.loads(adapted_metadata.read_text())
-    wanted_md5s = {entry["md5sum"] for entry in meta["datasets"]}
+    wanted_signal_ids = {entry["md5sum"] for entry in meta["datasets"]}
     lines = [
         line
         for line in saccer3_hdf5_file_list.read_text().splitlines()
-        if any(md5 in line for md5 in wanted_md5s)
+        if any(sid in line for sid in wanted_signal_ids)
     ]
     out = test_dir / "epirr_hdf5_list.txt"
     out.write_text("\n".join(lines) + "\n")

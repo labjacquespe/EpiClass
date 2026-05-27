@@ -158,7 +158,7 @@ def test_imports() -> None:
         get_valid_filename,
         read_paths,
         write_hdf5_paths_to_file,
-        write_md5s_to_file,
+        write_signal_ids_to_file,
     )
     from epiclass.utils.metadata_utils import (
         DP_ASSAYS,

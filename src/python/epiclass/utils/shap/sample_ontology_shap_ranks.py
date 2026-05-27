@@ -224,16 +224,16 @@ def main():
         rank_data = dict(f.items())
 
     output_classes: List[str] = [pair[1] for pair in rank_data["classes"]]
-    available_md5s: Set[str] = set(rank_data["md5s"])
+    available_signal_ids: Set[str] = set(rank_data["signal_ids"])
     class_to_idx: Dict[str, int] = {
         pair[1]: int(pair[0]) for pair in rank_data["classes"]
     }
 
     # Filter metadata
     print(f"{time_now_str()} - Filtering metadata")
-    for md5 in list(metadata.md5s):
-        if md5 not in available_md5s:
-            del metadata[md5]
+    for sid in list(metadata.signal_ids):
+        if sid not in available_signal_ids:
+            del metadata[sid]
 
     assays: List[str] = metadata.unique_classes(ASSAY)
     cell_types: List[str] = metadata.unique_classes(CELL_TYPE)
@@ -248,11 +248,13 @@ def main():
             f"Number of classes in SHAP npz does not match number of classes in ranks:\nSHAP npz:{len(output_classes)}\nRanks:{len(rank_data['ranks'])}"
         )
 
-    md5_sets = {assay: {cell_type: set() for cell_type in cell_types} for assay in assays}
-    for md5, dset in metadata.items:
+    signal_id_sets = {
+        assay: {cell_type: set() for cell_type in cell_types} for assay in assays
+    }
+    for sid, dset in metadata.items:
         assay = dset[ASSAY]
         cell_type = dset[CELL_TYPE]
-        md5_sets[assay][cell_type].add(md5)
+        signal_id_sets[assay][cell_type].add(sid)
 
     # the following code won't handle rna or wgbs properly because the track type matters more there
     # get avg+stdev rank of each bin for samples in different subsets
@@ -277,11 +279,11 @@ def main():
 
                 for subset_assay in assays:
                     for subset_ct in cell_types:
-                        subset_md5s = md5_sets[subset_assay][subset_ct]
+                        subset_signal_ids = signal_id_sets[subset_assay][subset_ct]
                         samples_idx = [
                             i
-                            for i, md5 in enumerate(rank_data["md5s"])
-                            if md5 in subset_md5s
+                            for i, sid in enumerate(rank_data["signal_ids"])
+                            if sid in subset_signal_ids
                         ]
 
                         for i in samples_idx:
@@ -324,9 +326,11 @@ def main():
 
         all_subset_ranks = {ct: {f: [] for f in features_idx} for ct in cell_types}
         for ct in cell_types:
-            subset_md5s = set(metadata.md5_per_class(CELL_TYPE)[ct])
+            subset_signal_ids = set(metadata.ids_per_class(CELL_TYPE)[ct])
             samples_idx = [
-                i for i, md5 in enumerate(rank_data["md5s"]) if md5 in subset_md5s
+                i
+                for i, sid in enumerate(rank_data["signal_ids"])
+                if sid in subset_signal_ids
             ]
 
             for i in samples_idx:

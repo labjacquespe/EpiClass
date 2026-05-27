@@ -33,7 +33,7 @@ def _make_known(n: int = 10) -> LazyKnownData:
     array = np.array([_mock_signal(i) for i in range(n)], dtype=np.float32)
     y = np.array([i % 2 for i in range(n)])
     y_str = [f"target{i % 2}" for i in range(n)]
-    meta = Metadata.from_dict({id_: {} for id_ in ids}, allow_non_md5sum_index=True)
+    meta = Metadata.from_dict({id_: {} for id_ in ids}, allow_variable_length_id=True)
     return LazyKnownData.from_array(ids, array, y, y_str, meta)
 
 
@@ -365,31 +365,33 @@ class TestCreateTorchDatasetsDispatch:
 
 
 # ---------------------------------------------------------------------------
-# LazyEpiData.oversample_md5s
+# LazyEpiData.oversample_signal_ids
 # ---------------------------------------------------------------------------
 
 
-class TestOversamplMd5s:
-    """LazyEpiData.oversample_md5s is used for training class balancing."""
+class TestOversampleSignalIds:
+    """LazyEpiData.oversample_signal_ids is used for training class balancing."""
 
     def test_balances_classes(self):
-        md5s = ["a"] * 10 + ["b"] * 3
+        signal_ids = ["a"] * 10 + ["b"] * 3
         labels = ["cls_a"] * 10 + ["cls_b"] * 3
-        _, resampled_labels = LazyEpiData.oversample_md5s(md5s, labels)
+        _, resampled_labels = LazyEpiData.oversample_signal_ids(signal_ids, labels)
 
         counts = Counter(resampled_labels)
         assert counts["cls_a"] == counts["cls_b"]
 
     def test_minority_class_duplicated(self):
-        md5s = ["a"] * 5 + ["b"] * 2
+        signal_ids = ["a"] * 5 + ["b"] * 2
         labels = ["cls_a"] * 5 + ["cls_b"] * 2
-        resampled_md5s, resampled_labels = LazyEpiData.oversample_md5s(md5s, labels)
-        assert len(resampled_md5s) == len(resampled_labels)
-        assert len(resampled_md5s) > len(md5s)
+        resampled_ids, resampled_labels = LazyEpiData.oversample_signal_ids(
+            signal_ids, labels
+        )
+        assert len(resampled_ids) == len(resampled_labels)
+        assert len(resampled_ids) > len(signal_ids)
 
     def test_majority_class_unchanged(self):
-        md5s = ["a"] * 10 + ["b"] * 3
+        signal_ids = ["a"] * 10 + ["b"] * 3
         labels = ["cls_a"] * 10 + ["cls_b"] * 3
-        _, resampled_labels = LazyEpiData.oversample_md5s(md5s, labels)
+        _, resampled_labels = LazyEpiData.oversample_signal_ids(signal_ids, labels)
         counts = Counter(resampled_labels)
         assert counts["cls_a"] == 10

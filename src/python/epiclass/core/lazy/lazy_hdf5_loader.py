@@ -43,7 +43,7 @@ class LazyHdf5Loader:
         self._mmap_dir.mkdir(parents=True, exist_ok=True)
 
         self._mmap_array = None
-        self._md5_to_index: Dict[str, int] = {}
+        self._signal_id_to_index: Dict[str, int] = {}
 
     def _get_mmap_path(self) -> Path:
         """Get path for the combined memory-mapped file."""
@@ -52,7 +52,7 @@ class LazyHdf5Loader:
 
     @property
     def loaded_files(self) -> Dict[str, Path]:
-        """Return a {md5:path} dict with registered files."""
+        """Return a {signal_id:path} dict with registered files."""
         return self._files
 
     @property
@@ -74,12 +74,12 @@ class LazyHdf5Loader:
 
     @staticmethod
     def read_list(data_file: Path, adapt: bool = False) -> Dict[str, Path]:
-        """Return {md5:file} dict from file of paths list."""
+        """Return {signal_id:file} dict from file of paths list."""
         with open(data_file, "r", encoding="utf-8") as file_of_paths:
             files = {}
             for path in file_of_paths:
                 path = Path(path.rstrip())
-                files[LazyHdf5Loader.extract_md5(path)] = path
+                files[LazyHdf5Loader.extract_signal_id(path)] = path
         if adapt:
             files = LazyHdf5Loader.adapt_to_environment(files)
         return files
@@ -87,7 +87,7 @@ class LazyHdf5Loader:
     def register_hdf5s(
         self,
         data_file: Path,
-        md5s: List[str] | None = None,
+        signal_ids: List[str] | None = None,
         verbose: bool = True,
         strict: bool = False,
         hdf5_dir: Path | None = None,
@@ -98,7 +98,7 @@ class LazyHdf5Loader:
 
         Args:
             data_file: Path to file containing HDF5 paths
-            md5s: Optional list of specific MD5s to register
+            signal_ids: Optional list of specific signal IDs to register
             verbose: Print validation messages
             strict: Raise error if file cannot be opened
             hdf5_dir: Override directory for HDF5 files
@@ -107,30 +107,30 @@ class LazyHdf5Loader:
         files = LazyHdf5Loader.adapt_to_environment(files)
 
         if hdf5_dir is not None:
-            files = {md5: hdf5_dir / path.name for md5, path in files.items()}
+            files = {sid: hdf5_dir / path.name for sid, path in files.items()}
 
         # Remove undesired files
-        if md5s is not None:
-            chosen_md5s = set(md5s)
-            files = {md5: path for md5, path in files.items() if md5 in chosen_md5s}
+        if signal_ids is not None:
+            chosen_ids = set(signal_ids)
+            files = {sid: path for sid, path in files.items() if sid in chosen_ids}
 
-            absent_md5s = chosen_md5s - set(files.keys())
-            if absent_md5s and verbose:
-                print("Following given md5s are absent of hdf5 list:")
-                for md5 in absent_md5s:
-                    print(md5)
+            absent_ids = chosen_ids - set(files.keys())
+            if absent_ids and verbose:
+                print("Following given signal IDs are absent from hdf5 list:")
+                for sid in absent_ids:
+                    print(sid)
 
         # Validate files can be opened (optional)
         if strict:
             validated_files = {}
-            for md5, file in files.items():
+            for sid, file in files.items():
                 try:
                     with h5py.File(file, "r") as f:
                         # Just check we can open it
                         _ = list(f.keys())
-                    validated_files[md5] = file
+                    validated_files[sid] = file
                 except (OSError, Exception) as err:
-                    print(f"Error with {md5}: {file}. {err}", file=sys.stderr)
+                    print(f"Error with {sid}: {file}. {err}", file=sys.stderr)
                     raise err from None
             files = validated_files
 
@@ -141,12 +141,12 @@ class LazyHdf5Loader:
 
         return self
 
-    def _read_hdf5(self, file: h5py.File, md5: str) -> np.ndarray:
+    def _read_hdf5(self, file: h5py.File, signal_id: str) -> np.ndarray:
         """Read and return concatenated genome signal for open hdf5 file."""
         try:
             header = list(file.keys())[0]
         except IndexError as e:
-            raise OSError(f"Header not found in {md5}") from e
+            raise OSError(f"Header not found in {signal_id}") from e
 
         hdf5_data = file[header]
 
@@ -168,13 +168,13 @@ class LazyHdf5Loader:
         return array
 
     @staticmethod
-    def extract_md5(file_name: Path, verbose: bool = False) -> str:
-        """Extract the md5 string from file path with specific naming convention."""
-        md5 = file_name.name.split("_")[0]
-        if len(md5) != 32:
+    def extract_signal_id(file_name: Path, verbose: bool = False) -> str:
+        """Extract the signal ID from file path with specific naming convention."""
+        signal_id = file_name.name.split("_")[0]
+        if len(signal_id) != 32:
             if verbose:
                 print(
-                    f"Warning: '{file_name}' does not begin with a md5sum.",
+                    f"Warning: '{file_name}' does not begin with a 32-char signal ID.",
                     file=sys.stderr,
                 )
             return file_name.stem
@@ -188,8 +188,8 @@ class LazyHdf5Loader:
 
         if local_tmp.exists():
             print(f"Using files in {local_tmp}")
-            for md5, path in list(files.items()):
-                files[md5] = local_tmp / Path(path).name
+            for sid, path in list(files.items()):
+                files[sid] = local_tmp / Path(path).name
 
         return files
 
@@ -234,10 +234,10 @@ class LazyHdf5Loader:
             self._mmap_array = np.load(mmap_path, mmap_mode=mmap_mode)
         return self._mmap_array
 
-    def load_signal(self, md5: str) -> np.ndarray:
-        """Load a single signal by MD5 from the memory-mapped file."""
-        if md5 not in self._files:
-            raise KeyError(f"MD5 {md5} not registered")
+    def load_signal(self, signal_id: str) -> np.ndarray:
+        """Load a single signal by signal ID from the memory-mapped file."""
+        if signal_id not in self._files:
+            raise KeyError(f"Signal ID {signal_id} not registered")
 
         mmap_path = self._get_mmap_path()
 
@@ -252,11 +252,11 @@ class LazyHdf5Loader:
         if self._mmap_array is None:
             self._mmap_array = np.load(mmap_path, mmap_mode="c")
 
-        if not self._md5_to_index:
+        if not self._signal_id_to_index:
             # Rebuild index mapping from file order
-            self._md5_to_index = {md5: i for i, md5 in enumerate(self._files)}
+            self._signal_id_to_index = {sid: i for i, sid in enumerate(self._files)}
 
-        return self._mmap_array[self._md5_to_index[md5]]
+        return self._mmap_array[self._signal_id_to_index[signal_id]]
 
     def preload_all(self, verbose: bool = True) -> None:
         """Convert all registered HDF5 files to a single mmap .npy file.
@@ -276,9 +276,9 @@ class LazyHdf5Loader:
             raise ValueError("No files registered")
 
         # Determine signal length from first sample
-        first_md5, first_path = next(iter(self._files.items()))
+        first_sid, first_path = next(iter(self._files.items()))
         with h5py.File(first_path, "r") as f:
-            first_signal = self._read_hdf5(f, first_md5)
+            first_signal = self._read_hdf5(f, first_sid)
         first_signal = self._normalize(first_signal)
         signal_length = len(first_signal)
 
@@ -299,8 +299,8 @@ class LazyHdf5Loader:
                 f"({total_bytes / 1e9:.1f} GB)..."
             )
 
-        # Build the ordered list of md5s (this defines the index mapping)
-        self._md5_to_index = {}
+        # Build the ordered list of signal IDs (this defines the index mapping)
+        self._signal_id_to_index = {}
 
         # Create the memory-mapped file and fill it
         mmap_array = np.lib.format.open_memmap(
@@ -311,16 +311,16 @@ class LazyHdf5Loader:
         )
 
         try:
-            for i, (md5, hdf5_path) in enumerate(self._files.items(), 0):
-                self._md5_to_index[md5] = i
+            for i, (sid, hdf5_path) in enumerate(self._files.items(), 0):
+                self._signal_id_to_index[sid] = i
 
                 with h5py.File(hdf5_path, "r") as f:
-                    signal = self._read_hdf5(f, md5)
+                    signal = self._read_hdf5(f, sid)
                 signal = self._normalize(signal)
 
                 if len(signal) != signal_length:
                     raise ValueError(
-                        f"Signal length mismatch for {md5}: "
+                        f"Signal length mismatch for {sid}: "
                         f"expected {signal_length}, got {len(signal)}. "
                         f"File: {hdf5_path}"
                     )

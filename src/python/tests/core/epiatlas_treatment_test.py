@@ -20,7 +20,7 @@ from epiclass.core.lazy.lazy_fold_factory import (
     LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
 )
 from epiclass.core.metadata import Metadata
-from epiclass.utils.general_utility import write_md5s_to_file
+from epiclass.utils.general_utility import write_signal_ids_to_file
 from epiclass.utils.metadata_utils import count_labels_from_dset
 from tests.epilap_test_data import FIXTURES_DIR, EpiAtlasTreatmentTestData
 
@@ -49,14 +49,16 @@ class TestEpiAtlasFoldFactory:
         meta = Metadata(meta_path)
 
         meta.select_category_subsets(target_category, ["female", "male"])
-        md5_per_class = meta.md5_per_class(target_category)
-        md5s = [md5 for md5_list in md5_per_class.values() for md5 in md5_list[:300]]
+        ids_per_class = meta.ids_per_class(target_category)
+        signal_ids = [sid for id_list in ids_per_class.values() for sid in id_list[:300]]
 
-        md5_file = write_md5s_to_file(md5s=md5s, logdir=str(tmp_path), name="big_test")
+        signal_id_file = write_signal_ids_to_file(
+            signal_ids=signal_ids, logdir=str(tmp_path), name="big_test"
+        )
         return EpiAtlasTreatmentTestData(
             metadata_path=meta_path,
             logdir=tmp_path,
-            md5_list_path=md5_file,
+            signal_id_list_path=signal_id_file,
         ).get_ea_handler(label_category=target_category)
 
     @pytest.fixture(scope="class")
@@ -80,7 +82,7 @@ class TestEpiAtlasFoldFactory:
             label_category=target_category,
             min_class_size=1,
             n_fold=2,
-            md5_list=list(metadata.md5s),
+            signal_id_list=list(metadata.signal_ids),
             force_filter=True,
             test_ratio=0,
         )
@@ -91,9 +93,9 @@ class TestEpiAtlasFoldFactory:
         """Remove tracks from metadata."""
         meta = copy.deepcopy(test_metadata)
         for del_track in del_tracks:
-            for md5, dset in list(meta.items):
+            for signal_id, dset in list(meta.items):
                 if dset["track_type"] == del_track:
-                    del meta[md5]
+                    del meta[signal_id]
         return meta
 
     @staticmethod
@@ -114,17 +116,17 @@ class TestEpiAtlasFoldFactory:
             assert total_data.num_examples == len(trains_ids) + len(valid_ids)
 
             # No EpiRR leakage across folds
-            train_epirrs = {dset.train.metadata[md5][EPIRR_LABEL] for md5 in trains_ids}
+            train_epirrs = {dset.train.metadata[sid][EPIRR_LABEL] for sid in trains_ids}
             valid_epirrs = {
-                dset.validation.metadata[md5][EPIRR_LABEL] for md5 in valid_ids
+                dset.validation.metadata[sid][EPIRR_LABEL] for sid in valid_ids
             }
             assert (
                 len(train_epirrs & valid_epirrs) == 0
             ), f"EpiRR leakage: {train_epirrs & valid_epirrs}"
 
             # No UUID leakage (implied by EpiRR grouping, but verify)
-            train_uuids = {dset.train.metadata[md5]["uuid"] for md5 in trains_ids}
-            valid_uuids = {dset.validation.metadata[md5]["uuid"] for md5 in valid_ids}
+            train_uuids = {dset.train.metadata[sid]["uuid"] for sid in trains_ids}
+            valid_uuids = {dset.validation.metadata[sid]["uuid"] for sid in valid_ids}
             assert (
                 len(train_uuids & valid_uuids) == 0
             ), f"UUID leakage: {train_uuids & valid_uuids}"
@@ -158,7 +160,7 @@ class TestEpiAtlasFoldFactory:
             label_category="biomaterial_type",
             min_class_size=2,
             n_fold=3,
-            md5_list=list(meta.md5s),
+            signal_id_list=list(meta.signal_ids),
             force_filter=True,
         )
         for _ in ea_handler.yield_split():
@@ -177,7 +179,7 @@ class TestEpiAtlasFoldFactory:
             label_category="biomaterial_type",
             min_class_size=2,
             n_fold=3,
-            md5_list=list(meta.md5s),
+            signal_id_list=list(meta.signal_ids),
             force_filter=True,
             test_ratio=0,
         )
@@ -210,7 +212,7 @@ class TestEpiAtlasFoldFactory:
             assert total_size == train_unique_size + valid_unique_size
 
             track_type_counter = Counter(
-                [meta[md5]["track_type"] for md5 in dset.validation.ids]
+                [meta[sid]["track_type"] for sid in dset.validation.ids]
             )
             valid_raw_sum += track_type_counter["raw"]
 
@@ -259,10 +261,10 @@ class TestEpiAtlasFoldFactory:
         for dset in test_data.yield_split(oversample=True):
             # EpiRR constraint still holds after oversampling
             train_epirrs = {
-                dset.train.metadata[md5][EPIRR_LABEL] for md5 in dset.train.ids
+                dset.train.metadata[sid][EPIRR_LABEL] for sid in dset.train.ids
             }
             valid_epirrs = {
-                dset.validation.metadata[md5][EPIRR_LABEL] for md5 in dset.validation.ids
+                dset.validation.metadata[sid][EPIRR_LABEL] for sid in dset.validation.ids
             }
             assert (
                 len(train_epirrs & valid_epirrs) == 0
@@ -271,12 +273,12 @@ class TestEpiAtlasFoldFactory:
             # Oversampled training set should be >= original
             assert dset.train.num_examples >= dset.validation.num_examples
 
-            # Oversampling duplicates whole UUIDs, so every md5 in training
+            # Oversampling duplicates whole UUIDs, so every signal ID in training
             # should still have all its UUID-siblings present
             train_ids_list = list(dset.train.ids)
-            for md5 in dset.train.ids:
-                uuid = dset.train.metadata[md5]["uuid"]
-                # All md5s sharing this UUID that appear in training
+            for sid in dset.train.ids:
+                uuid = dset.train.metadata[sid]["uuid"]
+                # All signal IDs sharing this UUID that appear in training
                 # should appear the same number of times (they're duplicated as a group)
                 siblings = [
                     m for m in train_ids_list if dset.train.metadata[m]["uuid"] == uuid

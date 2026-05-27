@@ -47,7 +47,7 @@ def fixture_dummy_datasets():
         for md5, label in zip(train_ids + val_ids, train_y_str + val_y_str)
     }
 
-    metadata = Metadata.from_dict(meta, allow_non_md5sum_index=True)
+    metadata = Metadata.from_dict(meta, allow_variable_length_id=True)
 
     train_data = LazyKnownData.from_array(
         train_ids, train_x, train_y, train_y_str, metadata

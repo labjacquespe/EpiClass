@@ -154,7 +154,7 @@ class Analysis:
                 for val in torch.argmax(preds, dim=-1)
             ],
             str_targets=str_targets,
-            md5s=self._ids_dict[name],
+            signal_ids=self._ids_dict[name],
             classes=self._classes,
             path=path,
         )
@@ -252,17 +252,17 @@ class Analysis:
 
 
 # TODO: Insert "ID" in header, and make sure subsequent script use that (e.g. the bash one liner, for sorting)
-def write_pred_table(predictions, str_preds, str_targets, md5s, classes, path):
+def write_pred_table(predictions, str_preds, str_targets, signal_ids, classes, path):
     """Write to "path" a csv containing class probability predictions.
 
     pred : Prediction vectors
     str_preds : List of predictions, but in string form
     str_targets : List of corresponding targets, but in string form
-    md5s : List of corresponding md5s
+    signal_ids : List of corresponding signal IDs
     classes : Ordered list of the output classes
     path : Where to write the file
     """
-    df = pd.DataFrame(data=predictions, index=md5s, columns=classes)
+    df = pd.DataFrame(data=predictions, index=signal_ids, columns=classes)
 
     df.insert(loc=0, column="True class", value=str_targets)
     df.insert(loc=1, column="Predicted class", value=str_preds)

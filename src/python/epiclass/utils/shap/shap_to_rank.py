@@ -35,12 +35,12 @@ def process_split(
 
     Returns:
         split_ranks (List[np.ndarray]): List of SHAP rank matrices for each class.
-        eval_md5s (List[str]): List of evaluation md5s.
+        eval_signal_ids (List[str]): List of evaluation signal IDs.
         classes (List[Tuple[str, str]]): List of (class_idx, class_name) tuples.
     """
     split_name = folder.parent.name
     print(f"Processing {split_name}")
-    shap_matrices, eval_md5s, classes = extract_shap_values_and_info(
+    shap_matrices, eval_signal_ids, classes = extract_shap_values_and_info(
         folder, verbose=False
     )
 
@@ -51,7 +51,7 @@ def process_split(
         del shap_matrix
 
     del shap_matrices
-    return split_ranks, eval_md5s, classes
+    return split_ranks, eval_signal_ids, classes
 
 
 def main(parent_folder: Path | None = None):  # type: ignore
@@ -62,14 +62,14 @@ def main(parent_folder: Path | None = None):  # type: ignore
     print(f"Collecting SHAP values from: {parent_folder}")
 
     all_classes = None
-    all_md5s: List = []
+    all_signal_ids: List = []
     concat_ranks: List = []
 
     for folder in sorted(parent_folder.glob("split*/shap")):
         if not folder.is_dir():
             continue
 
-        split_ranks, eval_md5s, classes = process_split(folder)
+        split_ranks, eval_signal_ids, classes = process_split(folder)
 
         if all_classes is None:
             all_classes = classes
@@ -77,7 +77,7 @@ def main(parent_folder: Path | None = None):  # type: ignore
         elif not np.array_equal(all_classes, classes):
             raise ValueError("Classes differ between splits")
 
-        all_md5s.extend(eval_md5s)
+        all_signal_ids.extend(eval_signal_ids)
 
         for class_idx, rank_matrix in enumerate(split_ranks):
             concat_ranks[class_idx].append(rank_matrix)
@@ -88,9 +88,9 @@ def main(parent_folder: Path | None = None):  # type: ignore
     for class_idx in range(len(all_classes)):  # type: ignore
         concat_ranks[class_idx] = np.concatenate(concat_ranks[class_idx], axis=0)
 
-    # Sanity check md5s
-    if len(all_md5s) != len(set(all_md5s)):
-        raise ValueError("Some evaluation md5s are duplicated between splits")
+    # Sanity check signal IDs
+    if len(all_signal_ids) != len(set(all_signal_ids)):
+        raise ValueError("Some evaluation signal IDs are duplicated between splits")
 
     # Save new combined archive
     output_folder = parent_folder / "shap_ranks"
@@ -100,7 +100,7 @@ def main(parent_folder: Path | None = None):  # type: ignore
     np.savez_compressed(
         file=output_file,
         ranks=np.array(concat_ranks),
-        md5s=np.array(all_md5s),
+        signal_ids=np.array(all_signal_ids),
         classes=np.array(all_classes),
     )
 

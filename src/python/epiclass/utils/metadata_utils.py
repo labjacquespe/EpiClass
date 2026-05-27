@@ -170,8 +170,8 @@ def count_labels_from_dset(dset: LazyKnownData, label_category: str, from_uuid):
     id_label = "uuid" if from_uuid else "md5sum"
     meta = dset.metadata
 
-    for md5 in dset.ids:
-        sample_meta = meta[md5]
+    for sid in dset.ids:
+        sample_meta = meta[sid]
         label = sample_meta.get(label_category, "--empty--")
         label_samples[label].append(sample_meta[id_label])
 

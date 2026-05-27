@@ -19,7 +19,7 @@ import pandas as pd
 
 class Metadata:
     """
-    Wrapper around metadata md5:dataset dict.
+    Wrapper around metadata signal_id:dataset dict.
 
     path (Path): Path to json file containing metadata for some datasets.
     """
@@ -30,15 +30,15 @@ class Metadata:
 
     @classmethod
     def from_dict(
-        cls, metadata: Dict[str, dict], allow_non_md5sum_index: bool = False
+        cls, metadata: Dict[str, dict], allow_variable_length_id: bool = False
     ) -> Metadata:
-        """Creates an object from a dict conforming to {md5sum:dset} format."""
+        """Creates an object from a dict conforming to {signal_id:dset} format."""
         first_key = list(metadata.keys())[0]
         if len(first_key) != 32:
-            message = f"Incorrect format of metadata. Key need to be md5sum (len=32). First key is: {first_key}"
-            if not allow_non_md5sum_index:
+            message = f"Unexpected signal ID format (expected 32-char string). First key is: {first_key}"
+            if not allow_variable_length_id:
                 raise ValueError(
-                    f"Incorrect format of metadata. Key need to be md5sum (len=32). First key is: {first_key}"
+                    f"Unexpected signal ID format (expected 32-char string). First key is: {first_key}"
                 )
             print(message, file=sys.stderr)
 
@@ -56,7 +56,7 @@ class Metadata:
         first_key = list(metadata_dict.keys())[0]
         if len(first_key) != 32:
             raise ValueError(
-                f"Incorrect format of metadata. Key need to be md5sum (len=32). Is: {first_key}"
+                f"Unexpected signal ID format (expected 32-char string). Is: {first_key}"
             )
 
         obj = cls.__new__(cls)
@@ -68,17 +68,17 @@ class Metadata:
         """Remove all entries."""
         self._metadata = {}
 
-    def __setitem__(self, md5, value):
-        self._metadata[md5] = value
+    def __setitem__(self, signal_id, value):
+        self._metadata[signal_id] = value
 
-    def __getitem__(self, md5):
-        return self._metadata[md5]
+    def __getitem__(self, signal_id):
+        return self._metadata[signal_id]
 
-    def __delitem__(self, md5):
-        del self._metadata[md5]
+    def __delitem__(self, signal_id):
+        del self._metadata[signal_id]
 
-    def __contains__(self, md5):
-        return md5 in self._metadata
+    def __contains__(self, signal_id):
+        return signal_id in self._metadata
 
     def __len__(self):
         return len(self._metadata)
@@ -88,12 +88,12 @@ class Metadata:
             return self._metadata == other._metadata and self._rest == other._rest
         return False
 
-    def get(self, md5, default=None) -> Dict | None:
+    def get(self, signal_id, default=None) -> Dict | None:
         """Dict .get"""
-        return self._metadata.get(md5, default)
+        return self._metadata.get(signal_id, default)
 
     def update(self, info: Metadata) -> None:
-        """Dict .update equivalent. Info needs to respect {md5sum:dset} format."""
+        """Dict .update equivalent. Info needs to respect {signal_id:dset} format."""
         self._metadata.update(info.items)
 
     def save(self, path) -> None:
@@ -101,8 +101,8 @@ class Metadata:
         self._save_metadata(path)
 
     @property
-    def md5s(self) -> KeysView:
-        """Return a md5s view (like dict.keys())."""
+    def signal_ids(self) -> KeysView:
+        """Return a signal IDs view (like dict.keys())."""
         return self._metadata.keys()
 
     @property
@@ -112,7 +112,7 @@ class Metadata:
 
     @property
     def items(self) -> ItemsView:
-        """Return a (md5,datasets) view (like dict.items())."""
+        """Return a (signal_id, datasets) view (like dict.items())."""
         return self._metadata.items()
 
     def to_df(self):
@@ -124,7 +124,7 @@ class Metadata:
         return df
 
     def _load_metadata(self, path):
-        """Return md5:dataset dict."""
+        """Return signal_id:dataset dict."""
         with open(path, "r", encoding="utf-8") as file:
             meta_raw = json.load(file)
 
@@ -142,7 +142,7 @@ class Metadata:
             json.dump(to_save, file)
 
     def apply_filter(self, meta_filter=lambda item: True):
-        """Apply a filter on items (md5:dataset)."""
+        """Apply a filter on items (signal_id:dataset)."""
         self._metadata = dict(filter(meta_filter, self.items))
 
     def remove_missing_labels(self, label_category: str):
@@ -150,16 +150,16 @@ class Metadata:
         filt = lambda item: label_category in item[1]
         self.apply_filter(filt)  # type: ignore
 
-    def md5_per_class(self, label_category: str) -> Dict[str, List[str]]:
-        """Return {label/class:md5 list} dict for a given metadata category.
+    def ids_per_class(self, label_category: str) -> Dict[str, List[str]]:
+        """Return {label/class: signal_id list} dict for a given metadata category.
 
         Can fail if remove_missing_labels has not been ran before.
         """
-        sorted_md5 = sorted(self.md5s)
+        sorted_ids = sorted(self.signal_ids)
         data = defaultdict(list)
-        for md5 in sorted_md5:
-            label = self[md5][label_category]
-            data[label].append(md5)
+        for signal_id in sorted_ids:
+            label = self[signal_id][label_category]
+            data[label].append(signal_id)
         return data
 
     def remove_small_classes(
@@ -170,15 +170,15 @@ class Metadata:
 
         Returns string of class ratio left if verbose.
         """
-        data = self.md5_per_class(label_category)
+        data = self.ids_per_class(label_category)
         nb_class = len(data)
 
         nb_removed_class = 0
         for label, size in self.label_counter(label_category).most_common():
             if size < min_class_size:
                 nb_removed_class += 1
-                for md5 in data[label]:
-                    del self[md5]
+                for signal_id in data[label]:
+                    del self[signal_id]
 
         if verbose:
             remaining = nb_class - nb_removed_class
@@ -242,20 +242,20 @@ class Metadata:
 
     def unique_classes(self, label_category: str) -> List[str]:
         """Return sorted list of unique classes currently existing for the given category."""
-        sorted_md5 = sorted(self.md5s)
+        sorted_ids = sorted(self.signal_ids)
         uniq = set()
-        for md5 in sorted_md5:
-            val = self[md5].get(label_category)
+        for signal_id in sorted_ids:
+            val = self[signal_id].get(label_category)
 
             # Everything should be a string, this was added because there was a bug with a nan object treated as a float
             if not isinstance(val, str):
                 print(
-                    f"md5: {md5} has non-string label of type {type(val)}: {val}",
+                    f"signal_id: {signal_id} has non-string label of type {type(val)}: {val}",
                     file=sys.stderr,
                 )
-                raise ValueError(f"Non-string label for {label_category} at {md5}.")
+                raise ValueError(f"Non-string label for {label_category} at {signal_id}.")
 
-            uniq.add(self[md5].get(label_category))
+            uniq.add(self[signal_id].get(label_category))
         uniq.discard(None)
         return sorted(list(uniq))
 
@@ -295,15 +295,15 @@ class UUIDMetadata(Metadata):
 
     @classmethod
     def from_dict(
-        cls, metadata: Dict[str, dict], allow_non_md5sum_index: bool = False
+        cls, metadata: Dict[str, dict], allow_variable_length_id: bool = False
     ) -> UUIDMetadata:
-        """Creates an object from a dict conforming to {md5sum:dset} format."""
+        """Creates an object from a dict conforming to {signal_id:dset} format."""
         first_key = list(metadata.keys())[0]
         if len(first_key) != 32:
-            message = f"Incorrect format of metadata. Key need to be md5sum (len=32). First key is: {first_key}"
-            if not allow_non_md5sum_index:
+            message = f"Unexpected signal ID format (expected 32-char string). First key is: {first_key}"
+            if not allow_variable_length_id:
                 raise ValueError(
-                    f"Incorrect format of metadata. Key need to be md5sum (len=32). First key is: {first_key}"
+                    f"Unexpected signal ID format (expected 32-char string). First key is: {first_key}"
                 )
             print(message, file=sys.stderr)
 
@@ -327,7 +327,7 @@ class UUIDMetadata(Metadata):
         first_key = list(metadata_dict.keys())[0]
         if len(first_key) != 32:
             raise ValueError(
-                f"Incorrect format of metadata. Key need to be md5sum (len=32). Is: {first_key}"
+                f"Unexpected signal ID format (expected 32-char string). Is: {first_key}"
             )
 
         obj = cls.__new__(cls)
@@ -346,10 +346,10 @@ class UUIDMetadata(Metadata):
         Can fail if remove_missing_labels has not been ran before.
         """
         uuid_dict = defaultdict(set)
-        for md5 in self._metadata:
-            track_type = self._metadata[md5]["track_type"]
-            label = self._metadata[md5][label_category]
-            uuid = self._metadata[md5]["uuid"]
+        for signal_id in self._metadata:
+            track_type = self._metadata[signal_id]["track_type"]
+            label = self._metadata[signal_id][label_category]
+            uuid = self._metadata[signal_id]["uuid"]
 
             # Special case for ctl_raw, same uuid as other tracks, but counts as unique experiment
             if track_type == "ctl_raw":
@@ -384,13 +384,13 @@ class UUIDMetadata(Metadata):
             f"For {sum(uuid_counter.values())} unique experiments in {len(uuid_dict)} classes\n"
         )
 
-    def uuid_to_md5(self) -> Dict[str, Dict[str, str]]:
-        """Return uuid to {track_type:md5} mapping { uuid : {track_type1:md5sum, track_type2:md5sum, ...} }"""
-        uuid_to_md5s = defaultdict(dict)
+    def uuid_to_signal_ids(self) -> Dict[str, Dict[str, str]]:
+        """Return uuid to {track_type:signal_id} mapping { uuid : {track_type1:signal_id, track_type2:signal_id, ...} }"""
+        uuid_to_ids = defaultdict(dict)
         for dset in self.datasets:
             uuid = dset["uuid"]
-            uuid_to_md5s[uuid].update({dset["track_type"]: dset["md5sum"]})
-        return uuid_to_md5s
+            uuid_to_ids[uuid].update({dset["track_type"]: dset["md5sum"]})
+        return uuid_to_ids
 
     def remove_small_classes(
         self,
@@ -402,25 +402,25 @@ class UUIDMetadata(Metadata):
         """Remove classes with less than min_class_size examples
         for a given metadata category.
 
-        Counts unique uuids if using_uuid=True, else counts md5s.
+        Counts unique uuids if using_uuid=True, else counts signal IDs.
 
         Returns string of class ratio left if verbose.
         """
         nb_class_init = len(self.unique_classes(label_category))
 
         if not using_uuid:
-            md5_per_class = self.md5_per_class(label_category)
+            ids_per_class = self.ids_per_class(label_category)
             for label, size in self.label_counter(label_category).most_common():
                 if size < min_class_size:
-                    for md5 in md5_per_class[label]:
-                        del self[md5]
+                    for signal_id in ids_per_class[label]:
+                        del self[signal_id]
         else:
-            uuid_to_md5s = self.uuid_to_md5()
+            uuid_to_ids = self.uuid_to_signal_ids()
             for label, uuids in self.uuid_per_class(label_category).items():
                 if len(uuids) < min_class_size:
                     for uuid in uuids:
-                        for md5 in uuid_to_md5s[uuid].values():
-                            del self[md5]
+                        for signal_id in uuid_to_ids[uuid].values():
+                            del self[signal_id]
 
         if verbose:
             remaining = len(self.unique_classes(label_category))

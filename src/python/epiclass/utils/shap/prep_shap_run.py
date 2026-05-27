@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import copy
-import importlib.resources as resources
 import itertools
 import os
 import random
@@ -12,6 +11,7 @@ import shutil
 import sys
 import tarfile
 from collections import defaultdict
+from importlib import resources
 from pathlib import Path
 from typing import Iterable, List, Tuple
 
@@ -37,7 +37,7 @@ def select_datasets(metadata: Metadata, n=3, seed=42) -> List[str]:
     - seed (int, optional): The seed to use for random sampling. Defaults to 42.
 
     Returns:
-    - List[str]: A list of md5 hashes representing the randomly selected datasets.
+    - List[str]: A list of signal IDs representing the randomly selected datasets.
 
     Note:
     - If a trio has fewer than 'n' datasets, all datasets for that trio are included.
@@ -45,16 +45,16 @@ def select_datasets(metadata: Metadata, n=3, seed=42) -> List[str]:
     random.seed(seed)
 
     trio_files = defaultdict(list)
-    for md5sum, dset in metadata.items:
+    for signal_id, dset in metadata.items:
         trio = (dset["track_type"], dset[ASSAY], dset[CELL_TYPE])
-        trio_files[trio].append(md5sum)
+        trio_files[trio].append(signal_id)
 
-    sampled_md5s = list(
+    sampled_signal_ids = list(
         itertools.chain.from_iterable(
-            [random.sample(md5_list, n) for md5_list in trio_files.values()]
+            [random.sample(id_list, n) for id_list in trio_files.values()]
         )
     )
-    return sampled_md5s
+    return sampled_signal_ids
 
 
 def evaluate_background_ratios(
@@ -75,26 +75,28 @@ def evaluate_background_ratios(
     Args:
     - category (str): The category of class to analyze.
     - metadata (Metadata): The metadata object containing dataset information.
-    - training_md5s (List[str]): List of md5 hashes representing the training datasets.
+    - training_md5s (List[str]): List of signal IDs representing the training datasets.
     - n_samples_list (List[int]): List of sampling sizes to evaluate.
     - verbose (bool, optional): If True, prints detailed logs during processing. Defaults to True.
 
     Returns:
-    - List[str]: List of md5 hashes representing the best background datasets based on minimal ratio difference.
+    - List[str]: List of signal IDs representing the best background datasets based on minimal ratio difference.
     - int: Sampling size used to select the best background datasets.
     """
     training_metadata = copy.deepcopy(metadata)
-    training_md5s_set = set(training_md5s)
-    for md5 in list(training_metadata.md5s):
-        if md5 not in training_md5s_set:
-            del training_metadata[md5]
+    training_signal_ids_set = set(training_md5s)
+    for sid in list(training_metadata.signal_ids):
+        if sid not in training_signal_ids_set:
+            del training_metadata[sid]
 
-    trios_md5_dict = defaultdict(list)
+    trios_signal_id_dict = defaultdict(list)
     for dset in training_metadata.datasets:
-        trios_md5_dict[(dset[ASSAY], dset[CELL_TYPE], dset[TRACK])].append(dset["md5sum"])
+        trios_signal_id_dict[(dset[ASSAY], dset[CELL_TYPE], dset[TRACK])].append(
+            dset["md5sum"]
+        )
 
     if verbose:
-        print(f"{len(trios_md5_dict)} entries/trios")
+        print(f"{len(trios_signal_id_dict)} entries/trios")
 
     training_label_counter = training_metadata.label_counter(category, verbose=False)
     total_training = sum(training_label_counter.values())
@@ -104,14 +106,14 @@ def evaluate_background_ratios(
     best_n_per_trio = 666
     for n_per_trio in n_samples_list:
         meta = copy.deepcopy(training_metadata)
-        background_md5s = set()
-        for _, md5s in trios_md5_dict.items():
-            background_md5s.update(md5s[0:n_per_trio])
+        background_signal_ids = set()
+        for _, ids in trios_signal_id_dict.items():
+            background_signal_ids.update(ids[0:n_per_trio])
 
-        # Remove md5s not in the background from meta
-        for md5 in list(meta.md5s):
-            if md5 not in background_md5s:
-                del meta[md5]
+        # Remove signal IDs not in the background from meta
+        for sid in list(meta.signal_ids):
+            if sid not in background_signal_ids:
+                del meta[sid]
 
         if verbose:
             print(f"\nn_per_trio: {n_per_trio}")
@@ -142,7 +144,7 @@ def evaluate_background_ratios(
     if verbose:
         print(f"\nbest_diff (n={best_n_per_trio}): {best_diff:.3f}")
 
-    return list(best_background.md5s), best_n_per_trio
+    return list(best_background.signal_ids), best_n_per_trio
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -217,27 +219,27 @@ def main():
     for split_folder in split_folders:
         split_nb = int(split_folder.name.split("split")[-1])
 
-        # Find training and valid md5s
-        training_md5_path = list(split_folder.glob(f"split{split_nb}_training_*.md5"))
-        if len(training_md5_path) != 1:
-            raise ValueError(f"Invalid training_md5_path: {training_md5_path}")
-        training_md5_path = training_md5_path[0]
+        # Find training and valid signal ID lists
+        training_id_path = list(split_folder.glob(f"split{split_nb}_training_*.md5"))
+        if len(training_id_path) != 1:
+            raise ValueError(f"Invalid training_id_path: {training_id_path}")
+        training_id_path = training_id_path[0]
 
-        valid_md5_path = list(split_folder.glob(f"split{split_nb}_validation_*.md5"))
-        if len(valid_md5_path) != 1:
-            raise ValueError(f"Invalid valid_md5_path: {valid_md5_path}")
-        valid_md5_path = valid_md5_path[0]
+        valid_id_path = list(split_folder.glob(f"split{split_nb}_validation_*.md5"))
+        if len(valid_id_path) != 1:
+            raise ValueError(f"Invalid valid_id_path: {valid_id_path}")
+        valid_id_path = valid_id_path[0]
 
-        with open(training_md5_path, "r", encoding="utf8") as f:
-            training_md5 = set(f.read().splitlines())
-        with open(valid_md5_path, "r", encoding="utf8") as f:
-            valid_md5 = set(f.read().splitlines())
+        with open(training_id_path, "r", encoding="utf8") as f:
+            training_signal_ids = set(f.read().splitlines())
+        with open(valid_id_path, "r", encoding="utf8") as f:
+            valid_signal_ids = set(f.read().splitlines())
 
         # Find best background selection
-        best_background_md5s, best_n_per_trio = evaluate_background_ratios(
+        best_background_signal_ids, best_n_per_trio = evaluate_background_ratios(
             category=category,
             metadata=metadata,
-            training_md5s=training_md5,
+            training_md5s=training_signal_ids,
             n_samples_list=sampling_sizes,
             verbose=True,
         )
@@ -257,7 +259,7 @@ def main():
             continue
 
         write_hdf5_paths_to_file(
-            md5s=sorted(best_background_md5s),
+            signal_ids=sorted(best_background_signal_ids),
             parent=".",
             suffix=hdf5_suffix,
             filepath=background_filename,
@@ -273,7 +275,7 @@ def main():
             continue
 
         write_hdf5_paths_to_file(
-            md5s=sorted(valid_md5),
+            signal_ids=sorted(valid_signal_ids),
             parent=".",
             suffix=hdf5_suffix,
             filepath=eval_filename,

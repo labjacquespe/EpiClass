@@ -109,7 +109,7 @@ class LazyEpiData:
             mmap_dir=mmap_dir,
         )
         self._loader.register_hdf5s(
-            datasource.hdf5_file, md5s=list(self._files.keys()), strict=True
+            datasource.hdf5_file, signal_ids=list(self._files.keys()), strict=True
         )
         # Convert registered HDF5s to a single memory-mapped .npy file.
         # Skips if the file already exists (idempotent).
@@ -148,14 +148,14 @@ class LazyEpiData:
         return metadata
 
     def _keep_meta_overlap(self):
-        self._remove_md5_without_hdf5()
-        self._remove_hdf5_without_md5()
+        self._remove_signals_without_hdf5()
+        self._remove_hdf5_without_signals()
 
-    def _remove_md5_without_hdf5(self):
+    def _remove_signals_without_hdf5(self):
         self._metadata.apply_filter(lambda item: item[0] in self._files)
 
-    def _remove_hdf5_without_md5(self):
-        self._files = {md5: self._files[md5] for md5 in self._metadata.md5s}
+    def _remove_hdf5_without_signals(self):
+        self._files = {sid: self._files[sid] for sid in self._metadata.signal_ids}
 
     @staticmethod
     def _create_onehot_dict(classes: List[str]) -> dict:
@@ -188,10 +188,10 @@ class LazyEpiData:
 
         return to_int
 
-    def _split_md5s(self, validation_ratio, test_ratio):
-        """Return md5s for each set, according to given ratios."""
+    def _split_signal_ids(self, validation_ratio, test_ratio):
+        """Return signal IDs for each set, according to given ratios."""
         size_all_dict = self._metadata.label_counter(self._label_category)
-        data = self._metadata.md5_per_class(self._label_category)
+        data = self._metadata.ids_per_class(self._label_category)
 
         for label, size in size_all_dict.items():
             if size < 3:
@@ -211,7 +211,7 @@ class LazyEpiData:
         split_index_dict.update(size_test_dict)
 
         def slice_data(begin={}, end={}):  # pylint: disable=dangerous-default-value
-            """Will grab the indexes from the dicts and return md5 slices.
+            """Will grab the indexes from the dicts and return signal ID slices.
             No end means: [i:None]=[i:]=slice from i to end.
             """
             return sum(
@@ -222,37 +222,37 @@ class LazyEpiData:
                 [],
             )
 
-        validation_md5s = slice_data(end=size_validation_dict)
-        test_md5s = slice_data(begin=size_validation_dict, end=split_index_dict)
-        train_md5s = slice_data(begin=split_index_dict)
+        validation_ids = slice_data(end=size_validation_dict)
+        test_ids = slice_data(begin=size_validation_dict, end=split_index_dict)
+        train_ids = slice_data(begin=split_index_dict)
 
-        assert len(self._metadata.md5s) == len(
-            set(sum([train_md5s, validation_md5s, test_md5s], []))
+        assert len(self._metadata.signal_ids) == len(
+            set(sum([train_ids, validation_ids, test_ids], []))
         )
 
-        return [train_md5s, validation_md5s, test_md5s]
+        return [train_ids, validation_ids, test_ids]
 
     def _split_data(self, validation_ratio, test_ratio, encoder):
         """Split data into three sets WITHOUT loading signals.
 
-        Key difference from old version: We only store MD5s and metadata,
+        Key difference from old version: We only store signal IDs and metadata,
         not the actual signals.
         """
-        train_md5s, validation_md5s, test_md5s = self._split_md5s(
+        train_ids, validation_ids, test_ids = self._split_signal_ids(
             validation_ratio, test_ratio
         )
 
         # Get labels for each set
-        train_labels = [self._metadata[md5][self._label_category] for md5 in train_md5s]
+        train_labels = [self._metadata[sid][self._label_category] for sid in train_ids]
         validation_labels = [
-            self._metadata[md5][self._label_category] for md5 in validation_md5s
+            self._metadata[sid][self._label_category] for sid in validation_ids
         ]
-        test_labels = [self._metadata[md5][self._label_category] for md5 in test_md5s]
+        test_labels = [self._metadata[sid][self._label_category] for sid in test_ids]
 
-        # Handle oversampling (only affects MD5 list, not loaded data)
+        # Handle oversampling (only affects signal ID list, not loaded data)
         if self._oversample:
-            train_md5s, train_labels = LazyEpiData.oversample_md5s(
-                train_md5s, train_labels
+            train_ids, train_labels = LazyEpiData.oversample_signal_ids(
+                train_ids, train_labels
             )
 
         # Encode labels
@@ -262,17 +262,17 @@ class LazyEpiData:
 
         # Create lazy data objects (no signal loading!)
         self._train = LazyKnownData(
-            train_md5s, self._loader, encoded_labels[0], train_labels, self._metadata
+            train_ids, self._loader, encoded_labels[0], train_labels, self._metadata
         )
         self._validation = LazyKnownData(
-            validation_md5s,
+            validation_ids,
             self._loader,
             encoded_labels[1],
             validation_labels,
             self._metadata,
         )
         self._test = LazyKnownData(
-            test_md5s, self._loader, encoded_labels[2], test_labels, self._metadata
+            test_ids, self._loader, encoded_labels[2], test_labels, self._metadata
         )
 
         print(f"training size {len(train_labels)}")
@@ -280,19 +280,19 @@ class LazyEpiData:
         print(f"test size {len(test_labels)}")
 
     @staticmethod
-    def oversample_md5s(md5s: List[str], labels: List[str]):
-        """Oversample MD5s (not signals) to balance classes.
+    def oversample_signal_ids(signal_ids: List[str], labels: List[str]):
+        """Oversample signal IDs (not signals) to balance classes.
 
         This is much more memory efficient than oversampling loaded signals.
         """
         # Need to reshape for sklearn
-        md5s_array = np.array(md5s).reshape(-1, 1)
+        ids_array = np.array(signal_ids).reshape(-1, 1)
 
         ros = RandomOverSampler(random_state=42)
-        md5s_resampled, labels_resampled = ros.fit_resample(md5s_array, labels)
+        ids_resampled, labels_resampled = ros.fit_resample(ids_array, labels)
 
         # Flatten back to list
-        md5s_resampled = md5s_resampled.flatten().tolist()
+        ids_resampled = ids_resampled.flatten().tolist()
         labels_resampled = list(labels_resampled)
 
-        return md5s_resampled, labels_resampled
+        return ids_resampled, labels_resampled

@@ -117,7 +117,7 @@ class NN_SHAP_Handler:
         if save:
             self.saver.save_to_npz(
                 name=name + "_explainer_background",
-                background_md5s=background_dset.ids,
+                background_ids=background_dset.ids,
                 background_expectation=explainer.expected_value,  # type: ignore
                 classes=self.model_classes,
             )
@@ -134,7 +134,7 @@ class NN_SHAP_Handler:
         if save:
             self.saver.save_to_npz(
                 name=name + "_evaluation",
-                evaluation_md5s=evaluation_dset.ids,
+                evaluation_ids=evaluation_dset.ids,
                 shap_values=shap_values,
                 classes=self.model_classes,
             )
