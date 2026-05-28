@@ -97,6 +97,14 @@ pylint --rcfile=src/python/pyproject.toml --recursive=y -sn <paths>
 pre-commit run --files src/python/.../some_notebook.ipynb
 ```
 
+**Filter pre-commit output.** The default output is mostly `Passed` /
+`Skipped` lines — noisy and wastes context. Pipe through
+`grep -Ev '(Passed|Skipped)'` so only failures and the summary remain:
+
+```bash
+pre-commit run --files <paths> 2>&1 | grep -Ev '(Passed|Skipped)'
+```
+
 `pre-commit run --files ...` also exercises isort, black, nbqa, and the
 file-hygiene hooks — catches everything the commit will catch, without
 having to actually attempt the commit.
