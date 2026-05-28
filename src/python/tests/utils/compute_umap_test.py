@@ -7,6 +7,10 @@ import pytest
 from epiclass.utils.embedding.compute_umap import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR
 
+pytestmark = pytest.mark.filterwarnings(
+    r"ignore:n_jobs value 1 overridden to 1 by setting random_state.*:UserWarning"
+)
+
 
 @pytest.fixture(name="test_dir")
 def fixture_test_dir(mk_logdir) -> Path:

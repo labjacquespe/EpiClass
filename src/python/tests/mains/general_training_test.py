@@ -23,6 +23,7 @@ def fixture_test_dir(mk_logdir) -> Path:
 @pytest.mark.filterwarnings(
     "ignore:The 'train_dataloader' does not have many workers.*:UserWarning"
 )
+@pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
 def test_cross_validation_training(
     test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
@@ -45,7 +46,7 @@ def test_cross_validation_training(
         str(metadata),
         str(test_dir),
         "--n_fold", "2",
-        "--hl_units", "500",
+        "--hl_units", "10",
         "--min_class_size", "10",
     ]
     # fmt: on
