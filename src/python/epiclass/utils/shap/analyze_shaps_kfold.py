@@ -44,6 +44,27 @@ ASSAY = "assay_epiclass"
 TRACK = "track_type"
 
 
+def _persist_important_features(
+    json_path: Path,
+    important_features: Dict[str, Dict],
+    overwrite: bool,
+) -> None:
+    """Write important_features to json_path, merging with the existing file when not overwriting.
+
+    JSON only supports string keys, so new entries are roundtripped through
+    json so that percentile keys are stringified consistently with whatever
+    was already on disk.
+    """
+    if not overwrite and json_path.is_file():
+        with open(json_path, "r", encoding="utf8") as json_file:
+            merged: Dict[str, Dict] = json.load(json_file)
+    else:
+        merged = {}
+    merged.update(json.loads(json.dumps(important_features)))
+    with open(json_path, "w", encoding="utf8") as json_file:
+        json.dump(merged, json_file, indent=4)
+
+
 def analyze_shap_fold(
     extract_shap_values_and_info_output: Tuple[
         np.ndarray, List[str], List[Tuple[str, str]]
@@ -172,11 +193,14 @@ def analyze_shap_fold(
             verbose=True,
         )
 
-    # Save important features for all classes as json
-    # TODO: FIX THIS, DO NOT OVERWRITE OLD JSON
-    json_path = output_folder / "important_features.json"
-    with open(json_path, "w", encoding="utf8") as json_file:
-        json.dump(important_features, json_file, indent=4)
+    # Save important features for all classes as json.
+    # Merge with any pre-existing file so classes skipped this run
+    # (already-present BED file, or too-few-samples) keep their prior entries.
+    _persist_important_features(
+        json_path=output_folder / "important_features.json",
+        important_features=important_features,
+        overwrite=overwrite,
+    )
 
     return important_features
 
