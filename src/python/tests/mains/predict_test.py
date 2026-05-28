@@ -65,7 +65,8 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     csv_outputs = list(test_dir.glob("*_test_prediction_*.csv"))
     assert csv_outputs, "Expected a test_prediction CSV in logdir."
 
-    df = pd.read_csv(csv_outputs[0], index_col=0)
+    df = pd.read_csv(csv_outputs[0], index_col="ID")
+    assert df.index.name == "ID"
     assert "Predicted class" in df.columns
     assert "True class" not in df.columns  # test predictions drop true labels
     assert len(df) > 0

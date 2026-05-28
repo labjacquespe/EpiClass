@@ -1524,7 +1524,7 @@ class TemporaryLogFilter:
 
 
 def set_file_id(
-    df: pd.DataFrame, input_col: str = "Unnamed: 0", output_col: str = "md5sum"
+    df: pd.DataFrame, input_col: str = "ID", output_col: str = "md5sum"
 ) -> pd.DataFrame:
     """Standardizes a filename column by extracting the prefix and ensuring it is the first column.
 
@@ -1540,7 +1540,8 @@ def set_file_id(
 
     Args:
         df (pd.DataFrame): The input DataFrame.
-        input_col (str, optional): The name of the column to process. Defaults to "Unnamed: 0".
+        input_col (str, optional): The name of the column to process. Defaults to "ID"
+            (the index_label written by ``write_pred_table``).
         output_col (str, optional): The name of the resulting column. Defaults to "md5sum".
 
     Returns:

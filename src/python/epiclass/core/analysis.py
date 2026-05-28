@@ -183,9 +183,9 @@ class Analysis:
         pred_path = self._generic_write_prediction(self._test, name="test", path=path)
         # Remove 'True class' which is just the first class repeated
         if pred_path is not None:
-            df = pd.read_csv(pred_path, index_col=0)
+            df = pd.read_csv(pred_path, index_col="ID")
             df.drop(columns=["True class"], inplace=True)
-            df.to_csv(pred_path, encoding="utf8")
+            df.to_csv(pred_path, encoding="utf8", index_label="ID")
 
     def _generic_confusion_matrix(self, dataset: TensorData | None, name) -> np.ndarray:
         """General treatment to write confusion matrices."""
@@ -251,7 +251,6 @@ class Analysis:
         self._save_matrix(mat, set_name, path)
 
 
-# TODO: Insert "ID" in header, and make sure subsequent script use that (e.g. the bash one liner, for sorting)
 def write_pred_table(predictions, str_preds, str_targets, signal_ids, classes, path):
     """Write to "path" a csv containing class probability predictions.
 
@@ -261,10 +260,13 @@ def write_pred_table(predictions, str_preds, str_targets, signal_ids, classes, p
     signal_ids : List of corresponding signal IDs
     classes : Ordered list of the output classes
     path : Where to write the file
+
+    The index column is named "ID" in the CSV header so the file is
+    self-describing for downstream sorting / merging.
     """
     df = pd.DataFrame(data=predictions, index=signal_ids, columns=classes)
 
     df.insert(loc=0, column="True class", value=str_targets)
     df.insert(loc=1, column="Predicted class", value=str_preds)
 
-    df.to_csv(path, encoding="utf8")
+    df.to_csv(path, encoding="utf8", index_label="ID")

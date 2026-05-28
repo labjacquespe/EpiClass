@@ -160,11 +160,14 @@ echo "Time after launch: $(date +%F_%T)"
 set +e
 
 cd ${log}
-printf '\n%s\n' "Launching following command"
-printf '%s\n' "cat split*/validation_prediction.csv | sort -ru > full-10fold-validation_prediction.csv"
-cat split*/validation_prediction.csv | sort -ru >full-10fold-validation_prediction.csv
+merged_pred="full-10fold-validation_prediction.csv"
+printf '\n%s\n' "Merging split*/validation_prediction.csv into ${merged_pred}"
+# Keep one header at the top, then sort+uniq the data rows by ID.
+split_files=( split*/validation_prediction.csv )
+head -n 1 "${split_files[0]}" >"${merged_pred}"
+tail -n +2 -q "${split_files[@]}" | sort -u >>"${merged_pred}"
 
-to_augment="${log}/full-10fold-validation_prediction.csv"
+to_augment="${log}/${merged_pred}"
 
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/utils/augment_predict_file.py ${to_augment} ${metadata} --all-categories"
