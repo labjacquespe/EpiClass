@@ -17,7 +17,7 @@ from sklearn.model_selection import StratifiedGroupKFold
 
 from epiclass.core.data import dataset
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.epiatlas_constants import EPIRR_LABEL
+from epiclass.core.epiatlas_constants import EPIRR_LABEL, TRACKS_MAPPING
 from epiclass.core.metadata import UUIDMetadata
 
 from .lazy_data_classes import LazyKnownData
@@ -322,6 +322,35 @@ class LazyEpiAtlasFoldFactory:
         _, epirr_inverse = np.unique(epirr_per_uuid, return_inverse=True)
         return epirr_inverse
 
+    @staticmethod
+    def _uuid_to_anchor_track(
+        dset: LazyKnownData,
+        uuids_unique: NDArray,
+    ) -> NDArray:
+        """For each unique UUID, return its anchor track_type.
+
+        The anchor is the ``TRACKS_MAPPING`` key present among the UUID's
+        tracks — every well-formed EpiAtlas UUID has exactly one. If a UUID
+        has no anchor track (e.g. the anchor was filtered out upstream),
+        falls back to the first track_type seen for that UUID so the UUID is
+        still placed in some class and not silently dropped.
+        """
+        anchors = set(TRACKS_MAPPING.keys())
+        uuid_anchor: dict[str, str] = {}
+        uuid_fallback: dict[str, str] = {}
+        for sid in dset.ids:
+            meta = dset.metadata[sid]
+            uuid = meta["uuid"]
+            tt = meta["track_type"]
+            if tt in anchors:
+                uuid_anchor[uuid] = tt
+            elif uuid not in uuid_fallback:
+                uuid_fallback[uuid] = tt
+
+        return np.array(
+            [uuid_anchor.get(uuid, uuid_fallback.get(uuid)) for uuid in uuids_unique]
+        )
+
     def _reserve_test(self) -> Tuple[LazyKnownData, LazyKnownData]:
         """Reserve test data for final evaluation."""
         dset = self._epiatlas_dataset.dataset
@@ -336,26 +365,60 @@ class LazyEpiAtlasFoldFactory:
         return train_val, test
 
     def _split_by_track_type(
-        self, dset: LazyKnownData, n_splits: int
+        self, dset: LazyKnownData, n_splits: int, oversample: bool = False
     ) -> Generator[Tuple[LazyKnownData, LazyKnownData], None, None]:
-        """Split dataset by track_type."""
-        _, _, uuids_inverse = self._label_uuid(dset)
+        """Split dataset by track_type.
+
+        Groups by UUID so each UUID's track bundle stays in one fold and
+        stratifies by track_type so every track type appears in every fold.
+
+        When ``oversample`` is True, the training set is rebalanced by
+        duplicating UUIDs grouped by their anchor track type. Because the
+        non-anchor tracks come in fixed per-anchor proportions (raw→{pval,fc},
+        gembs_pos→{gembs_neg}, Unique_plusRaw→{Unique_minusRaw}), balancing
+        anchor counts propagates to balanced track-type counts.
+        """
+        uuids, _, uuids_inverse = self._label_uuid(dset)
 
         # Force track type as the class label
         labels = [dset.metadata[sid]["track_type"] for sid in dset.ids]
 
         skf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
-
-        # Create dummy X since we're not loading signals
         dummy_X = np.zeros((len(dset), 1))
 
         for train_idxs, valid_idxs in skf.split(
             X=dummy_X, y=labels, groups=uuids_inverse
         ):
+            if oversample:
+                train_idxs = self._oversample_track_type(
+                    dset, uuids, uuids_inverse, train_idxs
+                )
+
             train_set = dset.subsample(list(train_idxs))
             valid_set = dset.subsample(list(valid_idxs))
 
             yield train_set, valid_set
+
+    @classmethod
+    def _oversample_track_type(
+        cls,
+        dset: LazyKnownData,
+        uuids: NDArray,
+        uuids_inverse: NDArrayInt,
+        train_idxs: NDArrayInt,
+    ) -> NDArrayInt:
+        """Return train sample indices after balancing UUIDs by anchor track type."""
+        train_uuid_idxs = np.unique(uuids_inverse[train_idxs])
+        train_uuids_unique = np.array(
+            [uuids[np.where(uuids_inverse == idx)[0][0]] for idx in train_uuid_idxs]
+        )
+        anchors = cls._uuid_to_anchor_track(dset, train_uuids_unique)
+
+        ros = RandomOverSampler(random_state=42)
+        resampled_uuids, _ = ros.fit_resample(train_uuids_unique.reshape(-1, 1), anchors)
+        return np.concatenate(
+            [np.where(uuids == uuid)[0] for uuid in resampled_uuids.flatten()]
+        )
 
     def _split_dataset(
         self, dset: LazyKnownData, n_splits: int, oversample: bool = False
@@ -413,7 +476,7 @@ class LazyEpiAtlasFoldFactory:
         dset = self._train_val
 
         if self.epiatlas_dataset.target_category == "track_type":
-            generator = self._split_by_track_type(dset, self.k)
+            generator = self._split_by_track_type(dset, self.k, oversample=oversample)
         else:
             generator = self._split_dataset(dset, self.k, oversample=oversample)
 

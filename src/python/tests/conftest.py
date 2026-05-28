@@ -42,6 +42,21 @@ def pytest_addoption(parser):
         default=False,
         help="do not perform cleanup after tests",
     )
+    parser.addoption(
+        "--verbose-splits",
+        action="store_true",
+        default=False,
+        help=(
+            "print fold-level diagnostics (track type counts, UUID counts) "
+            "in splitter tests. Combine with -s to surface the prints."
+        ),
+    )
+
+
+@pytest.fixture(name="verbose_splits")
+def fixture_verbose_splits(pytestconfig) -> bool:
+    """True when --verbose-splits is passed; opt-in print gate for splitter tests."""
+    return bool(pytestconfig.getoption("--verbose-splits"))
 
 
 def pytest_exception_interact(node, call, report):

@@ -219,9 +219,133 @@ class TestEpiAtlasFoldFactory:
 
         assert valid_raw_sum == total_raw_count
 
-    def test_split_by_track_type(self):
-        """Test that track types are distributed correctly but same uuid stay together."""
-        raise NotImplementedError
+    def test_split_by_track_type(self, test_datasource, test_metadata, verbose_splits):
+        """track_type splitting: UUID-grouped, stratified, balanced when oversampled.
+
+        Stratifying by EpiRR is uninformative for ``track_type`` (every EpiRR
+        has every track type). The splitter must instead:
+        - group by UUID so each UUID's track bundle stays in a single fold,
+        - stratify on track_type so every track type lands in both train and
+          validation of every fold,
+        - when ``oversample=True``, rebalance the training set so every track
+          type's count is within 10% of the majority class. Oversampling
+          duplicates UUIDs grouped by their anchor track type (the
+          ``TRACKS_MAPPING`` key present in the UUID); because non-anchor
+          tracks come in fixed proportions per anchor family, balancing
+          anchor-UUID counts balances every track type.
+
+        Run with ``--verbose-splits -s`` to print per-fold diagnostics.
+        """
+        meta = copy.deepcopy(test_metadata)
+        ea_handler = EpiAtlasFoldFactory.from_datasource(
+            test_datasource,
+            label_category="track_type",
+            min_class_size=2,
+            n_fold=3,
+            signal_id_list=list(meta.signal_ids),
+            force_filter=True,
+            test_ratio=0,
+        )
+
+        total_data = ea_handler.train_val_dset
+        total_track_type_counts = Counter(
+            total_data.metadata[sid]["track_type"] for sid in total_data.ids
+        )
+        all_track_types = set(total_track_type_counts)
+
+        if verbose_splits:
+            print(
+                f"\n[track_type split] total: {total_data.num_examples} signals, "
+                f"{len(set(total_data.metadata[s]['uuid'] for s in total_data.ids))} "
+                f"UUIDs, track types: {dict(total_track_type_counts)}"
+            )
+
+        # --- Without oversampling: split invariants ---
+        valid_track_type_sum: Counter = Counter()
+        n_splits = 0
+        for dset in ea_handler.yield_split(oversample=False):
+            n_splits += 1
+            train_ids = set(dset.train.ids)
+            valid_ids = set(dset.validation.ids)
+
+            assert len(train_ids & valid_ids) == 0, "Train/valid overlap"
+            assert len(valid_ids) == len(dset.validation.ids), "Validation has dups"
+            assert total_data.num_examples == len(train_ids) + len(valid_ids)
+
+            train_uuids = {dset.train.metadata[sid]["uuid"] for sid in train_ids}
+            valid_uuids = {dset.validation.metadata[sid]["uuid"] for sid in valid_ids}
+            assert (
+                len(train_uuids & valid_uuids) == 0
+            ), f"UUID leakage in track_type split: {train_uuids & valid_uuids}"
+
+            train_tts = {dset.train.metadata[sid]["track_type"] for sid in train_ids}
+            valid_tts = {dset.validation.metadata[sid]["track_type"] for sid in valid_ids}
+            assert (
+                train_tts == all_track_types
+            ), f"Train missing track types: {all_track_types - train_tts}"
+            assert (
+                valid_tts == all_track_types
+            ), f"Valid missing track types: {all_track_types - valid_tts}"
+
+            valid_track_type_sum.update(
+                dset.validation.metadata[sid]["track_type"] for sid in valid_ids
+            )
+
+            if verbose_splits:
+                train_tt_counts = Counter(
+                    dset.train.metadata[sid]["track_type"] for sid in train_ids
+                )
+                valid_tt_counts = Counter(
+                    dset.validation.metadata[sid]["track_type"] for sid in valid_ids
+                )
+                print(
+                    f"  fold {n_splits} (no oversample): "
+                    f"train={len(train_ids)} ({len(train_uuids)} UUIDs) "
+                    f"valid={len(valid_ids)} ({len(valid_uuids)} UUIDs) | "
+                    f"train tt={dict(train_tt_counts)} | "
+                    f"valid tt={dict(valid_tt_counts)}"
+                )
+
+        assert n_splits == ea_handler.n_fold
+        assert valid_track_type_sum == total_track_type_counts
+
+        # --- With oversampling: train track_type counts within 10% of majority ---
+        for fold_idx, dset in enumerate(ea_handler.yield_split(oversample=True), 1):
+            train_ids_list = list(dset.train.ids)
+            valid_ids = set(dset.validation.ids)
+
+            # UUIDs still partitioned cleanly across train/valid after oversampling
+            train_uuids = {dset.train.metadata[sid]["uuid"] for sid in train_ids_list}
+            valid_uuids = {dset.validation.metadata[sid]["uuid"] for sid in valid_ids}
+            assert (
+                len(train_uuids & valid_uuids) == 0
+            ), f"UUID leakage after oversampling: {train_uuids & valid_uuids}"
+
+            train_tt_counts = Counter(
+                dset.train.metadata[sid]["track_type"] for sid in train_ids_list
+            )
+            # Every track type present in the dataset must still be present
+            assert set(train_tt_counts) == all_track_types, (
+                f"Oversampled train missing track types: "
+                f"{all_track_types - set(train_tt_counts)}"
+            )
+            majority_count = max(train_tt_counts.values())
+            for tt, count in train_tt_counts.items():
+                ratio = count / majority_count
+                assert ratio >= 0.9, (
+                    f"Track type {tt}: count {count} is below 90% of majority "
+                    f"({majority_count}); full counts: {train_tt_counts}"
+                )
+
+            if verbose_splits:
+                min_count = min(train_tt_counts.values())
+                print(
+                    f"  fold {fold_idx} (oversample):    "
+                    f"train={len(train_ids_list)} ({len(train_uuids)} UUIDs) "
+                    f"valid={len(valid_ids)} ({len(valid_uuids)} UUIDs) | "
+                    f"train tt={dict(train_tt_counts)} | "
+                    f"min/max ratio={min_count / majority_count:.2f}"
+                )
 
     def test_create_total_data_without_oversampling(self, test_data: EpiAtlasFoldFactory):
         """Test create_total_data without oversampling."""
