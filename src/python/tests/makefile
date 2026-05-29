@@ -32,6 +32,16 @@ test-fast:
 test-slow:
 	$(PYTEST) -n auto -v -m slow
 
+test-last-failed:
+	@pytest -v --lf --last-failed-no-failures none -p no:xdist; \
+	code=$$?; \
+	if [ $$code -eq 5 ]; then \
+		echo "No last failed tests to run (exit 5 ignored)"; \
+		exit 0; \
+	else \
+		exit $$code; \
+	fi
+
 demo-test:
 	\pytest -vs ./mains/predict_test.py ./mains/general_training_test.py
 
