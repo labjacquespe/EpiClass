@@ -117,6 +117,10 @@ celerybeat-schedule
 venv*/
 ENV/
 
+# marimo cache, ty venv config
+__marimo__
+ty.toml
+
 # Spyder project settings
 .spyderproject
 .spyproject
