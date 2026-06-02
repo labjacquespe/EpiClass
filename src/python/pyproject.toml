@@ -60,6 +60,9 @@ utils = [
 shap = [
     "shap==0.49.1"
 ]
+conformal = [
+    "torchcp>=1.2, <1.3"
+]
 test = [
     "EpiClass[utils, shap]",
     "pytest-mock>=3.14, <3.15",
