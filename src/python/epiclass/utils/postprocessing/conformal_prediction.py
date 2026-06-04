@@ -26,11 +26,17 @@ valid); reproducibility comes from seeding the torch RNG (see ``RNG_SEED``).
 
 See ``conformal_methods.md`` (same directory) for a description of LAC/APS/RAPS/SAPS.
 """
+# This module gathers the whole post-hoc conformal layer (split + per-class + Mondrian +
+# hyperparameter sweep + cached report + CV+); it is cohesive enough to live in one file.
+# pylint: disable=too-many-lines
 from __future__ import annotations
 
 import argparse
+import itertools
 import math
+import warnings
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -59,15 +65,27 @@ DEFAULT_ALPHAS: Tuple[float, ...] = (0.01, 0.05, 0.1, 0.2)
 # cumulative score); seeding makes the resulting sets reproducible run to run.
 RNG_SEED = 0
 
+# Literature-default regularization hyperparameters for the regularized scores.
+# RAPS (Angelopoulos et al. 2021): ``kreg`` top classes are penalty-free, ``penalty``
+# is the per-rank penalty beyond them. SAPS (Huang et al. 2023): ``weight`` is the
+# constant rank weight for every non-top class. Both leave the coverage guarantee
+# intact and only change set size, so they can be tuned/swept on a calibration split.
+RAPS_DEFAULTS: Dict[str, float] = {"kreg": 1, "penalty": 0.1}
+SAPS_DEFAULTS: Dict[str, float] = {"weight": 0.2}
 
-def build_score(method: str):
+
+def build_score(method: str, **hparams):
     """Return a TorchCP score function for ``method`` configured for probabilities.
 
     ``score_type="identity"`` because the CSVs already hold softmax probabilities
     (the default "softmax" would double-apply it). APS/RAPS/SAPS keep
     ``randomized=True`` -- the randomization term is what makes them exactly valid;
     reproducibility is handled separately by seeding the torch RNG (see ``RNG_SEED``).
-    RAPS/SAPS penalties use common literature defaults; tune on a calibration split.
+
+    ``hparams`` overrides the regularization defaults (``RAPS_DEFAULTS`` /
+    ``SAPS_DEFAULTS``): pass ``kreg`` / ``penalty`` for RAPS, ``weight`` for SAPS to
+    sweep set size on a calibration split. LAC/APS take no hyperparameters. Unknown
+    keys for a method are ignored so a single grid dict can be reused across methods.
     """
     method = method.upper()
     if method == "LAC":
@@ -75,9 +93,17 @@ def build_score(method: str):
     if method == "APS":
         return APS(score_type="identity", randomized=True)
     if method == "RAPS":
-        return RAPS(score_type="identity", randomized=True, penalty=0.1, kreg=1)
+        params = {
+            **RAPS_DEFAULTS,
+            **{k: hparams[k] for k in RAPS_DEFAULTS if k in hparams},
+        }
+        return RAPS(score_type="identity", randomized=True, **params)
     if method == "SAPS":
-        return SAPS(score_type="identity", randomized=True, weight=0.2)
+        params = {
+            **SAPS_DEFAULTS,
+            **{k: hparams[k] for k in SAPS_DEFAULTS if k in hparams},
+        }
+        return SAPS(score_type="identity", randomized=True, **params)
     raise ValueError(
         f"Unknown conformal method '{method}'. Options: {', '.join(DEFAULT_METHODS)}."
     )
@@ -100,8 +126,14 @@ def load_prediction_csv(
     The first column is always the sample ID (``write_pred_table`` writes the index
     first); it is used as the index whether or not it carries an ``ID`` header, so
     files with an unnamed index column load correctly.
+
+    The label columns are forced to ``str``: a paired-end CSV uses ``TRUE``/``FALSE``
+    class names, which pandas would otherwise infer as booleans -- a ``True class`` value
+    of ``True`` then no longer matches the string class-column headers ``"TRUE"``/``"FALSE"``
+    (and ``str(True)`` is ``"True"``, not ``"TRUE"``). ``dtype`` keys absent from the file
+    (e.g. ``True class`` in an unlabelled test CSV) are ignored by pandas.
     """
-    df = pd.read_csv(path, index_col=0)
+    df = pd.read_csv(path, index_col=0, dtype={c: str for c in NON_CLASS_COLUMNS})
     classes = [c for c in df.columns if c not in NON_CLASS_COLUMNS]
     if not classes:
         raise ValueError(f"No class-probability columns found in '{path}'.")
@@ -125,12 +157,32 @@ def load_prediction_csv(
     return ids, probs, classes, true_idx
 
 
+@contextmanager
+def suppress_quantile_warning():
+    """Silence TorchCP's benign "quantile exceeds 1 ... threshold set as inf" warning.
+
+    Mondrian calibration raises this once per class whose per-fold calibration count is
+    below the degeneracy floor ``ceil(1/alpha) - 1``: no finite threshold exists, so the
+    class is forced into every set (trivial coverage). ``mondrian_feasibility`` predicts
+    exactly these classes ahead of time, so the warning is redundant noise -- wrap Mondrian
+    calibration in this to keep output clean while the feasibility table reports the
+    degeneracy explicitly.
+    """
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore", message=".*quantile exceeds 1.*", category=UserWarning
+        )
+        yield
+
+
 def calibrate_predictor(
     cal_probs: np.ndarray,
     cal_true_idx: np.ndarray,
     method: str,
     alpha: float,
+    *,
     mondrian: bool = False,
+    hparams: Optional[Mapping[str, float]] = None,
 ) -> ConformalPredictor:
     """Calibrate a TorchCP predictor on probabilities + true-class indices.
 
@@ -140,11 +192,16 @@ def calibrate_predictor(
     class needs enough calibration samples on its own (see ``mondrian_feasibility``);
     a class with too few collapses to being included in every set.
 
-    The returned predictor has ``q_hat`` set and can build sets via ``predict_sets``.
+    ``hparams`` (optional) overrides the score's regularization defaults; see
+    ``build_score``. The returned predictor has ``q_hat`` set and can build sets via
+    ``predict_sets``.
     """
     predictor_cls = ClassConditionalPredictor if mondrian else SplitPredictor
     predictor = predictor_cls(
-        score_function=build_score(method), model=None, alpha=alpha, device="cpu"
+        score_function=build_score(method, **(hparams or {})),
+        model=None,
+        alpha=alpha,
+        device="cpu",
     )
     torch.manual_seed(RNG_SEED)
     predictor.calculate_threshold(
@@ -186,17 +243,28 @@ def membership_to_labels(
 def evaluate_sets_per_class(
     membership: np.ndarray, true_idx: np.ndarray, classes: Sequence[str]
 ) -> pd.DataFrame:
-    """Per-true-class coverage and set-size counts for one membership matrix.
+    """Per-true-class coverage, set-size and prediction-set *shape* counts.
 
     Marginal coverage can hide a rare class being systematically under-covered;
     this stratifies coverage by the true label. Returns one row per class with the
-    raw counts (``support``, ``n_covered``, ``set_size_sum``, ``n_empty``) so results
-    from several folds can be summed before deriving rates.
+    raw counts so results from several folds can be summed before deriving rates.
 
-    ``empty_rate`` (fraction of samples that got an *empty* set) disambiguates a low
-    ``avg_set_size``: a class can average below 1 either via many small non-empty sets
-    or via outright empties, and an empty set is an automatic miss -- the mechanism
-    behind a hard class being under-covered.
+    Counts (each per true class):
+
+    * ``support`` -- number of samples of the class;
+    * ``n_covered`` -- sets containing the true class;
+    * ``set_size_sum`` -- summed set size;
+    * ``n_empty`` -- empty sets (an automatic miss; the mechanism behind a hard class
+      being under-covered, and disambiguates a low ``avg_set_size``);
+    * ``n_singleton_correct`` -- singletons equal to the true class (the "clean pass":
+      a confident, correct prediction needing no review);
+    * ``n_singleton_wrong`` -- singletons of a *different* class (a confident
+      disagreement with the label -> a specific mislabel hypothesis);
+    * ``n_multi`` -- sets of size >= 2 (a hedge: ambiguous among known classes).
+
+    The four shape counts partition the support: ``n_empty + n_singleton_correct +
+    n_singleton_wrong + n_multi == support``. ``n_singleton_correct`` is the only
+    non-flagged outcome; the other three make up the QC "flag" (route to review).
     """
     classes = list(classes)
     set_sizes = membership.sum(axis=1)
@@ -204,9 +272,15 @@ def evaluate_sets_per_class(
     for idx, name in enumerate(classes):
         mask = true_idx == idx
         support = int(mask.sum())
+        sizes = set_sizes[mask]
+        covered = membership[mask, idx] == 1 if support else np.zeros(0, dtype=bool)
+        is_singleton = sizes == 1
         n_covered = int(membership[mask, idx].sum()) if support else 0
-        size_sum = int(set_sizes[mask].sum()) if support else 0
-        n_empty = int((set_sizes[mask] == 0).sum()) if support else 0
+        size_sum = int(sizes.sum()) if support else 0
+        n_empty = int((sizes == 0).sum()) if support else 0
+        n_singleton_correct = int((is_singleton & covered).sum()) if support else 0
+        n_singleton_wrong = int((is_singleton & ~covered).sum()) if support else 0
+        n_multi = int((sizes >= 2).sum()) if support else 0
         rows.append(
             {
                 "true_class": name,
@@ -214,12 +288,60 @@ def evaluate_sets_per_class(
                 "n_covered": n_covered,
                 "set_size_sum": size_sum,
                 "n_empty": n_empty,
+                "n_singleton_correct": n_singleton_correct,
+                "n_singleton_wrong": n_singleton_wrong,
+                "n_multi": n_multi,
                 "coverage": n_covered / support if support else float("nan"),
                 "avg_set_size": size_sum / support if support else float("nan"),
                 "empty_rate": n_empty / support if support else float("nan"),
             }
         )
     return pd.DataFrame(rows)
+
+
+# Raw per-class count columns produced by evaluate_sets_per_class; summed across
+# folds/grid points before rates are re-derived (sum-then-divide, not mean-of-means).
+# The last three are the prediction-set shape counts behind the QC flag composition.
+PER_CLASS_COUNT_COLS = (
+    "support",
+    "n_covered",
+    "set_size_sum",
+    "n_empty",
+    "n_singleton_correct",
+    "n_singleton_wrong",
+    "n_multi",
+)
+
+
+def aggregate_per_class(
+    frames: pd.DataFrame | Sequence[pd.DataFrame],
+    group_cols: Sequence[str] = ("method", "true_class"),
+) -> pd.DataFrame:
+    """Sum the raw per-class counts across folds/frames and re-derive the rates.
+
+    Both the CV-fold drivers and the hyperparameter sweep need the same
+    sum-then-divide aggregation (never mean-of-means) on the counts from
+    ``evaluate_sets_per_class``. Concatenates ``frames`` (a single DataFrame or a
+    sequence), groups by ``group_cols``, sums ``PER_CLASS_COUNT_COLS`` and assigns
+    ``coverage`` / ``avg_set_size`` / ``empty_rate``. An empty input yields an empty
+    DataFrame.
+    """
+    if isinstance(frames, pd.DataFrame):
+        combined = frames
+    else:
+        frames = [f for f in frames if not f.empty]
+        if not frames:
+            return pd.DataFrame()
+        combined = pd.concat(frames, ignore_index=True)
+    return (
+        combined.groupby(list(group_cols), as_index=False)[list(PER_CLASS_COUNT_COLS)]
+        .sum()
+        .assign(
+            coverage=lambda d: d["n_covered"] / d["support"],
+            avg_set_size=lambda d: d["set_size_sum"] / d["support"],
+            empty_rate=lambda d: d["n_empty"] / d["support"],
+        )
+    )
 
 
 def _calib_eval_split(
@@ -295,13 +417,16 @@ def run_evaluate_per_class(
     seed: int = 42,
     *,
     mondrian: bool = False,
+    hparams: Optional[Mapping[str, float]] = None,
 ) -> pd.DataFrame:
     """Per-class coverage / set size at a single ``alpha``, via a calib/eval split.
 
-    ``mondrian=True`` switches to class-conditional calibration. Returns a tidy
-    DataFrame with one row per ``(method, true_class)``, carrying both rates
-    (``coverage``, ``avg_set_size``) and the raw counts (``support``, ``n_covered``,
-    ``set_size_sum``) needed to aggregate correctly across folds.
+    ``mondrian=True`` switches to class-conditional calibration. ``hparams`` (optional)
+    overrides the score's regularization defaults (see ``build_score``) -- the hook the
+    hyperparameter sweep drives. Returns a tidy DataFrame with one row per
+    ``(method, true_class)``, carrying both rates (``coverage``, ``avg_set_size``) and
+    the raw counts (``support``, ``n_covered``, ``set_size_sum``) needed to aggregate
+    correctly across folds.
     """
     ids, probs, classes, true_idx = load_prediction_csv(pred_csv)
     if true_idx is None:
@@ -314,7 +439,12 @@ def run_evaluate_per_class(
     frames: List[pd.DataFrame] = []
     for method in methods:
         predictor = calibrate_predictor(
-            probs[cal_sel], true_idx[cal_sel], method, alpha, mondrian=mondrian
+            probs[cal_sel],
+            true_idx[cal_sel],
+            method,
+            alpha,
+            mondrian=mondrian,
+            hparams=hparams,
         )
         membership = predict_sets(predictor, probs[eval_sel])
         per_class = evaluate_sets_per_class(membership, true_idx[eval_sel], classes)
@@ -322,6 +452,195 @@ def run_evaluate_per_class(
         per_class.insert(1, "alpha", alpha)
         frames.append(per_class)
     return pd.concat(frames, ignore_index=True)
+
+
+def expand_grid(grid: Mapping[str, Sequence]) -> List[Dict[str, float]]:
+    """Expand a ``{param: [values]}`` grid into the list of hyperparameter combos.
+
+    ``expand_grid({"kreg": [1, 2], "penalty": [0, 0.1]})`` yields the four dicts of the
+    Cartesian product. An empty grid yields ``[{}]`` (a single default combo).
+    """
+    keys = list(grid)
+    if not keys:
+        return [{}]
+    return [
+        dict(zip(keys, values)) for values in itertools.product(*(grid[k] for k in keys))
+    ]
+
+
+def combo_label(hparams: Mapping[str, float]) -> str:
+    """Stable label for a hyperparameter combo: sorted ``k=v`` pairs, ``"default"`` if empty.
+
+    Shared by ``sweep_hparams`` and the report so the *same* combo always gets the same
+    label (e.g. ``combo_label(RAPS_DEFAULTS)`` identifies the default-configured rows).
+    """
+    return ", ".join(f"{k}={hparams[k]}" for k in sorted(hparams)) or "default"
+
+
+def sweep_hparams(
+    pred_csvs: str | Path | Sequence[str | Path],
+    method: str,
+    grid: Mapping[str, Sequence] | Sequence[Mapping[str, float]],
+    *,
+    alpha: float = 0.05,
+    calib_frac: float = 0.5,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Sweep a regularized score's hyperparameters and report per-class coverage/size.
+
+    For each hyperparameter combo and each fold CSV, calibrate+evaluate ``method`` via
+    ``run_evaluate_per_class``, then aggregate across folds on the **raw counts**
+    (sum-then-divide, never mean-of-means). The result surfaces which classes are
+    sensitive to the regularization (coverage / set size swings across the grid) vs
+    robust (flat).
+
+    Parameters
+    ----------
+    pred_csvs:
+        One labelled prediction CSV or a sequence of them (the folds of a CV run).
+    method:
+        A regularized score (``"RAPS"`` or ``"SAPS"``). ``LAC``/``APS`` take no
+        hyperparameters, so a grid over them collapses to a single combo.
+    grid:
+        Either a ``{param: [values]}`` mapping (expanded to its Cartesian product) or an
+        explicit list of combo dicts. Keys irrelevant to ``method`` are ignored by
+        ``build_score``, so a shared grid can be reused across methods.
+
+    Returns a tidy DataFrame with one row per ``(combo, true_class)``: one column per
+    swept hyperparameter, a ``combo`` label string, and the aggregated ``support``,
+    ``n_covered``, ``set_size_sum``, ``n_empty`` counts plus the derived ``coverage``,
+    ``avg_set_size`` and ``empty_rate`` rates.
+    """
+    if isinstance(pred_csvs, (str, Path)):
+        pred_csvs = [pred_csvs]
+    combos = expand_grid(grid) if isinstance(grid, Mapping) else [dict(c) for c in grid]
+    hparam_keys = sorted({k for combo in combos for k in combo})
+
+    frames: List[pd.DataFrame] = []
+    for combo in combos:
+        per_fold = [
+            run_evaluate_per_class(
+                csv,
+                methods=[method],
+                alpha=alpha,
+                calib_frac=calib_frac,
+                seed=seed,
+                hparams=combo,
+            )
+            for csv in pred_csvs
+        ]
+        agg = aggregate_per_class(per_fold, group_cols=["true_class"]).assign(
+            method=method,
+            combo=combo_label(combo),
+        )
+        for key in hparam_keys:
+            agg[key] = combo.get(key, float("nan"))
+        frames.append(agg)
+
+    return pd.concat(frames, ignore_index=True)
+
+
+# Canonical configuration of the cached cross-classifier report (section 5 of the report
+# notebook): marginal per-class results at the standard QC alphas, over the full RAPS/SAPS
+# grids; LAC/APS are unregularized (a single "default" combo). Changing any of these means
+# the on-disk caches are stale -- rebuild with force=True.
+REPORT_ALPHAS: Tuple[float, ...] = (0.05, 0.1, 0.2)
+REPORT_GRIDS: Dict[str, dict] = {
+    "RAPS": {"kreg": [1, 2, 5], "penalty": [0.0, 0.01, 0.1, 0.5]},
+    "SAPS": {"weight": [0.05, 0.1, 0.2, 0.5]},
+}
+REPORT_DEFAULTS: Dict[str, dict] = {
+    "LAC": {},
+    "APS": {},
+    "RAPS": RAPS_DEFAULTS,
+    "SAPS": SAPS_DEFAULTS,
+}
+# Cache file written beside each fold's prediction CSV (i.e. in its split folder).
+FOLD_REPORT_NAME = "conformal_report.csv"
+
+
+def compute_fold_report(
+    pred_csv: str | Path, calib_frac: float = 0.5, seed: int = 42
+) -> pd.DataFrame:
+    """Full marginal per-class report for **one** fold's prediction CSV.
+
+    Stacks ``sweep_hparams`` over every method (the unregularized LAC/APS run with an empty
+    grid, RAPS/SAPS over ``REPORT_GRIDS``) at every ``REPORT_ALPHAS`` value, tagging each
+    block with its ``alpha``. This is the unit cached per split folder by ``fold_report``;
+    aggregate the per-fold reports across folds with ``aggregate_per_class``.
+    """
+    grids = {"LAC": {}, "APS": {}, **REPORT_GRIDS}
+    blocks: List[pd.DataFrame] = []
+    for alpha in REPORT_ALPHAS:
+        for method, grid in grids.items():
+            block = sweep_hparams(
+                pred_csv, method, grid, alpha=alpha, calib_frac=calib_frac, seed=seed
+            )
+            block.insert(0, "alpha", alpha)
+            blocks.append(block)
+    return pd.concat(blocks, ignore_index=True)
+
+
+def _fold_report_complete(df: pd.DataFrame) -> bool:
+    """Whether a cached fold report covers the current canonical methods x alphas.
+
+    Also requires the current count columns, so a cache written before a schema change
+    (e.g. the flag-composition counts were added) is treated as stale and rebuilt.
+    """
+    required_cols = {"alpha", "method", "combo", *PER_CLASS_COUNT_COLS}
+    if df.empty or not required_cols <= set(df.columns):
+        return False
+    if not set(REPORT_ALPHAS) <= set(df["alpha"].unique()):
+        return False
+    return {"LAC", "APS", *REPORT_GRIDS} <= set(df["method"].unique())
+
+
+def fold_report(
+    pred_csv: str | Path,
+    *,
+    force: bool = False,
+    calib_frac: float = 0.5,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Per-fold full report, cached as ``conformal_report.csv`` in the fold's split folder.
+
+    Reuses the cached CSV unless ``force=True`` or the cache is missing / incomplete (its
+    alphas or methods no longer match the canonical config). Otherwise recomputes via
+    ``compute_fold_report`` and writes the cache. Returns the report DataFrame either way.
+    """
+    pred_csv = Path(pred_csv)
+    cache = pred_csv.parent / FOLD_REPORT_NAME
+    if not force and cache.exists():
+        cached = pd.read_csv(cache)
+        if _fold_report_complete(cached):
+            return cached
+    report = compute_fold_report(pred_csv, calib_frac=calib_frac, seed=seed)
+    report.to_csv(cache, index=False)
+    return report
+
+
+def run_report(
+    run_dir: str | Path,
+    *,
+    pattern: str = "split*/validation_prediction.csv",
+    force: bool = False,
+    calib_frac: float = 0.5,
+    seed: int = 42,
+) -> pd.DataFrame:
+    """Stack the cached per-fold reports of a CV run, tagging each row with its fold.
+
+    Globs ``pattern`` under ``run_dir`` and concatenates each fold's ``fold_report`` (read
+    from or written to that split folder's cache). Aggregate across folds downstream with
+    ``aggregate_per_class(..., group_cols=["method", "alpha", "combo", "true_class"])``.
+    """
+    paths = sorted(Path(run_dir).glob(pattern))
+    blocks = [
+        fold_report(p, force=force, calib_frac=calib_frac, seed=seed).assign(
+            fold=p.parent.name
+        )
+        for p in paths
+    ]
+    return pd.concat(blocks, ignore_index=True) if blocks else pd.DataFrame()
 
 
 def mondrian_feasibility(
@@ -456,17 +775,184 @@ def run_apply(
     return written
 
 
+# --------------------------------------------------------------------------- #
+# CV+ (cross-conformal) -- use every fold's out-of-fold scores as calibration.
+# --------------------------------------------------------------------------- #
+def _true_class_scores(score_fn, probs: np.ndarray, true_idx: np.ndarray) -> np.ndarray:
+    """Nonconformity score of each sample's *true* class: an ``(n,)`` array."""
+    torch.manual_seed(RNG_SEED)
+    scores = score_fn(
+        torch.as_tensor(probs, dtype=torch.float32),
+        torch.as_tensor(true_idx, dtype=torch.long),
+    )
+    return scores.cpu().numpy().astype(np.float64)
+
+
+def _all_class_scores(score_fn, probs: np.ndarray) -> np.ndarray:
+    """Nonconformity score of *every* class: an ``(n, k)`` array."""
+    torch.manual_seed(RNG_SEED)
+    scores = score_fn(torch.as_tensor(probs, dtype=torch.float32))
+    return scores.cpu().numpy().astype(np.float64)
+
+
+def cv_plus_membership(
+    cal_scores: Sequence[np.ndarray],
+    test_score_matrices: Sequence[np.ndarray],
+    alpha: float,
+) -> np.ndarray:
+    """CV+ prediction-set membership from per-fold calibration + test scores.
+
+    The CV+ / jackknife+ rule (Barber et al. 2021) compares each calibration point's
+    *out-of-fold* score against the test point's score **under the same fold's model**,
+    then pools the comparison over all folds into a conformal p-value
+
+        ``p(x, y) = (1 + #{i : s_i >= s_test_{k(i)}(x, y)}) / (n + 1)``
+
+    and includes label ``y`` when ``p(x, y) > alpha``. This uses *all* the data for
+    calibration (every sample appears once as an out-of-fold score) rather than a single
+    fold's validation set, at the cost of the slightly looser ``>= 1 - 2*alpha``
+    worst-case guarantee (empirically close to ``1 - alpha``).
+
+    Parameters
+    ----------
+    cal_scores:
+        One ``(n_k,)`` array per fold ``k`` -- the true-class nonconformity scores of
+        fold ``k``'s validation samples under model ``k`` (out-of-fold scores).
+    test_score_matrices:
+        One ``(m, num_classes)`` array per fold ``k`` -- the all-class nonconformity
+        scores of the **same** ``m`` test samples under model ``k``. Same length/order as
+        ``cal_scores``.
+
+    Returns an ``(m, num_classes)`` 0/1 membership array.
+    """
+    if len(cal_scores) != len(test_score_matrices):
+        raise ValueError("Need one test score matrix per calibration fold.")
+    n_total = int(sum(len(s) for s in cal_scores))
+    if n_total == 0:
+        raise ValueError("No calibration scores provided.")
+
+    total_ge = np.zeros_like(test_score_matrices[0], dtype=np.int64)
+    for s_cal, s_test in zip(cal_scores, test_score_matrices):
+        # #{i in fold k : s_cal_i >= s_test} == n_k - searchsorted(sorted, s_test, left)
+        sorted_cal = np.sort(s_cal)
+        total_ge += len(s_cal) - np.searchsorted(sorted_cal, s_test, side="left")
+
+    pvals = (1 + total_ge) / (n_total + 1)
+    return (pvals > alpha).astype(np.int64)
+
+
+def cv_plus_sets(
+    calib_csvs: Sequence[str | Path],
+    test_csvs: Sequence[str | Path],
+    method: str,
+    alpha: float = 0.05,
+    hparams: Optional[Mapping[str, float]] = None,
+) -> Tuple[List[str], List[str], np.ndarray, np.ndarray, Optional[float]]:
+    """Build CV+ prediction sets for test samples from per-fold calib + test CSVs.
+
+    ``calib_csvs`` are the ``K`` labelled fold ``validation_prediction.csv`` (out-of-fold
+    scores). ``test_csvs`` are the **same** test samples scored under each of the ``K``
+    fold models (same IDs, same order, same class columns) -- this is what CV+ needs at
+    deployment: every new sample is scored by all ``K`` models. ``test_csvs`` may be
+    unlabelled (apply) or labelled (to also report coverage).
+
+    Returns ``(ids, classes, membership, mean_probs, coverage)`` where ``mean_probs`` is
+    the ensemble-mean probability matrix (its argmax is the point prediction) and
+    ``coverage`` is ``None`` unless the test CSVs carry a ``True class`` column.
+    """
+    if len(calib_csvs) != len(test_csvs):
+        raise ValueError(
+            f"Need one test CSV per calibration fold: got {len(calib_csvs)} calib, "
+            f"{len(test_csvs)} test."
+        )
+    if not calib_csvs:
+        raise ValueError("No calibration/test CSVs provided.")
+    score_fn = build_score(method, **(hparams or {}))
+
+    classes_ref: Optional[List[str]] = None
+    cal_scores: List[np.ndarray] = []
+    for csv in calib_csvs:
+        _, probs, classes, true_idx = load_prediction_csv(csv)
+        if true_idx is None:
+            raise ValueError(f"Calibration CSV '{csv}' has no 'True class' column.")
+        if classes_ref is None:
+            classes_ref = classes
+        elif classes != classes_ref:
+            raise ValueError("Calibration CSVs have mismatched class columns/order.")
+        cal_scores.append(_true_class_scores(score_fn, probs, true_idx))
+
+    ids_ref: Optional[List[str]] = None
+    test_true: Optional[np.ndarray] = None
+    test_mats: List[np.ndarray] = []
+    prob_sum: Optional[np.ndarray] = None
+    for csv in test_csvs:
+        ids, probs, classes, true_idx = load_prediction_csv(csv)
+        if classes != classes_ref:
+            raise ValueError("Test CSV class columns/order differ from calibration.")
+        if ids_ref is None:
+            ids_ref, test_true, prob_sum = ids, true_idx, probs.copy()
+        else:
+            if ids != ids_ref:
+                raise ValueError(
+                    "Test CSVs must list the same samples in the same order."
+                )
+            prob_sum = prob_sum + probs
+        test_mats.append(_all_class_scores(score_fn, probs))
+
+    membership = cv_plus_membership(cal_scores, test_mats, alpha)
+    mean_probs = prob_sum / len(test_csvs)
+
+    coverage: Optional[float] = None
+    if test_true is not None:
+        covered = membership[np.arange(len(ids_ref)), test_true]
+        coverage = float((covered == 1).mean())
+
+    return ids_ref, classes_ref, membership, mean_probs, coverage
+
+
+def run_cv_plus_apply(
+    calib_csvs: Sequence[str | Path],
+    test_csvs: Sequence[str | Path],
+    out_dir: str | Path,
+    methods: Sequence[str] = DEFAULT_METHODS,
+    alpha: float = 0.05,
+) -> List[Path]:
+    """Write CV+ prediction-set CSVs for the test samples, one per method.
+
+    Calibrates on the ``K`` fold validation CSVs and scores the test samples under all
+    ``K`` fold models (``test_csvs``). The point-prediction column uses the ensemble-mean
+    probabilities. Prints the empirical coverage when the test CSVs are labelled.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: List[Path] = []
+    for method in methods:
+        ids, classes, membership, mean_probs, coverage = cv_plus_sets(
+            calib_csvs, test_csvs, method, alpha
+        )
+        out_path = out_dir / f"cv_plus_sets_{method}_alpha{alpha}.csv"
+        write_set_csv(out_path, ids, classes, mean_probs, membership)
+        written.append(out_path)
+        msg = f"'{out_path.name}' written to '{out_path.parent}'"
+        if coverage is not None:
+            msg += f" (empirical coverage {coverage:.3f})"
+        print(msg)
+    return written
+
+
 def parse_arguments() -> argparse.Namespace:
     """Return parsed command-line arguments."""
     parser = ArgumentParser()
     # fmt: off
-    parser.add_argument("--mode", choices=["evaluate", "apply"], required=True, help="evaluate: split one labelled CSV to measure coverage/size. apply: calibrate then emit sets for a test CSV.")
+    parser.add_argument("--mode", choices=["evaluate", "apply", "cv-plus"], required=True, help="evaluate: split one labelled CSV to measure coverage/size. apply: calibrate then emit sets for a test CSV. cv-plus: cross-conformal sets using all folds' out-of-fold scores.")
     parser.add_argument("--pred-csv", type=Path, help="[evaluate] Labelled prediction CSV (e.g. validation_prediction.csv).")
     parser.add_argument("--calib-csv", type=Path, help="[apply] Labelled calibration CSV.")
     parser.add_argument("--test-csv", type=Path, help="[apply] Test CSV to build sets for.")
-    parser.add_argument("--out-dir", type=Path, help="[apply] Directory for prediction-set CSVs.")
+    parser.add_argument("--calib-csvs", type=Path, nargs="+", help="[cv-plus] The K labelled fold validation CSVs (out-of-fold scores).")
+    parser.add_argument("--test-csvs", type=Path, nargs="+", help="[cv-plus] The same test samples scored under each of the K fold models (same order as --calib-csvs).")
+    parser.add_argument("--out-dir", type=Path, help="[apply/cv-plus] Directory for prediction-set CSVs.")
     parser.add_argument("--methods", nargs="+", default=list(DEFAULT_METHODS), help="Conformal score methods to run.")
-    parser.add_argument("--alpha", type=float, default=0.1, help="[apply] Target miscoverage.")
+    parser.add_argument("--alpha", type=float, default=0.1, help="[apply/cv-plus] Target miscoverage.")
     parser.add_argument("--alphas", type=float, nargs="+", default=list(DEFAULT_ALPHAS), help="[evaluate] Target miscoverage values to sweep.")
     parser.add_argument("--calib-frac", type=float, default=0.5, help="[evaluate] Fraction used for calibration.")
     parser.add_argument("--seed", type=int, default=42, help="[evaluate] Calib/eval split seed.")
@@ -490,6 +976,25 @@ def main() -> None:
             mondrian=args.mondrian,
         )
         print(results.to_string(index=False))
+    elif args.mode == "cv-plus":
+        missing = [
+            name
+            for name, val in (
+                ("--calib-csvs", args.calib_csvs),
+                ("--test-csvs", args.test_csvs),
+                ("--out-dir", args.out_dir),
+            )
+            if not val
+        ]
+        if missing:
+            raise SystemExit(f"--mode cv-plus requires {', '.join(missing)}")
+        run_cv_plus_apply(
+            args.calib_csvs,
+            args.test_csvs,
+            args.out_dir,
+            methods=args.methods,
+            alpha=args.alpha,
+        )
     else:  # apply
         missing = [
             name
