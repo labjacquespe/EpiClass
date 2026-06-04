@@ -24,7 +24,7 @@ build every score with ``score_type="identity"`` and feed the probabilities dire
 APS/RAPS/SAPS keep their ``randomized=True`` term (it is what makes them exactly
 valid); reproducibility comes from seeding the torch RNG (see ``RNG_SEED``).
 
-See ``conformal_methods.md`` (same directory) for a description of LAC/APS/RAPS/SAPS.
+See ``methods.md`` (same directory) for a description of LAC/APS/RAPS/SAPS.
 """
 # This module gathers the whole post-hoc conformal layer (split + per-class + Mondrian +
 # hyperparameter sweep + cached report + CV+); it is cohesive enough to live in one file.

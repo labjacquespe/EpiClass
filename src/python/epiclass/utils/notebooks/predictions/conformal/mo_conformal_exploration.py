@@ -3,13 +3,13 @@
 # Sweeps LAC/APS/RAPS/SAPS x alpha over one or more folds' validation_prediction.csv
 # (calibration uses the held-out validation predictions) and plots empirical coverage
 # vs the 1 - alpha target and average prediction-set size vs alpha. All logic lives in
-# epiclass.utils.postprocessing.conformal_prediction; this notebook only drives it.
+# epiclass.utils.conformal.prediction; this notebook only drives it.
 #
 # File-wide pylint disables. Kept as a header comment (above `import marimo`) so marimo
 # preserves it on save; an in-cell disable only scopes to that one cell.
 # pylint: disable=missing-module-docstring, missing-function-docstring, function-redefined
 # pylint: disable=import-error, import-outside-toplevel, reimported
-# pylint: disable=redefined-outer-name, use-dict-literal, too-many-lines
+# pylint: disable=redefined-outer-name, use-dict-literal, too-many-lines, duplicate-code
 # pylint: disable=unused-import, unused-argument, unused-variable, too-many-branches
 # Structural to marimo's notebook format (cells are functions that return/display):
 # pylint: disable=useless-return, pointless-statement, expression-not-assigned
@@ -30,7 +30,7 @@ def _():
     import pandas as pd
     import plotly.express as px
 
-    from epiclass.utils.postprocessing import conformal_prediction as cp
+    from epiclass.utils.conformal import prediction as cp
 
     return Path, cp, mo, pd, px
 
@@ -48,13 +48,15 @@ def _(Path):
 
 @app.cell
 def _(mo):
-    mo.md("""
+    mo.md(
+        """
     # Conformal prediction explorer
 
     Calibrates split conformal prediction on a fold's `validation_prediction.csv` and reports the empirical coverage / average prediction-set size for every score method (LAC, APS, RAPS, SAPS) across a sweep of target miscoverage `alpha`.
 
     Set the glob below to point at one or more prediction CSVs, then run.
-    """)
+    """
+    )
     return
 
 
@@ -271,13 +273,15 @@ def _(PER_CLASS_ALPHA, per_class, px):
 
 @app.cell
 def _(mo):
-    mo.md("""
+    mo.md(
+        """
     ## Class-conditional (Mondrian) calibration
 
     Mondrian CP uses a **separate threshold per class**, giving a per-class coverage guarantee instead of a marginal one — but every class needs enough *calibration* samples on its own.
 
     Below the floor `ceil(1/alpha) - 1` a class is forced into every prediction set (trivial coverage). The feasibility table checks this from the label distribution before we trust the Mondrian results.
-    """)
+    """
+    )
     return
 
 

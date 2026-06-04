@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("torchcp")
 
 # pylint: disable=wrong-import-position
-from epiclass.utils.postprocessing import conformal_prediction as cp
+from epiclass.utils.conformal import prediction as cp
 
 CLASSES = ["assay_A", "assay_B", "assay_C", "assay_D"]
 

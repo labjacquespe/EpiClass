@@ -8,13 +8,13 @@
 # "hands up" summary (worst-covered class, Mondrian feasibility, hyperparam sensitivity).
 #
 # Focus methods are RAPS and SAPS; LAC and APS are kept as faded reference lines. All logic
-# lives in epiclass.utils.postprocessing.conformal_prediction; this notebook only drives it.
+# lives in epiclass.utils.conformal.prediction; this notebook only drives it.
 #
 # File-wide pylint disables. Kept as a header comment (above `import marimo`) so marimo
 # preserves it on save; an in-cell disable only scopes to that one cell.
 # pylint: disable=missing-module-docstring, missing-function-docstring, function-redefined
 # pylint: disable=import-error, import-outside-toplevel, reimported
-# pylint: disable=redefined-outer-name, use-dict-literal, too-many-lines
+# pylint: disable=redefined-outer-name, use-dict-literal, too-many-lines, duplicate-code
 # pylint: disable=unused-import, unused-argument, unused-variable, too-many-branches
 # Structural to marimo's notebook format (cells are functions that return/display):
 # pylint: disable=useless-return, pointless-statement, expression-not-assigned
@@ -36,10 +36,7 @@ def _():
     import plotly.express as px
     from tqdm.notebook import tqdm
 
-    from epiclass.utils.postprocessing import (
-        conformal_prediction as cp,
-        conformal_report as cpr,
-    )
+    from epiclass.utils.conformal import prediction as cp, report as cpr
 
     return Path, cp, cpr, mo, pd, px, tqdm
 
@@ -94,7 +91,7 @@ def _(training_dir):
 
 @app.cell
 def _(mo, run_dirs):
-    # Default to the donor-sex run (the one already characterized in conformal_methods.md)
+    # Default to the donor-sex run (the one already characterized in methods.md)
     # if present, else the first discovered run.
     _labels = list(run_dirs)
     _default = next((label for label in _labels if "donor_sex" in label), _labels[0])

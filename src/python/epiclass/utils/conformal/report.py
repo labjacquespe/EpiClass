@@ -2,11 +2,11 @@
 
 Builds the headline figures of the report notebook (per-class coverage / set size /
 empty rate at the default hyperparameters, and the RAPS/SAPS hyperparameter-sensitivity
-sweep) straight from a cached per-fold report (see ``conformal_prediction.run_report``),
+sweep) straight from a cached per-fold report (see ``prediction.run_report``),
 and writes them into a ``conformal_report/`` folder that sits **next to the split folders**
 of a run -- one summary per classifier, alongside its data.
 
-Plotting lives here, not in ``conformal_prediction`` (which stays plotting-free): this
+Plotting lives here, not in ``prediction`` (which stays plotting-free): this
 module is the single source of the figure construction, reused by the marimo notebook for
 on-screen display and by ``save_summary_figures`` for on-disk export.
 """
@@ -19,7 +19,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 
-from epiclass.utils.postprocessing import conformal_prediction as cp
+from epiclass.utils.conformal import prediction as cp
 
 # Folder (sibling of split0/.../splitN) that collects a run's summary figures.
 REPORT_DIR_NAME = "conformal_report"

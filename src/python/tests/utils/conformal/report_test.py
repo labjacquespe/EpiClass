@@ -16,10 +16,7 @@ pytest.importorskip("plotly")
 # pylint: disable=wrong-import-position
 import plotly.graph_objects as go
 
-from epiclass.utils.postprocessing import (
-    conformal_prediction as cp,
-    conformal_report as cpr,
-)
+from epiclass.utils.conformal import prediction as cp, report as cpr
 
 CLASSES = ["assay_A", "assay_B", "assay_C", "assay_D"]
 
