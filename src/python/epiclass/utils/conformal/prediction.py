@@ -240,6 +240,40 @@ def membership_to_labels(
     return [[classes[j] for j in np.flatnonzero(row)] for row in membership]
 
 
+# Per-sample QC flag categories, derived from a prediction set's shape vs the true
+# class. They partition the labelled samples (every row is exactly one of these):
+#   empty    -- size 0: the model rejects every class (out-of-distribution candidate);
+#   clean    -- singleton that *is* the true class (confident & correct);
+#   disagree -- singleton that is *not* the true class (confident & wrong -> mislabel?);
+#   hedge    -- 2+ classes (the model is unsure, true class may or may not be inside).
+FLAG_EMPTY, FLAG_CLEAN, FLAG_DISAGREE, FLAG_HEDGE = (
+    "empty",
+    "clean",
+    "disagree",
+    "hedge",
+)
+FLAG_CATEGORIES: Tuple[str, ...] = (FLAG_CLEAN, FLAG_HEDGE, FLAG_DISAGREE, FLAG_EMPTY)
+
+
+def classify_flags(membership: np.ndarray, true_idx: np.ndarray) -> List[str]:
+    """Label each sample with its QC flag category from set shape vs the true class.
+
+    ``membership`` is an ``(n, k)`` 0/1 matrix; ``true_idx`` an ``(n,)`` int array of
+    true-class indices. Returns a length-``n`` list drawn from ``FLAG_CATEGORIES``. Needs
+    the true class, so it only applies to labelled (cross-validation) samples, not to
+    unlabelled deployment sets.
+    """
+    sizes = membership.sum(axis=1)
+    covered = membership[np.arange(len(true_idx)), true_idx] == 1
+    flags = np.empty(len(true_idx), dtype=object)
+    flags[sizes == 0] = FLAG_EMPTY
+    singleton = sizes == 1
+    flags[singleton & covered] = FLAG_CLEAN
+    flags[singleton & ~covered] = FLAG_DISAGREE
+    flags[sizes >= 2] = FLAG_HEDGE
+    return flags.tolist()
+
+
 def evaluate_sets_per_class(
     membership: np.ndarray, true_idx: np.ndarray, classes: Sequence[str]
 ) -> pd.DataFrame:
@@ -778,7 +812,7 @@ def run_apply(
 # --------------------------------------------------------------------------- #
 # CV+ (cross-conformal) -- use every fold's out-of-fold scores as calibration.
 # --------------------------------------------------------------------------- #
-def _true_class_scores(score_fn, probs: np.ndarray, true_idx: np.ndarray) -> np.ndarray:
+def true_class_scores(score_fn, probs: np.ndarray, true_idx: np.ndarray) -> np.ndarray:
     """Nonconformity score of each sample's *true* class: an ``(n,)`` array."""
     torch.manual_seed(RNG_SEED)
     scores = score_fn(
@@ -788,7 +822,7 @@ def _true_class_scores(score_fn, probs: np.ndarray, true_idx: np.ndarray) -> np.
     return scores.cpu().numpy().astype(np.float64)
 
 
-def _all_class_scores(score_fn, probs: np.ndarray) -> np.ndarray:
+def all_class_scores(score_fn, probs: np.ndarray) -> np.ndarray:
     """Nonconformity score of *every* class: an ``(n, k)`` array."""
     torch.manual_seed(RNG_SEED)
     scores = score_fn(torch.as_tensor(probs, dtype=torch.float32))
@@ -879,7 +913,7 @@ def cv_plus_sets(
             classes_ref = classes
         elif classes != classes_ref:
             raise ValueError("Calibration CSVs have mismatched class columns/order.")
-        cal_scores.append(_true_class_scores(score_fn, probs, true_idx))
+        cal_scores.append(true_class_scores(score_fn, probs, true_idx))
 
     ids_ref: Optional[List[str]] = None
     test_true: Optional[np.ndarray] = None
@@ -897,7 +931,7 @@ def cv_plus_sets(
                     "Test CSVs must list the same samples in the same order."
                 )
             prob_sum = prob_sum + probs
-        test_mats.append(_all_class_scores(score_fn, probs))
+        test_mats.append(all_class_scores(score_fn, probs))
 
     membership = cv_plus_membership(cal_scores, test_mats, alpha)
     mean_probs = prob_sum / len(test_csvs)

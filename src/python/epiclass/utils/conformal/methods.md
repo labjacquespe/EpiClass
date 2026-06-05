@@ -181,6 +181,17 @@ Marginal coverage validates the machinery; these three pick the method:
 
 Use enough eval samples per class to trust the numbers: SE of a coverage estimate ≈ `√(α(1−α)/n)`.
 
+### What an empty set actually means (it is not a geometric outlier)
+
+An empty set at level `α` means the conformal p-value `p(x, c) ≤ α` for **every** class `c` — the nonconformity score of `(x, c)` lands in the worst-`α` tail of the relevant calibration scores for every class (the *pooled* fold scores under marginal calibration; *that class's own* scores under Mondrian). The score is built from the classifier's **softmax** (for SAPS, from the sorted probabilities), so empty means *the model's probability vector for `x` is atypically diffuse / under-confident relative to the calibration samples*. It is a statement in **confidence/score space**, not in the input or embedding (UMAP/PCA) space — those are different spaces (embeddings come from raw signal features, the conformal score from model outputs). A sample sitting dead-centre of a tight UMAP cluster can therefore be empty: if its peers are `p_top ≈ 0.99` and it is `p_top ≈ 0.7`, against a marginal threshold dominated by very-confident samples it falls below the bar. **Empty ≠ "far from the data."** For true geometric novelty use a density / kNN-distance / Mahalanobis signal on the features; conformal answers "which labels are plausible," not "is this point isolated."
+
+Most empties are also just the **coverage budget**, not novelty. With marginal SAPS the miss rate is ≈ `α` by construction, and most of those misses are spent as empties (abstain) rather than wrong singletons (guess), so the empty rate tends to track `α`. Raising `α` shrinks sets and **increases** empties; lowering `α` (e.g. 0.05) grows sets and reduces empties. So a high empty count is mostly the `1 − α` budget plus model under-confidence on hard/ambiguous samples, not a pile of outliers.
+
+Practical reading by context:
+
+- **In-distribution QC (cross-validation examination):** empty = "the model is not `1 − α`-confident about *any* label here" — a low-confidence abstention. The real mislabel signals are **singleton-disagree** (confident-but-wrong → likely mislabel) and **hedge** (multi-class → genuine ambiguity), *not* empties. Under **marginal** calibration a whole class can carry disproportionately many empties — one shared threshold over-rejects a systematically under-confident class (this is the same effect as its low per-class coverage). **Mondrian** calibrates per class and largely removes that class-level skew (where feasible; rare classes fall back to marginal), leaving empties as within-class low confidence rather than a class-wide artifact.
+- **Deployment (CV+ on new, possibly-shifted data):** here exchangeability is broken, so a sample scoring atypically under *all* fold-models is a more meaningful "nothing fits" signal — a reasonable OOD/manual-review heuristic. Even then it is confidence-space; combine it with geometric isolation in the embedding before calling it novel.
+
 ### Class-conditional (Mondrian) calibration: sample-size requirements
 
 Mondrian CP (a separate `q̂` per class) would *guarantee* per-class coverage, but needs enough
