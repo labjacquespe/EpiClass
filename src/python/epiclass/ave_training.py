@@ -260,13 +260,20 @@ def do_one_experiment(
             mode="min",
         )
 
+        # Always tee metrics to a local CSV under the logdir. Offline Comet
+        # (online=False) disables logging entirely, so this CSV is the only
+        # persisted record of train_loss / train_recon / train_kl / valid_*.
+        csv_logger = pl_loggers.CSVLogger(
+            save_dir=str(logger.save_dir), name="metrics"  # type: ignore
+        )
+
         before_train = time_now()
         trainer_kwargs = {
             "general_log_dir": logger.save_dir,  # type: ignore
             "model": my_model,
             "max_epochs": hparams.get("training_epochs", 50),
             "check_val_every_n_epoch": hparams.get("measure_frequency", 1),
-            "logger": logger,
+            "logger": [logger, csv_logger],
             "callbacks": callbacks,
             "accelerator": "gpu" if gpu_available else "cpu",
             "devices": 1,
