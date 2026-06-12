@@ -61,12 +61,20 @@ class MyTrainer(pl.Trainer):
 
 
 def define_callbacks(
-    early_stop_limit: int | None, show_summary=True, show_progress_bar=True
+    early_stop_limit: int | None,
+    show_summary=True,
+    show_progress_bar=True,
+    monitor: str = "valid_acc",
+    mode: str = "max",
 ):
     """Returns list of PyTorch trainer callbacks.
     RichProgressBar, RichModelSummary, EarlyStopping, ModelCheckpoint
 
     Will only save last epoch model if there is no early stopping.
+
+    `monitor` / `mode` select the metric EarlyStopping and ModelCheckpoint
+    track. Defaults suit classifiers ("valid_acc" maximised); the AVE passes
+    monitor="valid_loss", mode="min".
     """
     callbacks = []
 
@@ -76,8 +84,7 @@ def define_callbacks(
     if show_summary:
         callbacks.append(pl_callbacks.RichModelSummary(max_depth=3))
 
-    monitored_value = "valid_acc"  # have same name as TorchMetrics
-    mode = "max"
+    monitored_value = monitor  # have same name as the logged metric
 
     if early_stop_limit is not None:
         callbacks.append(

@@ -1,0 +1,18 @@
+{
+  "batch_size": 64,
+  "contamination_rate": 0.05,
+  "dropout": 0.1,
+  "early_stop_limit": 30,
+  "fusion_weight": 0.5,
+  "kl_anneal_epochs": 0,
+  "kl_weight": 0.1,
+  "l2_scale": 0.001,
+  "latent_dim": 128,
+  "learning_rate": 0.0001,
+  "measure_frequency": 1,
+  "min_class_size": 10,
+  "n_fold": 10,
+  "output_activation": "linear",
+  "oversample": true,
+  "training_epochs": 200
+}
