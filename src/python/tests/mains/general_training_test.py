@@ -1,4 +1,5 @@
 """Integration test for general_training.py using saccer3 fixtures."""
+import json
 import sys
 from pathlib import Path
 
@@ -60,3 +61,47 @@ def test_cross_validation_training(
         assert (fold_dir / "best_checkpoint.list").is_file()
         assert list(fold_dir.glob("*validation_prediction*"))
         assert len(find_signal_id_lists(fold_dir, "split*")) == 2
+
+
+@pytest.mark.filterwarnings(
+    "ignore:The 'val_dataloader' does not have many workers.*:UserWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore:The 'train_dataloader' does not have many workers.*:UserWarning"
+)
+@pytest.mark.filterwarnings("ignore:The number of training batches")
+@pytest.mark.slow
+def test_cross_validation_training_with_folds(
+    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+):
+    """--folds drives leave-one-fold-out CV for the classifier too."""
+    hdf5_list, metadata = saccer3_small_training_data
+
+    # Build a 2-fold definition keyed by md5sum.
+    md5s = sorted(d["md5sum"] for d in json.loads(metadata.read_text())["datasets"])
+    folds = {"fold0": {"md5sum": []}, "fold1": {"md5sum": []}}
+    for j, md5 in enumerate(md5s):
+        folds[f"fold{j % 2}"]["md5sum"].append(md5)
+    folds_file = test_dir / "folds.json"
+    folds_file.write_text(json.dumps(folds), encoding="utf-8")
+
+    # fmt: off
+    sys.argv = [
+        "general_training.py",
+        "assay",
+        str(SACCER3_DIR / "saccer3_hparams.json"),
+        str(hdf5_list),
+        str(SACCER3_DIR / "saccer3.can.chrom.sizes"),
+        str(metadata),
+        str(test_dir),
+        "--hl_units", "10",
+        "--folds", str(folds_file),
+    ]
+    # fmt: on
+    main_module()
+
+    for fold_i in range(2):
+        fold_dir = test_dir / f"fold_{fold_i}"
+        assert fold_dir.is_dir()
+        assert (fold_dir / "best_checkpoint.list").is_file()
+        assert list(fold_dir.glob("*validation_prediction*"))

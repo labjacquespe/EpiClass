@@ -82,6 +82,14 @@ def parse_arguments() -> argparse.Namespace:
         help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
              "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
     )
+    arg_parser.add_argument(
+        "--folds", type=Path, default=None,
+        help='JSON file of explicit fold membership: '
+             '{"fold1": {"md5sum": [ids...]}, ...}. The inner key names a '
+             'metadata category matched 1:1 to samples (each value must resolve '
+             'to exactly one signal). Overrides --n_fold, --min_class_size and '
+             'oversampling.',
+    )
     # fmt: on
     return arg_parser.parse_args()
 
@@ -107,6 +115,17 @@ def main():
     else:
         min_class_size = cli.min_class_size
 
+    # --- Pre-specified folds (override n_fold / min_class_size / oversampling) ---
+    fold_definitions = None
+    if cli.folds is not None:
+        with open(cli.folds, "r", encoding="utf-8") as file:
+            fold_definitions = json.load(file)
+        print(
+            f"Using pre-specified folds from {cli.folds}: "
+            f"{len(fold_definitions)} folds. "
+            "Overriding --n_fold, --min_class_size and oversampling."
+        )
+
     # --- Load signals (stratified k-fold, no UUID grouping) ---
     loading_begin = time_now()
     mmap_dir = (
@@ -118,6 +137,7 @@ def main():
         min_class_size=min_class_size,
         n_fold=cli.n_fold,
         mmap_dir=mmap_dir,
+        fold_definitions=fold_definitions,
     )
     loading_time = time_now() - loading_begin
 
@@ -125,6 +145,7 @@ def main():
         "loading_time": loading_time.total_seconds(),
         "hdf5_resolution": str(hdf5_resolution),
         "category": category,
+        "folds_file": str(cli.folds) if cli.folds is not None else None,
     }
 
     min_split = int(os.getenv("MIN_SPLIT", "0"))

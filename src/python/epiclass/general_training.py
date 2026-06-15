@@ -76,6 +76,14 @@ def parse_arguments() -> argparse.Namespace:
         help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
              "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
     )
+    arg_parser.add_argument(
+        "--folds", type=Path, default=None,
+        help='JSON file of explicit fold membership: '
+             '{"fold1": {"md5sum": [ids...]}, ...}. The inner key names a '
+             'metadata category matched 1:1 to samples (each value must resolve '
+             'to exactly one signal). Overrides --n_fold, --min_class_size and '
+             'oversampling.',
+    )
     # fmt: on
     return arg_parser.parse_args()
 
@@ -223,6 +231,17 @@ def main():
 
     datasource = EpiDataSource(hdf5_list_path, cli.chromsize, cli.metadata)
 
+    # Pre-specified folds override n_fold / min_class_size / oversampling.
+    fold_definitions = None
+    if cli.folds is not None:
+        with open(cli.folds, "r", encoding="utf-8") as f:
+            fold_definitions = json.load(f)
+        print(
+            f"Using pre-specified folds from {cli.folds}: "
+            f"{len(fold_definitions)} folds. "
+            "Overriding --n_fold, --min_class_size and oversampling."
+        )
+
     # Load data and create fold factory
     loading_begin = time_now()
     fold_factory = GeneralFoldFactory(
@@ -231,6 +250,7 @@ def main():
         min_class_size=cli.min_class_size,
         n_fold=cli.n_fold,
         mmap_dir=cli.mmap_dir if cli.mmap_dir is not None else logdir / "mmap_cache",
+        fold_definitions=fold_definitions,
     )
     print(f"Loading time: {time_now() - loading_begin}")
 
@@ -239,7 +259,7 @@ def main():
 
     for i, my_data in enumerate(fold_factory.yield_split(oversample=oversample)):
         print(f"\n{'='*60}")
-        print(f"FOLD {i+1}/{cli.n_fold}")
+        print(f"FOLD {i+1}/{fold_factory.k}")
         print(f"  Training:   {my_data.train.num_examples} samples")
         print(f"  Validation: {my_data.validation.num_examples} samples")
         print(f"{'='*60}\n")
