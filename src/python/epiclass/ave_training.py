@@ -227,21 +227,13 @@ def do_one_experiment(
     if my_data.train.num_examples == 0 or my_data.validation.num_examples == 0:
         raise DatasetError("Trying to train without any training or validation data.")
 
-    # Warning : output mapping of model created from training dataset
-    mapping_file = Path(logger.save_dir) / "training_mapping.tsv"  # type: ignore
-
     if not restore:
         # --- CREATE a brand new MODEL ---
-        my_data.save_mapping(mapping_file)
-        mapping = my_data.load_mapping(mapping_file)
-        logger.experiment.log_asset(mapping_file)
-
         input_size = my_data.train.signal_length
 
         my_model = LightningAVE(
             input_size=input_size,
             hparams=hparams,
-            mapping=mapping,
         )
 
         if split_nb == 0:

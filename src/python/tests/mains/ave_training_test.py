@@ -76,7 +76,6 @@ def test_ave_training(test_dir: Path):
     split_dir = test_dir / "split0"
     assert split_dir.is_dir()
     assert (split_dir / "best_checkpoint.list").is_file()
-    assert (split_dir / "training_mapping.tsv").is_file()
 
     scores_csv = split_dir / "ave_validation_scores.csv"
     assert scores_csv.is_file(), "ave_validation_scores.csv was not created"

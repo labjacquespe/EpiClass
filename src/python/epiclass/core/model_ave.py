@@ -79,7 +79,6 @@ class LightningAVE(pl.LightningModule):
         self,
         input_size: int,
         hparams: Dict,
-        mapping: Optional[Dict[int, str]] = None,
         ae_hidden: Optional[Tuple[int, int]] = None,
         vae_hidden: Optional[Tuple[int, int]] = None,
         latent_dim: Optional[int] = None,
@@ -100,7 +99,6 @@ class LightningAVE(pl.LightningModule):
         self.save_hyperparameters()
 
         self._x_size = input_size
-        self._mapping = mapping
 
         # -- hyperparameters: kl_weight, learning_rate and fusion_weight follow
         #    the reference AVE implementation; weight decay and dropout are tuned
@@ -163,12 +161,6 @@ class LightningAVE(pl.LightningModule):
                 "Expected 'linear' or 'sigmoid'."
             )
         return nn.Sequential(*layers)
-
-    # --- Properties ---
-    @property
-    def mapping(self) -> Optional[Dict[int, str]]:
-        """Return the ``{index: label}`` mapping (unused by the loss)."""
-        return self._mapping
 
     # --- Forward / latent logic ---
     @staticmethod
