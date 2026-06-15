@@ -32,7 +32,7 @@ from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as Argume
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.ave_training import do_one_experiment
 from epiclass.core.data_source import EpiDataSource
-from epiclass.general_training import GeneralFoldFactory
+from epiclass.core.lazy.general_fold_factory import GeneralFoldFactory
 from epiclass.utils.check_dir import create_dirs
 from epiclass.utils.my_logging import log_pre_training
 from epiclass.utils.time import time_now

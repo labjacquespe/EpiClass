@@ -10,135 +10,26 @@ import argparse
 import json
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Generator, List
+from typing import Any, Dict
 
 warnings.simplefilter("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-import numpy as np
 import torch
-from imblearn.over_sampling import RandomOverSampler
 from lightning.pytorch import loggers as pl_loggers
-from sklearn.model_selection import StratifiedKFold
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data_source import EpiDataSource
-from epiclass.core.lazy.lazy_data_classes import LazyKnownData
-from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
-from epiclass.core.metadata import Metadata
+from epiclass.core.lazy.general_fold_factory import GeneralFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils.check_dir import create_dirs
 from epiclass.utils.my_logging import log_dset_composition
 from epiclass.utils.time import time_now
 from epiclass.utils.torch_data import create_torch_datasets
-
-# ---------------------------------------------------------------------------
-# Data loading and stratified k-fold splitting (no UUID requirement)
-# ---------------------------------------------------------------------------
-
-
-class GeneralFoldFactory:
-    """Stratified k-fold cross-validation without UUID grouping.
-
-    Loads signals once and yields DataSet objects per fold.
-    """
-
-    def __init__(
-        self,
-        datasource: EpiDataSource,
-        label_category: str,
-        min_class_size: int = 3,
-        n_fold: int = 4,
-        mmap_dir: Path | None = None,
-    ):
-        self.k = n_fold
-        if n_fold < 2:
-            raise ValueError(f"Need at least 2 folds. Got {n_fold}.")
-
-        self._label_category = label_category
-
-        # Load and filter metadata
-        meta = Metadata(datasource.metadata_file)
-        files = LazyHdf5Loader.read_list(datasource.hdf5_file)
-        meta.apply_filter(lambda item: item[0] in files)
-        meta.remove_missing_labels(label_category)
-        meta.remove_small_classes(min_class_size, label_category)
-        self._metadata = meta
-
-        self._classes = meta.unique_classes(label_category)
-        self._classes_mapping = {label: i for i, label in enumerate(self._classes)}
-
-        # Register HDF5 paths lazily (no signals loaded yet)
-        loader = LazyHdf5Loader(
-            chrom_file=datasource.chromsize_file,
-            normalization=True,
-            mmap_dir=mmap_dir,
-        )
-        loader.register_hdf5s(
-            data_file=datasource.hdf5_file,
-            signal_ids=list(meta.signal_ids),
-            strict=True,
-            verbose=True,
-        )
-        loader.preload_all()
-
-        signal_ids = list(loader.file_paths.keys())
-        labels = [meta[sid][label_category] for sid in signal_ids]
-
-        self._dataset = LazyKnownData(
-            ids=signal_ids,
-            loader=loader,
-            y_str=labels,
-            y=np.array(
-                [self._classes_mapping[label] for label in labels], dtype=np.int64
-            ),
-            metadata=meta,
-        )
-
-        print(f"\nLoaded {len(signal_ids)} samples across {len(self._classes)} classes.")
-        meta.display_labels(label_category)
-
-    @property
-    def classes(self) -> List[str]:
-        """Get list of class labels."""
-        return self._classes
-
-    def yield_split(self, oversample: bool = True) -> Generator[DataSet, None, None]:
-        """Yield DataSet for each fold of stratified k-fold CV."""
-        dset = self._dataset
-        y = dset.encoded_labels
-
-        # StratifiedKFold only inspects sample count; passing a placeholder
-        # avoids materializing all signals just to split on indices.
-        x_placeholder = np.zeros((len(y), 1), dtype=np.float32)
-
-        skf = StratifiedKFold(n_splits=self.k, shuffle=True, random_state=42)
-        for train_idxs, valid_idxs in skf.split(x_placeholder, y):
-            train_idxs = list(train_idxs)
-            valid_idxs = list(valid_idxs)
-
-            if oversample:
-                ros = RandomOverSampler(random_state=42)
-                resampled, _ = ros.fit_resample(
-                    np.arange(len(train_idxs)).reshape(-1, 1),
-                    y[train_idxs],
-                )
-                train_idxs = [train_idxs[i] for i in resampled.flatten()]
-
-            train_set = dset.subsample(train_idxs)
-            valid_set = dset.subsample(valid_idxs)
-
-            yield DataSet(
-                training=train_set,
-                validation=valid_set,
-                test=LazyKnownData.empty_collection(),
-                sorted_classes=self._classes,
-            )
-
 
 # ---------------------------------------------------------------------------
 # CLI
