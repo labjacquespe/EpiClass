@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from tests.epilap_test_data import FIXTURES_DIR
 
@@ -86,13 +87,13 @@ class TestRestoreModelErrors:
             LightningDenseClassifier.restore_model(model_dir, verbose=False)
 
     def test_blank_last_entry(self, tmp_path: Path, ckpt_path: Path):
-        # Last line is empty/whitespace → the split yields "" → "no checkpoint
-        # path" branch. A non-blank earlier line must NOT rescue it.
+        # Last line is empty/whitespace → the split yields "" → blank-entry
+        # branch. A non-blank earlier line must NOT rescue it.
         model_dir = _write_list(
             tmp_path,
             [f"{ckpt_path} 2023-05-08 16:39:54.954455", ""],
         )
-        with pytest.raises(FileNotFoundError, match="no checkpoint path"):
+        with pytest.raises(FileNotFoundError, match="blank last entry"):
             LightningDenseClassifier.restore_model(model_dir, verbose=False)
 
     def test_checkpoint_path_missing_on_disk(self, tmp_path: Path):
@@ -100,3 +101,30 @@ class TestRestoreModelErrors:
         model_dir = _write_list(tmp_path, [f"{ghost} 2099-01-01 00:00:00"])
         with pytest.raises(FileNotFoundError, match="does not exist"):
             LightningDenseClassifier.restore_model(model_dir, verbose=False)
+
+
+class TestLastCheckpointPath:
+    """last_checkpoint_path returns the path of the last list entry, or None."""
+
+    def test_picks_last_entry_without_disk_check(self, tmp_path: Path):
+        # No checkpoint file on disk: last_checkpoint_path does NOT validate existence.
+        ckpt = tmp_path / "logs" / "epoch=1-step=57.ckpt"
+        model_dir = _write_list(
+            tmp_path,
+            [
+                "/stale/epoch=0-step=1.ckpt 2023-01-01 00:00:00",
+                f"{ckpt} 2023-05-08 16:39:54.954455",
+            ],
+        )
+        assert last_checkpoint_path(model_dir) == ckpt
+
+    def test_missing_list_returns_none(self, tmp_path: Path):
+        assert last_checkpoint_path(tmp_path) is None
+
+    def test_empty_list_returns_none(self, tmp_path: Path):
+        model_dir = _write_list(tmp_path, [])
+        assert last_checkpoint_path(model_dir) is None
+
+    def test_blank_last_entry_returns_none(self, tmp_path: Path):
+        model_dir = _write_list(tmp_path, ["/some/epoch=1-step=57.ckpt x", ""])
+        assert last_checkpoint_path(model_dir) is None

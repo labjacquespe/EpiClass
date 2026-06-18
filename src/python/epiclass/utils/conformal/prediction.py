@@ -48,6 +48,7 @@ from torchcp.classification.score import APS, LAC, RAPS, SAPS
 from torchcp.classification.utils.metrics import Metrics
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
+from epiclass.core.prediction_files import resolve_split_prediction_csvs
 
 # A calibrated TorchCP predictor: marginal (SplitPredictor) or class-conditional /
 # Mondrian (ClassConditionalPredictor). Both share the model-free
@@ -656,18 +657,24 @@ def fold_report(
 def run_report(
     run_dir: str | Path,
     *,
-    pattern: str = "split*/validation_prediction.csv",
+    pattern: Optional[str] = None,
     force: bool = False,
     calib_frac: float = 0.5,
     seed: int = 42,
 ) -> pd.DataFrame:
     """Stack the cached per-fold reports of a CV run, tagging each row with its fold.
 
-    Globs ``pattern`` under ``run_dir`` and concatenates each fold's ``fold_report`` (read
-    from or written to that split folder's cache). Aggregate across folds downstream with
+    By default resolves one validation prediction CSV per fold under ``run_dir`` (newest
+    tagged file per ``split*``/``fold_*`` wins) via ``resolve_split_prediction_csvs``. Pass an
+    explicit ``pattern`` to glob a custom layout instead. Concatenates each fold's
+    ``fold_report`` (read from or written to that split folder's cache). Aggregate across folds
+    downstream with
     ``aggregate_per_class(..., group_cols=["method", "alpha", "combo", "true_class"])``.
     """
-    paths = sorted(Path(run_dir).glob(pattern))
+    if pattern is None:
+        paths = list(resolve_split_prediction_csvs(run_dir, "validation").values())
+    else:
+        paths = sorted(Path(run_dir).glob(pattern))
     blocks = [
         fold_report(p, force=force, calib_frac=calib_frac, seed=seed).assign(
             fold=p.parent.name

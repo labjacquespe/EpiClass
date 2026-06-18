@@ -30,12 +30,15 @@ import numpy as np
 import pandas as pd
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
+from epiclass.core.prediction_files import resolve_split_prediction_csvs
 from epiclass.utils.conformal import prediction as cp
 
 # Output folder, a sibling of ``conformal_report/`` next to the split folders.
 SETS_DIR_NAME = "conformal_sets"
-VALIDATION_GLOB = "split*/validation_prediction.csv"
-DEFAULT_TEST_GLOB = "split*/test_prediction.csv"
+# Validation CSVs are resolved per fold (newest tagged file wins) via
+# ``resolve_split_prediction_csvs``; the test side stays a plain glob so callers can point
+# it at an arbitrary layout. Both tolerate the tagged ``*_prediction_<tag>.csv`` names.
+DEFAULT_TEST_GLOB = "split*/test_prediction*.csv"
 
 
 # --------------------------------------------------------------------------- #
@@ -241,16 +244,19 @@ def run_cv_examine(
 ) -> List[Path]:
     """Precompute honest within-fold LOO prediction sets for a 10-fold run directory.
 
-    Globs ``split*/validation_prediction.csv`` under ``run_dir``, computes LOO sets per fold
+    Resolves one validation prediction CSV per fold under ``run_dir`` (newest tagged file
+    per ``split*``/``fold_*`` wins), computes LOO sets per fold
     at each alpha (marginal ``method`` + Mondrian where per-fold-per-class feasible), and
     writes them to ``<run_dir>/conformal_sets/``. Skips work when the marginal CSVs already
     exist unless ``force``. Folds are scored in parallel across ``jobs`` processes.
     """
     run_dir = Path(run_dir)
     alphas = tuple(alphas)
-    fold_csvs = sorted(run_dir.glob(VALIDATION_GLOB))
+    fold_csvs = list(resolve_split_prediction_csvs(run_dir, "validation").values())
     if not fold_csvs:
-        raise ValueError(f"No '{VALIDATION_GLOB}' found under '{run_dir}'.")
+        raise ValueError(
+            f"No 'validation_prediction*.csv' found under any split*/fold_* of '{run_dir}'."
+        )
     if not force and _examination_complete(run_dir, method, alphas):
         print(
             f"cv-examine: '{run_dir / SETS_DIR_NAME}' already complete for {method} "
@@ -277,21 +283,23 @@ def run_deploy(
     *,
     methods: Sequence[str] = ("SAPS",),
     alpha: float = 0.05,
-    calib_glob: str = VALIDATION_GLOB,
     test_glob: str = DEFAULT_TEST_GLOB,
 ) -> List[Path]:
     """Resolve the K fold calibration + K test CSVs and run CV+ on new data.
 
-    ``run_dir`` holds the fold ``validation_prediction.csv`` (calibration); ``new_data_dir``
-    holds the same new samples scored under each fold model (``test_glob``, sorted to match
-    the calibration folds). Writes ``cv_plus_sets_{METHOD}_alpha{ALPHA}.csv`` into
-    ``<new_data_dir>/conformal_sets/``.
+    ``run_dir`` holds the fold validation predictions (calibration, resolved per fold with
+    the newest tagged file winning); ``new_data_dir`` holds the same new samples scored under
+    each fold model (``test_glob``, sorted to match the calibration folds). Writes
+    ``cv_plus_sets_{METHOD}_alpha{ALPHA}.csv`` into ``<new_data_dir>/conformal_sets/``.
     """
     run_dir, new_data_dir = Path(run_dir), Path(new_data_dir)
-    calib_csvs = sorted(run_dir.glob(calib_glob))
+    calib_csvs = list(resolve_split_prediction_csvs(run_dir, "validation").values())
     test_csvs = sorted(new_data_dir.glob(test_glob))
     if not calib_csvs:
-        raise ValueError(f"No calibration CSVs ('{calib_glob}') under '{run_dir}'.")
+        raise ValueError(
+            f"No calibration CSVs ('validation_prediction*.csv') under "
+            f"any split*/fold_* of '{run_dir}'."
+        )
     if len(calib_csvs) != len(test_csvs):
         raise ValueError(
             f"Fold count mismatch: {len(calib_csvs)} calibration CSVs vs "
@@ -321,7 +329,7 @@ def parse_arguments():
         "--run-dir",
         type=Path,
         required=True,
-        help="Classifier run directory containing split*/validation_prediction.csv.",
+        help="Classifier run directory containing split*/validation_prediction*.csv.",
     )
     parser.add_argument(
         "--new-data-dir",

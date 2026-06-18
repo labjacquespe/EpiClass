@@ -83,7 +83,7 @@ def _(training_dir):
     # split*/validation_prediction.csv. rglob keeps the pattern relative (an absolute
     # glob pattern raises NotImplementedError on py3.11).
     run_dirs = {}
-    for _split0_csv in sorted(training_dir.rglob("split0/validation_prediction.csv")):
+    for _split0_csv in sorted(training_dir.rglob("split0/validation_prediction*.csv")):
         _run_dir = _split0_csv.parent.parent
         run_dirs[str(_run_dir.relative_to(training_dir))] = _run_dir
     return (run_dirs,)
@@ -114,7 +114,7 @@ def _(mo, run_dirs):
 @app.cell
 def _(classifier_dd, mo, run_dirs):
     run_dir = run_dirs[classifier_dd.value]
-    pred_paths = sorted(run_dir.glob("split*/validation_prediction.csv"))
+    pred_paths = sorted(run_dir.glob("split*/validation_prediction*.csv"))
     mo.md(
         f"Selected **{classifier_dd.value}** — "
         f"**{len(pred_paths)}** fold prediction CSV(s) under `{run_dir}`."
@@ -594,7 +594,7 @@ def _(
         _at = _agg[_agg["alpha"] == _alpha]
 
         # Mondrian feasibility from the first fold's label distribution.
-        _paths = sorted(_run.glob("split*/validation_prediction.csv"))
+        _paths = sorted(_run.glob("split*/validation_prediction*.csv"))
         _, _, _cls, _tru = cp.load_prediction_csv(_paths[0])
         _mondrian_ok = bool(
             cp.mondrian_feasibility(

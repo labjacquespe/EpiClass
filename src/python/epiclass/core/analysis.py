@@ -23,7 +23,9 @@ from torch.utils.data import Dataset
 
 from epiclass.core.confusion_matrix import ConfusionMatrixWriter
 from epiclass.core.data.dataset import DataSet
+from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.core.model_pytorch import LightningDenseClassifier
+from epiclass.core.prediction_files import build_prediction_tag
 from epiclass.core.types import TensorData
 
 
@@ -70,6 +72,25 @@ class Analysis:
         self._train = train_dataset
         self._val = val_dataset
         self._test = test_dataset
+
+    def _prediction_tag(self) -> str:
+        """Provenance suffix for default prediction filenames.
+
+        Combines the comet-ml experiment id (when a logger is attached) with the checkpoint
+        stem read from ``best_checkpoint.list`` in ``save_dir``. Either part may be missing
+        (e.g. general_training passes ``logger=None``); an empty tag means the filename stays
+        the bare ``{name}_prediction.csv``.
+        """
+        experiment_id = None
+        if self._logger is not None:
+            try:
+                experiment_id = self._logger.experiment.get_key()
+            except Exception:  # pylint: disable=broad-except
+                experiment_id = None
+        ckpt_path = (
+            last_checkpoint_path(self._save_dir) if self._save_dir is not None else None
+        )
+        return build_prediction_tag(experiment_id, ckpt_path)
 
     def _log_metrics(self, metric_dict, prefix=""):
         """Log metrics to experiment logger. (key: tensor(val))"""
@@ -130,7 +151,9 @@ class Analysis:
                 raise ValueError(
                     f"Cannot write {name} predictions: no path given and no save_dir available."
                 )
-            path = self._save_dir / f"{name}_prediction.csv"
+            tag = self._prediction_tag()
+            suffix = f"_{tag}" if tag else ""
+            path = self._save_dir / f"{name}_prediction{suffix}.csv"
 
         if to_predict is None:
             print(f"Cannot compute {name} predictions : No {name} dataset given")

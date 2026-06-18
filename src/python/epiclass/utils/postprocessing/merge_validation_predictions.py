@@ -6,6 +6,7 @@ import pandas as pd
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
+from epiclass.core.prediction_files import resolve_split_prediction_csvs
 from epiclass.utils.time import time_now
 
 
@@ -43,13 +44,15 @@ def main():
     if not output_path.parent.exists():
         raise FileNotFoundError(f"Folder does not exist: {output_path.parent}")
 
-    pred_files = list(logdir.glob("split*/validation_prediction.csv"))
+    # Resolve one prediction CSV per fold (newest tagged file wins) so re-runs that share a
+    # split folder don't produce duplicate or stale matches.
+    pred_files = resolve_split_prediction_csvs(logdir, "validation")
     if len(pred_files) != nfold:
         raise ValueError(f"{len(pred_files)} predictions files found. {nfold} expected.")
 
     dfs = []
-    for file in pred_files:
-        split_nb = int(str(file.parent.name)[-1])
+    for split_name, file in pred_files.items():
+        split_nb = int(str(split_name)[-1])
         if split_nb not in range(0, nfold):
             raise ValueError(f"Unexpected split number: {split_nb}")
         df = pd.read_csv(file, index_col=0, header=0)

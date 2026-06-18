@@ -105,7 +105,7 @@ def _(training_dir):
     # A "run" is any directory holding split*/validation_prediction.csv (rglob keeps the
     # pattern relative; an absolute glob raises NotImplementedError on py3.11).
     run_dirs = {}
-    for _split0_csv in sorted(training_dir.rglob("split0/validation_prediction.csv")):
+    for _split0_csv in sorted(training_dir.rglob("split0/validation_prediction*.csv")):
         _run_dir = _split0_csv.parent.parent
         run_dirs[str(_run_dir.relative_to(training_dir))] = _run_dir
     return (run_dirs,)

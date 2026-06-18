@@ -68,7 +68,7 @@ def _(mo, training_dir):
         training_dir
         / "dfreeze_v2/hg38_100kb_all_none/harmonized_donor_sex_1l_3000n/10fold-oversampling"
     )
-    pattern = "split*/validation_prediction.csv"
+    pattern = "split*/validation_prediction*.csv"
 
     # Glob a *relative* pattern against the (absolute) base dir: calling
     # Path().glob() with an absolute pattern raises NotImplementedError on py3.11.

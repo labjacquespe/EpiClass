@@ -532,7 +532,7 @@ class SplitResultsHandler:
         Returns:
             Dict[str, pd.DataFrame]: {split_name: results_df}
         """
-        csv_path_template = "split*/validation_prediction.csv"
+        csv_path_template = "split*/validation_prediction*.csv"
         experiment_dict = {}
         for split_result_csv in parent_dir.glob(csv_path_template):
             split_name = split_result_csv.parent.name
