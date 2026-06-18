@@ -234,6 +234,9 @@ class TestLazyHdf5Dataset:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.filterwarnings(
+    "ignore:'pin_memory' argument is set as true but no accelerator is found.*:UserWarning"
+)
 class TestCreateLazyDataloaders:
     def test_all_splits_present(self):
         loaders = create_lazy_dataloaders(
