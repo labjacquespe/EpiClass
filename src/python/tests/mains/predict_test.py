@@ -64,6 +64,10 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
 
     csv_outputs = list(test_dir.glob("*_test_prediction_*.csv"))
     assert csv_outputs, "Expected a test_prediction CSV in logdir."
+    # The output name carries the model's training provenance: the original training comet
+    # experiment id (from the checkpoint path) and the checkpoint stem.
+    assert "35d1e5aed6bc4b589ccb23325d75201f" in csv_outputs[0].name
+    assert "epoch=1-step=57" in csv_outputs[0].name
 
     df = pd.read_csv(csv_outputs[0], index_col="ID")
     assert df.index.name == "ID"
