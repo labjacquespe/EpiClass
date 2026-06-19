@@ -19,7 +19,6 @@ from pathlib import Path
 
 warnings.simplefilter("ignore", category=FutureWarning)
 
-import comet_ml  # needed because special snowflake # pylint: disable=unused-import
 import lightning.pytorch as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
@@ -33,7 +32,6 @@ from epiclass.core.prediction_files import (
 from epiclass.predict_common import (
     add_data_arguments,
     build_test_dataset,
-    setup_comet_logger,
     write_test_predictions,
 )
 from epiclass.utils.time import time_now
@@ -64,9 +62,6 @@ def main():
     logdir = Path(cli.logdir)
     model_dir = Path(cli.model) if cli.model else logdir
 
-    # --- Logger ---
-    comet_logger = setup_comet_logger(cli, logdir.parts[-2:], logdir)
-
     # --- Load data ---
     now = time_now()
     fmt = "chunked" if cli.chunked else "single"
@@ -79,21 +74,17 @@ def main():
     print("Model successfully restored.")
 
     # --- Predictions (full softmax vector per sample) ---
-    # Tag the output with the model's *training* provenance: the original training comet
-    # experiment id (recovered from the checkpoint path) + checkpoint stem. The comet id of
-    # this prediction run is deliberately not used.
+    # Tag the output with the model's training provenance: the original training comet
+    # experiment id (recovered from the checkpoint path) + checkpoint stem.
     ckpt = last_checkpoint_path(model_dir)
     tag = build_prediction_tag(experiment_id_from_checkpoint(ckpt), ckpt)
     model_id = f"{model_dir.stem}_{tag}" if tag else model_dir.stem
     predict_path = logdir / f"{model_id}_test_prediction_{cli.hdf5.stem}.csv"
-    write_test_predictions(my_model, datasets, test_dataset, comet_logger, predict_path)
+    write_test_predictions(my_model, datasets, test_dataset, predict_path)
 
     end = time_now()
-    main_time = end - begin
     print(f"end {end}")
-    print(f"Main() duration: {main_time}")
-    comet_logger.experiment.log_other("Main duration", main_time)
-    comet_logger.experiment.add_tag("Finished")
+    print(f"Main() duration: {end - begin}")
 
 
 if __name__ == "__main__":

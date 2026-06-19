@@ -48,7 +48,6 @@ def test_predict_cv_chunked(tmp_path: Path, saccer3_chunked_dir: Path):
         str(saccer3_chunked_dir),  # directory of chunk_*.h5
         str(cv_root),
         "--chunked",
-        "--offline",
     ]
     main_module()
 

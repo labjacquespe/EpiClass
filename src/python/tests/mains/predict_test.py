@@ -34,7 +34,6 @@ def test_predict_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Pat
         str(SACCER3_CHROMS),
         "--mmap_dir",
         str(test_dir / "mmap_cache"),
-        "--offline",
         "--model",
         str(SACCER3_FIXTURES_DIR),
     ]
@@ -55,7 +54,6 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
         str(saccer3_chunked_dir),  # directory of chunk_*.h5
         str(test_dir),  # logdir
         "--chunked",
-        "--offline",
         "--model",
         str(SACCER3_FIXTURES_DIR),
     ]

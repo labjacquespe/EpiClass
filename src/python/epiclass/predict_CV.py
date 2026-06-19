@@ -23,7 +23,6 @@ import pandas as pd
 
 warnings.simplefilter("ignore", category=FutureWarning)
 
-import comet_ml  # needed because special snowflake # pylint: disable=unused-import
 import lightning.pytorch as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
@@ -38,7 +37,6 @@ from epiclass.predict_common import (
     DirectoryChecker,
     add_data_arguments,
     build_test_dataset,
-    setup_comet_logger,
     write_test_predictions,
 )
 from epiclass.utils.time import time_now
@@ -100,10 +98,6 @@ def main():
         )
     print(f"Found {len(fold_dirs)} fold models: {[d.name for d in fold_dirs]}")
 
-    # --- Logger (one experiment for the whole ensemble run) ---
-    comet_logger = setup_comet_logger(cli, cv_root.parts[-2:], output_dir)
-    comet_logger.experiment.add_tag("ensemble")
-
     # --- Load data once, reused by every fold model ---
     now = time_now()
     fmt = "chunked" if cli.chunked else "single"
@@ -125,18 +119,15 @@ def main():
         out_path = (
             output_dir / f"{fold_dir.name}_{tag}_test_prediction_{cli.hdf5.stem}.csv"
         )
-        write_test_predictions(my_model, datasets, test_dataset, comet_logger, out_path)
+        write_test_predictions(my_model, datasets, test_dataset, out_path)
         per_fold_csvs.append(out_path)
 
     # --- Concatenated long-format CSV with provenance ---
-    concat_path = write_concatenated(per_fold_csvs, output_dir, cli.hdf5.stem)
-    comet_logger.experiment.log_asset(file_data=concat_path, file_name=concat_path.name)
+    write_concatenated(per_fold_csvs, output_dir, cli.hdf5.stem)
 
     end = time_now()
     print(f"\nend {end}")
     print(f"Main() duration: {end - begin}")
-    comet_logger.experiment.log_other("Main duration", end - begin)
-    comet_logger.experiment.add_tag("Finished")
 
 
 def write_concatenated(
