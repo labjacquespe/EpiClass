@@ -120,3 +120,54 @@ def test_missing_list_file(tmp_path: Path):
         tmp_path / "best_checkpoint.list", dry_run=False, assume_yes=True, backup=False
     )
     assert not ok
+
+
+def test_fallback_appends_surviving_checkpoint(tmp_path: Path):
+    # The expected per-epoch ckpt was deleted; only last.ckpt survives in the
+    # checkpoint dir. With --fallback-ckpt, a new line is appended (not a
+    # rewrite) so the LAST line resolves.
+    last_ckpt = SUFFIX.parent / "last.ckpt"
+    _make_model_dir(tmp_path, [last_ckpt])  # only last.ckpt exists, not SUFFIX
+    list_file = _write_list(tmp_path, [f"{OLD_BASE / SUFFIX} {TS}"])
+
+    ok = process_list_file(
+        list_file,
+        dry_run=False,
+        assume_yes=True,
+        backup=False,
+        fallback_name="last.ckpt",
+    )
+    assert ok
+    new_lines = list_file.read_text(encoding="utf-8").splitlines()
+    # Original stale line is preserved; a new last line points at last.ckpt.
+    assert len(new_lines) == 2
+    assert new_lines[0] == f"{OLD_BASE / SUFFIX} {TS}"
+    assert new_lines[1].split(" ", 1)[0] == str(tmp_path / last_ckpt)
+    assert (tmp_path / last_ckpt).is_file()
+
+
+def test_fallback_disabled_by_default_still_errors(tmp_path: Path):
+    # Only last.ckpt survives, but without fallback the missing exact ckpt is a
+    # hard error and the file is left untouched.
+    _make_model_dir(tmp_path, [SUFFIX.parent / "last.ckpt"])
+    list_file = _write_list(tmp_path, [f"{OLD_BASE / SUFFIX} {TS}"])
+    before = list_file.read_text(encoding="utf-8")
+
+    ok = process_list_file(list_file, dry_run=False, assume_yes=True, backup=False)
+    assert not ok
+    assert list_file.read_text(encoding="utf-8") == before
+
+
+def test_fallback_errors_when_no_survivor(tmp_path: Path):
+    # Fallback requested but the named file isn't there either -> hard error.
+    _make_model_dir(tmp_path, [SUFFIX.parent / "other.ckpt"])
+    list_file = _write_list(tmp_path, [f"{OLD_BASE / SUFFIX} {TS}"])
+
+    ok = process_list_file(
+        list_file,
+        dry_run=False,
+        assume_yes=True,
+        backup=False,
+        fallback_name="last.ckpt",
+    )
+    assert not ok

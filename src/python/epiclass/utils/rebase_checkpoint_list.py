@@ -14,16 +14,22 @@ This script detects the stale old base automatically -- it finds the longest
 trailing suffix of a stored path that actually exists under the list file's own
 directory -- then swaps that old base for the new one on every matching line.
 
+When the exact checkpoint of the last entry cannot be found at all (e.g. cleanups keeping only ``last.ckpt``),
+``--fallback-ckpt`` locates the checkpoint directory under the new base and
+*appends* a new line pointing at the surviving file (``last.ckpt`` by default),
+so restoration -- which reads the last line -- picks it up.
+
 Usage::
 
     python -m epiclass.utils.rebase_checkpoint_list LIST_FILE [LIST_FILE ...] \\
-        [--dry-run] [--yes] [--no-backup]
+        [--dry-run] [--yes] [--no-backup] [--fallback-ckpt [NAME]]
 """
 from __future__ import annotations
 
 import argparse
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -54,6 +60,19 @@ def parse_arguments() -> argparse.Namespace:
         "--no-backup",
         action="store_true",
         help=f"Do not keep a '{LIST_NAME}.bak' copy of the original.",
+    )
+    arg_parser.add_argument(
+        "--fallback-ckpt",
+        nargs="?",
+        const="last.ckpt",
+        default=None,
+        metavar="NAME",
+        help=(
+            "When the last entry's checkpoint cannot be located (e.g. it was "
+            "deleted, leaving only last.ckpt), append a new line pointing at "
+            "NAME found in the matching checkpoint directory. Defaults to "
+            "'last.ckpt' when given with no value; disabled when omitted."
+        ),
     )
     return arg_parser.parse_args()
 
@@ -88,6 +107,28 @@ def detect_old_base(stored_path: str, new_base: Path) -> Optional[Path]:
         if (new_base / suffix).is_file():
             old_parts = parts[: len(parts) - k]
             return Path(*old_parts) if old_parts else Path()
+    return None
+
+
+def find_fallback_ckpt(
+    stored_path: str, new_base: Path, fallback_name: str
+) -> Optional[Path]:
+    """Locate a surviving checkpoint for ``stored_path`` under ``new_base``.
+
+    Used when the exact checkpoint file is gone (e.g. only ``last.ckpt`` was
+    kept). Maps the stored path's *directory* onto ``new_base`` -- the longest
+    trailing suffix of that directory which exists as a directory under
+    ``new_base`` -- and returns ``<that dir>/<fallback_name>`` if it is a file.
+
+    Returns ``None`` when no matching directory holds ``fallback_name``.
+    """
+    parent_parts = Path(stored_path).parent.parts
+    for k in range(len(parent_parts), 0, -1):
+        cand_dir = new_base / Path(*parent_parts[-k:])
+        if cand_dir.is_dir():
+            candidate = cand_dir / fallback_name
+            if candidate.is_file():
+                return candidate
     return None
 
 
@@ -146,27 +187,50 @@ def apply_changes(lines: List[str], changes: List[Tuple[int, str, str]]) -> List
     return new_lines
 
 
+def _plan_fallback(lines: List[str], new_base: Path, fallback_name: str) -> Optional[str]:
+    """Return a new ``"<ckpt> <timestamp>"`` line for a surviving checkpoint.
+
+    Called when the last entry's exact checkpoint is unresolvable. Returns the
+    line to append, or ``None`` when no ``fallback_name`` is found.
+    """
+    anchor_ckpt, _ = parse_line(next(line for line in reversed(lines) if line.strip()))
+    fallback = find_fallback_ckpt(anchor_ckpt, new_base, fallback_name)
+    if fallback is None:
+        return None
+    return f"{fallback} {datetime.now()}"
+
+
 def _report_plan(
-    lines: List[str], new_base: Path
-) -> Tuple[bool, List[Tuple[int, str, str]]]:
+    lines: List[str], new_base: Path, fallback_name: Optional[str]
+) -> Tuple[bool, List[Tuple[int, str, str]], Optional[str]]:
     """Plan the rewrite and print diagnostics.
 
-    Returns ``(ok, changes)``: ``ok`` is False only on a hard error (anchor
-    checkpoint not found beside the list); an empty ``changes`` with ``ok``
-    True means there is nothing to rewrite.
+    Returns ``(ok, changes, append_line)``. ``ok`` is False only on a hard error
+    (last checkpoint unresolvable and no fallback found). ``append_line`` is a
+    new line to append (fallback mode); ``changes`` are in-place rewrites. Empty
+    ``changes`` and ``None`` ``append_line`` with ``ok`` True means nothing to do.
     """
     old_base, changes = plan_rewrite(lines, new_base)
     if old_base is None:
+        append_line = (
+            _plan_fallback(lines, new_base, fallback_name) if fallback_name else None
+        )
+        if append_line is not None:
+            print(
+                "  Last checkpoint not found; appending surviving " f"'{fallback_name}':"
+            )
+            print(f"      + {append_line}")
+            return True, [], append_line
         print(
             "  ERROR: could not locate the last checkpoint under "
             f"{new_base}.\n         The checkpoint is not beside this list "
             "file; leaving it untouched."
         )
-        return False, []
+        return False, [], None
 
     if not changes:
         print("  Paths already match this location -- nothing to do.")
-        return True, []
+        return True, [], None
 
     print(f"  Detected base swap:\n    OLD: {old_base}\n    NEW: {new_base}")
     print(f"  {len(changes)} line(s) to rewrite:")
@@ -175,11 +239,15 @@ def _report_plan(
         print(f"    line {idx + 1}:")
         print(f"      - {old_ckpt}")
         print(f"      + {new_ckpt}{exists}")
-    return True, changes
+    return True, changes, None
 
 
 def process_list_file(
-    list_file: Path, dry_run: bool, assume_yes: bool, backup: bool
+    list_file: Path,
+    dry_run: bool,
+    assume_yes: bool,
+    backup: bool,
+    fallback_name: Optional[str] = None,
 ) -> bool:
     """Repair a single ``best_checkpoint.list``. Returns True on success."""
     list_file = list_file.resolve()
@@ -194,10 +262,10 @@ def process_list_file(
         print("  Empty checkpoint list -- nothing to do.")
         return True
 
-    ok, changes = _report_plan(lines, new_base)
+    ok, changes, append_line = _report_plan(lines, new_base, fallback_name)
     if not ok:
         return False
-    if not changes:
+    if not changes and append_line is None:
         return True
 
     if dry_run:
@@ -211,6 +279,8 @@ def process_list_file(
             shutil.copy2(list_file, backup_path)
             print(f"  Backup written: {backup_path}")
         new_lines = apply_changes(lines, changes)
+        if append_line is not None:
+            new_lines.append(append_line)
         list_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
         print(f"  Wrote {list_file}")
     else:
@@ -228,6 +298,7 @@ def main():
             dry_run=args.dry_run,
             assume_yes=args.yes,
             backup=not args.no_backup,
+            fallback_name=args.fallback_ckpt,
         )
         all_ok = all_ok and ok
     sys.exit(0 if all_ok else 1)
