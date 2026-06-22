@@ -256,6 +256,99 @@ class Test_Hdf5Loader:
             del os.environ["SLURM_TMPDIR"]
             del os.environ["HDF5_PARENT"]
 
+    # --- Crash-safe creation / corruption handling ---
+
+    @staticmethod
+    def _chop_one_row(mmap_path: Path, n_cols: int) -> None:
+        """Shrink the mmap body by one row, leaving the full-shape header intact.
+
+        Simulates a process killed (e.g. SIGSEGV) mid-preload: the .npy header still
+        declares every row but the body is short, which would otherwise hang/SIGBUS
+        the next reader.
+        """
+        row_bytes = n_cols * np.dtype(np.float32).itemsize
+        os.truncate(mmap_path, mmap_path.stat().st_size - row_bytes)
+
+    def _fresh_loader(self, test_data: EpiAtlasDataset, mmap_dir: Path) -> Hdf5Loader:
+        """Loader registered on the test files, pointing at an existing mmap_dir."""
+        hdf5_loader = Hdf5Loader(
+            test_data.datasource.chromsize_file, True, mmap_dir=mmap_dir
+        )
+        hdf5_loader.register_hdf5s(test_data.datasource.hdf5_file, strict=True)
+        return hdf5_loader
+
+    def test_preload_leaves_no_tmp(self, loader: Hdf5Loader):
+        """Verify the atomic-rename write leaves no leftover .tmp file on success."""
+        loader.preload_all()
+        assert not list(loader._mmap_dir.glob("*.tmp"))
+
+    def test_mmap_exists(self, loader: Hdf5Loader):
+        """Verify mmap_exists() reflects whether the cache has been built."""
+        assert loader.mmap_exists() is False
+        loader.preload_all()
+        assert loader.mmap_exists() is True
+
+    def test_integrity_flags_truncated_mmap(self, loader: Hdf5Loader):
+        """Verify a truncated mmap is reported as corrupt rather than trusted."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        self._chop_one_row(mmap_path, loader.signal_length)
+
+        err = loader._mmap_integrity_error(mmap_path, len(loader.file_paths))
+        assert err is not None and "truncated" in err
+
+    def test_load_signal_truncated_mmap_raises(
+        self, test_data: EpiAtlasDataset, loader: Hdf5Loader
+    ):
+        """Verify reading a truncated mmap raises a clear error instead of hanging."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        self._chop_one_row(mmap_path, loader.signal_length)
+
+        fresh = self._fresh_loader(test_data, loader._mmap_dir)
+        signal_id = next(iter(fresh.file_paths))
+        with pytest.raises(RuntimeError, match="Corrupt mmap"):
+            fresh.load_signal(signal_id)
+
+    def test_preload_rebuilds_truncated_mmap(
+        self, test_data: EpiAtlasDataset, loader: Hdf5Loader
+    ):
+        """Verify preload_all rebuilds a crash-truncated mmap rather than reusing it."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        n_cols = loader.signal_length
+        self._chop_one_row(mmap_path, n_cols)
+
+        fresh = self._fresh_loader(test_data, loader._mmap_dir)
+        fresh.preload_all()
+
+        assert fresh._mmap_integrity_error(mmap_path, len(fresh.file_paths)) is None
+        signal_id = next(iter(fresh.file_paths))
+        assert fresh.load_signal(signal_id).shape[0] == n_cols
+
+    def test_preload_rebuilds_stale_row_count(
+        self, test_data: EpiAtlasDataset, loader: Hdf5Loader
+    ):
+        """Verify a mmap built for a different sample set is rebuilt, not reused."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        if len(loader.file_paths) < 2:
+            pytest.skip("Need >1 sample to exercise the row-count mismatch path.")
+
+        subset_ids = list(loader.file_paths)[:1]
+        fresh = Hdf5Loader(
+            test_data.datasource.chromsize_file, True, mmap_dir=loader._mmap_dir
+        )
+        fresh.register_hdf5s(
+            test_data.datasource.hdf5_file, signal_ids=subset_ids, strict=True
+        )
+
+        err = fresh._mmap_integrity_error(mmap_path, len(subset_ids))
+        assert err is not None and "row-count mismatch" in err
+
+        fresh.preload_all()
+        assert np.load(mmap_path, mmap_mode="r").shape[0] == len(subset_ids)
+
     # --- Mmap path naming ---
 
     def test_mmap_path_differs_by_normalization(

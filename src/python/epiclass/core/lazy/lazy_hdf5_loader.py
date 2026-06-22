@@ -12,6 +12,20 @@ import h5py
 import numpy as np
 
 
+def read_npy_header(npy_path: Path | str) -> tuple[tuple[int, ...], np.dtype, int]:
+    """Return (shape, dtype, header_end_offset) of a .npy file without mapping data."""
+    with open(npy_path, "rb") as file:
+        version = np.lib.format.read_magic(file)
+        (
+            shape,
+            _fortran,
+            dtype,
+        ) = np.lib.format._read_array_header(  # pylint: disable=protected-access
+            file, version
+        )
+        return shape, dtype, file.tell()
+
+
 class LazyHdf5Loader:
     """Handles lazy loading of signals from hdf5 files.
 
@@ -49,6 +63,39 @@ class LazyHdf5Loader:
         """Get path for the combined memory-mapped file."""
         suffix = "_norm" if self._normalization else "_raw"
         return self._mmap_dir / f"signals{suffix}.npy"
+
+    def _mmap_integrity_error(
+        self, mmap_path: Path, expected_rows: int | None
+    ) -> str | None:
+        """Return why the on-disk mmap cache is unusable, or None if it looks sound.
+
+        Cheap header-only checks (no data read): the header is readable, the file is
+        not truncated (at least as large as the header declares), and the row count
+        matches the registered sample count. The row-count check is what verifies a
+        reused cache when we skip re-opening the HDF5s — ``predict_CV`` reuses one
+        mmap_dir across classifiers, so a leftover cache can have the wrong rows.
+        """
+        try:
+            shape, dtype, header_end = read_npy_header(mmap_path)
+        except Exception as err:  # pylint: disable=broad-except
+            return f"unreadable .npy header: {err}"
+
+        expected_bytes = header_end + int(np.prod(shape)) * dtype.itemsize
+        if mmap_path.stat().st_size < expected_bytes:
+            return (
+                f"truncated: file is {mmap_path.stat().st_size} bytes but header "
+                f"declares {expected_bytes} (likely a crash-interrupted preload)"
+            )
+        if expected_rows is not None and shape and shape[0] != expected_rows:
+            return (
+                f"row-count mismatch: mmap has {shape[0]} rows but "
+                f"{expected_rows} samples are registered (stale mmap)"
+            )
+        return None
+
+    def mmap_exists(self) -> bool:
+        """Return True if the combined mmap .npy cache file is already present."""
+        return self._get_mmap_path().exists()
 
     @property
     def loaded_files(self) -> Dict[str, Path]:
@@ -231,6 +278,12 @@ class LazyHdf5Loader:
             self._mmap_array is None
             or getattr(self._mmap_array, "mode", None) != mmap_mode
         ):
+            err = self._mmap_integrity_error(mmap_path, len(self._files) or None)
+            if err is not None:
+                raise RuntimeError(
+                    f"Corrupt mmap cache {mmap_path} ({err}). "
+                    f"Delete it and re-run preload_all()."
+                )
             self._mmap_array = np.load(mmap_path, mmap_mode=mmap_mode)
         return self._mmap_array
 
@@ -250,6 +303,12 @@ class LazyHdf5Loader:
         # COW pages are only dirtied if a caller writes to the slice, which the
         # training loop never does, so no real copying occurs in practice.
         if self._mmap_array is None:
+            err = self._mmap_integrity_error(mmap_path, len(self._files) or None)
+            if err is not None:
+                raise RuntimeError(
+                    f"Corrupt mmap cache {mmap_path} ({err}). "
+                    f"Delete it and re-run preload_all()."
+                )
             self._mmap_array = np.load(mmap_path, mmap_mode="c")
 
         if not self._signal_id_to_index:
@@ -266,14 +325,24 @@ class LazyHdf5Loader:
         """
         mmap_path = self._get_mmap_path()
 
-        if mmap_path.exists():
-            if verbose:
-                print(f"Mmap file already exists: {mmap_path}")
-            return
-
         n_samples = len(self._files)
         if n_samples == 0:
             raise ValueError("No files registered")
+
+        if mmap_path.exists():
+            err = self._mmap_integrity_error(mmap_path, n_samples)
+            if err is None:
+                if verbose:
+                    print(f"Mmap file already exists: {mmap_path}")
+                return
+            # A truncated or stale cache would mis-feed every future reader. Drop it
+            # and rebuild from scratch.
+            print(
+                f"Existing mmap is unusable and will be rebuilt ({err}): {mmap_path}",
+                file=sys.stderr,
+            )
+            self._mmap_array = None
+            mmap_path.unlink()
 
         # Determine signal length from first sample
         first_sid, first_path = next(iter(self._files.items()))
@@ -302,9 +371,13 @@ class LazyHdf5Loader:
         # Build the ordered list of signal IDs (this defines the index mapping)
         self._signal_id_to_index = {}
 
-        # Create the memory-mapped file and fill it
+        # Fill a private temp file, then atomically rename into place. os.replace is
+        # atomic on POSIX, so the final path only ever exists fully written: a crash
+        # (SIGSEGV/SIGKILL bypasses the except below) leaves only a stale .tmp, never
+        # a partial cache at the final path that the next run would reuse.
+        tmp_path = mmap_path.with_name(f"{mmap_path.name}.{os.getpid()}.tmp")
         mmap_array = np.lib.format.open_memmap(
-            mmap_path,
+            tmp_path,
             mode="w+",
             dtype=np.float32,
             shape=(n_samples, signal_length),
@@ -331,11 +404,13 @@ class LazyHdf5Loader:
                     print(f"  [{i + 1}/{n_samples}]")
 
             mmap_array.flush()
+            mmap_array = None  # close the memmap before renaming it into place
+            os.replace(tmp_path, mmap_path)
         except Exception:
-            # Clean up partial file
-            del mmap_array
-            if mmap_path.exists():
-                mmap_path.unlink()
+            # Clean up partial temp file (final path is never touched on failure)
+            mmap_array = None
+            if tmp_path.exists():
+                tmp_path.unlink()
             raise
 
         if verbose:
