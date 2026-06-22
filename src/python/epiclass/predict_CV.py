@@ -37,6 +37,7 @@ from epiclass.predict_common import (
     DirectoryChecker,
     add_data_arguments,
     build_test_dataset,
+    prepare_inference_runtime,
     write_test_predictions,
 )
 from epiclass.utils.time import time_now
@@ -83,6 +84,7 @@ def main():
     begin = time_now()
     print(f"begin {begin}")
 
+    prepare_inference_runtime()
     cli = parse_arguments()
     cv_root = Path(cli.cv_root)
     output_dir = (
@@ -119,7 +121,9 @@ def main():
         out_path = (
             output_dir / f"{fold_dir.name}_{tag}_test_prediction_{cli.hdf5.stem}.csv"
         )
-        write_test_predictions(my_model, datasets, test_dataset, out_path)
+        write_test_predictions(
+            my_model, datasets, test_dataset, out_path, batch_size=cli.batch_size
+        )
         per_fold_csvs.append(out_path)
 
     # --- Concatenated long-format CSV with provenance ---

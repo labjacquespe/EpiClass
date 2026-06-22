@@ -137,7 +137,7 @@ class Analysis:
         return self._generic_metrics(self._test, "test", verbose)
 
     def _generic_write_prediction(
-        self, to_predict: TensorData | None, name, path, verbose=True
+        self, to_predict: TensorData | None, name, path, verbose=True, batch_size=256
     ) -> Optional[Path]:
         """General treatment to write predictions
         Name can be {training, validation, test}.
@@ -160,7 +160,9 @@ class Analysis:
             return None
 
         if isinstance(to_predict, Dataset):
-            preds, targets = self._model.compute_predictions_from_dataset(to_predict)
+            preds, targets = self._model.compute_predictions_from_dataset(
+                to_predict, batch_size=batch_size
+            )
             str_targets = [self._model.mapping[int(val.item())] for val in targets]
         elif isinstance(to_predict, Tensor):
             preds = self._model.compute_predictions_from_features(to_predict)
@@ -199,11 +201,13 @@ class Analysis:
         """Compute and write validation predictions to file."""
         self._generic_write_prediction(self._val, name="validation", path=path)
 
-    def write_test_prediction(self, path=None):
+    def write_test_prediction(self, path=None, batch_size=256):
         """Compute and write test predictions to file.
         Test predictions do not include any "True class" column, as the true labels are unknown.
         """
-        pred_path = self._generic_write_prediction(self._test, name="test", path=path)
+        pred_path = self._generic_write_prediction(
+            self._test, name="test", path=path, batch_size=batch_size
+        )
         # Remove 'True class' which is just the first class repeated
         if pred_path is not None:
             df = pd.read_csv(pred_path, index_col="ID")

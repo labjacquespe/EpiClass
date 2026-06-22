@@ -8,6 +8,9 @@ the ensemble build the data **once** and reuse it across every fold model.
 from __future__ import annotations
 
 import argparse
+import faulthandler
+import os
+import signal
 from pathlib import Path
 from typing import Tuple
 
@@ -51,7 +54,63 @@ def add_data_arguments(arg_parser: argparse.ArgumentParser) -> None:
         help="Override HDF5 file paths to this directory (single format). "
              "Useful when HDF5s are copied to $SLURM_TMPDIR.",
     )
+    arg_parser.add_argument(
+        "--batch-size", type=int, default=256, dest="batch_size",
+        help="Inference batch size. Lower it (e.g. 8) to work around / diagnose "
+             "CPU large-GEMM segfaults. Default: 256.",
+    )
     # fmt: on
+
+
+def _env_flag(name: str) -> bool:
+    """Return True if environment variable ``name`` is set to a truthy value."""
+    return os.getenv(name, "") not in ("", "0", "false", "False")
+
+
+def enable_diagnostics() -> None:
+    """Install on-demand traceback dumping when ``EPICLASS_DIAG`` is set.
+
+    Off by default — does nothing unless the env var is set, so normal runs are
+    untouched. When enabled it wires up two opt-in debug probes:
+
+      - ``faulthandler.enable()``: a fatal signal (SIGSEGV/SIGBUS) prints the
+        Python stack to stderr.
+      - ``SIGUSR1`` handler: ``kill -USR1 <pid>`` dumps the current stack of every
+        thread, so a running process (crashing, hung, or just slow) can be
+        inspected without py-spy. The PID is printed at startup for convenience.
+    """
+    if not _env_flag("EPICLASS_DIAG"):
+        return
+    faulthandler.enable()
+    if hasattr(faulthandler, "register"):  # POSIX only
+        faulthandler.register(signal.SIGUSR1, all_threads=True, chain=False)
+        print(
+            f"[diagnostics] PID {os.getpid()}: "
+            f"`kill -USR1 {os.getpid()}` to dump the Python stack."
+        )
+
+
+def configure_inference_backend() -> None:
+    """Optionally disable torch oneDNN/MKLDNN when ``EPICLASS_DISABLE_MKLDNN`` is set.
+
+    Off by default. A large CPU matmul can segfault on some cluster nodes when torch
+    dispatches it through oneDNN/MKLDNN (small matmuls take a different path); setting
+    the env var routes inference away from that kernel as a workaround.
+    """
+    if _env_flag("EPICLASS_DISABLE_MKLDNN"):
+        torch.backends.mkldnn.enabled = False
+        print("EPICLASS_DISABLE_MKLDNN set: torch oneDNN/MKLDNN backend disabled.")
+
+
+def prepare_inference_runtime() -> None:
+    """Apply opt-in debug/runtime tweaks for the predict entry points.
+
+    Bundles :func:`enable_diagnostics` and :func:`configure_inference_backend`,
+    both no-ops unless their env vars are set, so ``predict.py`` and ``predict_CV.py``
+    call one thing at startup without affecting default behaviour.
+    """
+    enable_diagnostics()
+    configure_inference_backend()
 
 
 def build_loader(
@@ -126,6 +185,7 @@ def write_test_predictions(
     datasets: DataSet,
     test_dataset: TensorDataset,
     path: Path,
+    batch_size: int = 256,
 ) -> None:
     """Score ``test_dataset`` with ``model`` and write the test-prediction CSV to ``path``.
 
@@ -140,12 +200,15 @@ def write_test_predictions(
         val_dataset=None,
         test_dataset=test_dataset,
     )
-    analyzer.write_test_prediction(path=path)
+    analyzer.write_test_prediction(path=path, batch_size=batch_size)
 
 
 # Re-exported so callers needing a directory-validating CLI type don't import argparseutils.
 __all__ = [
     "add_data_arguments",
+    "configure_inference_backend",
+    "enable_diagnostics",
+    "prepare_inference_runtime",
     "build_loader",
     "build_test_dataset",
     "write_test_predictions",

@@ -32,6 +32,7 @@ from epiclass.core.prediction_files import (
 from epiclass.predict_common import (
     add_data_arguments,
     build_test_dataset,
+    prepare_inference_runtime,
     write_test_predictions,
 )
 from epiclass.utils.time import time_now
@@ -58,6 +59,7 @@ def main():
     begin = time_now()
     print(f"begin {begin}")
 
+    prepare_inference_runtime()
     cli = parse_arguments()
     logdir = Path(cli.logdir)
     model_dir = Path(cli.model) if cli.model else logdir
@@ -80,7 +82,9 @@ def main():
     tag = build_prediction_tag(experiment_id_from_checkpoint(ckpt), ckpt)
     model_id = f"{model_dir.stem}_{tag}" if tag else model_dir.stem
     predict_path = logdir / f"{model_id}_test_prediction_{cli.hdf5.stem}.csv"
-    write_test_predictions(my_model, datasets, test_dataset, predict_path)
+    write_test_predictions(
+        my_model, datasets, test_dataset, predict_path, batch_size=cli.batch_size
+    )
 
     end = time_now()
     print(f"end {end}")
