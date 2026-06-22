@@ -81,6 +81,23 @@ pip install -e .
 
 The test suite has been confirmed to pass with all of these fixed-dependency files.
 
+## Troubleshooting
+
+**Segmentation fault during CPU prediction or training (BLIS backend).** On HPC clusters whose PyTorch build routes CPU matrix multiplies through FlexiBLAS, a segfault inside `nn.Linear` / `addmm` can be caused by a bug in the active BLIS backend rather than by EpiClass (observed with `bliscore/0.9.0` on the Digital Research Alliance of Canada clusters: an out-of-bounds read in a single-precision Haswell `sgemm` kernel; it does not occur with BLIS 2.0 or OpenBLAS, both verified). The reliable fix is to switch the FlexiBLAS backend to OpenBLAS:
+
+```bash
+export FLEXIBLAS=openblas
+```
+
+Loading a newer BLIS module does **not** help on its own: `module load blis/2.0` leaves FlexiBLAS still loading its bundled `bliscore/0.9.0` backend (the buggy one), regardless of which `blis` module is active. To actually run a fixed BLIS, point FlexiBLAS at the library by absolute path:
+
+```bash
+module load blis/2.0
+export FLEXIBLAS=$EBROOTBLIS/lib64/libblis.so
+```
+
+Check the available backends with `flexiblas list`, and confirm which library is actually loaded with `FLEXIBLAS_VERBOSE=1` (or `LD_DEBUG=libs ... | grep libblis`). Set the export before launching the prediction/training job (e.g. in your SLURM script).
+
 ## Input Format & Job Launching
 
 - See the `input-format/` folder for examples of required input files.

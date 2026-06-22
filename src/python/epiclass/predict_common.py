@@ -56,8 +56,7 @@ def add_data_arguments(arg_parser: argparse.ArgumentParser) -> None:
     )
     arg_parser.add_argument(
         "--batch-size", type=int, default=256, dest="batch_size",
-        help="Inference batch size. Lower it (e.g. 8) to work around / diagnose "
-             "CPU large-GEMM segfaults. Default: 256.",
+        help="Inference batch size. Default: 256.",
     )
     # fmt: on
 
@@ -91,11 +90,13 @@ def enable_diagnostics() -> None:
 
 
 def configure_inference_backend() -> None:
-    """Optionally disable torch oneDNN/MKLDNN when ``EPICLASS_DISABLE_MKLDNN`` is set.
+    """Optionally disable torch's oneDNN/MKLDNN backend when ``EPICLASS_DISABLE_MKLDNN`` is set.
 
-    Off by default. A large CPU matmul can segfault on some cluster nodes when torch
-    dispatches it through oneDNN/MKLDNN (small matmuls take a different path); setting
-    the env var routes inference away from that kernel as a workaround.
+    Off by default. NOTE: this is *not* a fix for the cluster CPU-inference segfault. That
+    crash is an out-of-bounds read in BLIS's fp32 sgemm kernel (FlexiBLAS backend), not in
+    oneDNN; disabling MKLDNN was tested and did not prevent it. The real workaround is to
+    select a different BLAS backend, e.g. ``export FLEXIBLAS=openblas``. Kept only as a
+    generic toggle for experimenting with the oneDNN dispatch path.
     """
     if _env_flag("EPICLASS_DISABLE_MKLDNN"):
         torch.backends.mkldnn.enabled = False
