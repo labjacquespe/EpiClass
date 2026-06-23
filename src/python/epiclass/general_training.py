@@ -21,6 +21,7 @@ from lightning.pytorch import loggers as pl_loggers
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
+from epiclass.core.blas_guard import check_blas_backend
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.lazy.general_fold_factory import GeneralFoldFactory
@@ -216,6 +217,10 @@ def main():
     """General training with stratified k-fold cross-validation."""
     begin = time_now()
     print(f"begin {begin}")
+
+    # Fail fast on a BLIS <1.1 CPU backend before wasting GPU hours: the forced-CPU
+    # end-of-training validation prediction would otherwise segfault. See blas_guard.
+    check_blas_backend()
 
     cli = parse_arguments()
     logdir = Path(cli.logdir)

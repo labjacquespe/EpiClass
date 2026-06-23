@@ -24,6 +24,7 @@ from lightning.pytorch import loggers as pl_loggers
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis, metadata
+from epiclass.core.blas_guard import check_blas_backend
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.lazy.lazy_data_classes import LazyKnownData
@@ -95,6 +96,10 @@ def main():
     """main called from command line, edit to change behavior"""
     begin = time_now()
     print(f"begin {begin}")
+
+    # Fail fast on a BLIS <1.1 CPU backend before wasting GPU hours: the forced-CPU
+    # end-of-training validation prediction would otherwise segfault. See blas_guard.
+    check_blas_backend()
 
     # --- PARSE params and LOAD external files ---
     cli = parse_arguments()

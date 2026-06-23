@@ -20,6 +20,7 @@ from torch.utils.data import TensorDataset
 
 from epiclass.argparseutils.directorychecker import DirectoryChecker
 from epiclass.core import analysis
+from epiclass.core.blas_guard import check_blas_backend
 from epiclass.core.data.dataset import DataSet
 from epiclass.core.lazy.chunked_hdf5_loader import ChunkedHdf5Loader
 from epiclass.core.lazy.lazy_data_classes import LazyUnknownData, SignalLoader
@@ -104,14 +105,16 @@ def configure_inference_backend() -> None:
 
 
 def prepare_inference_runtime() -> None:
-    """Apply opt-in debug/runtime tweaks for the predict entry points.
+    """Prepare the runtime for the predict entry points.
 
-    Bundles :func:`enable_diagnostics` and :func:`configure_inference_backend`,
-    both no-ops unless their env vars are set, so ``predict.py`` and ``predict_CV.py``
-    call one thing at startup without affecting default behaviour.
+    Always guards against the known BLIS < 1.1 CPU-inference segfault
+    (:func:`check_blas_backend`). Also bundles the opt-in :func:`enable_diagnostics` and
+    :func:`configure_inference_backend`, both no-ops unless their env vars are set, so
+    ``predict.py`` and ``predict_CV.py`` call one thing at startup.
     """
     enable_diagnostics()
     configure_inference_backend()
+    check_blas_backend()
 
 
 def build_loader(
@@ -207,6 +210,7 @@ def write_test_predictions(
 # Re-exported so callers needing a directory-validating CLI type don't import argparseutils.
 __all__ = [
     "add_data_arguments",
+    "check_blas_backend",
     "configure_inference_backend",
     "enable_diagnostics",
     "prepare_inference_runtime",
