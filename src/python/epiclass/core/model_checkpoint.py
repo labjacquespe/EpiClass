@@ -37,6 +37,64 @@ def last_checkpoint_path(model_dir) -> Optional[Path]:
     return Path(ckpt_path) if ckpt_path else None
 
 
+def resolve_checkpoint_spec(model, verbose: bool = True) -> Path:
+    """Resolve a model spec to a checkpoint file path.
+
+    ``model`` may be either:
+      - a ``.ckpt`` file, returned as-is (loaded directly, bypassing any list); or
+      - a directory containing ``best_checkpoint.list``, in which case the leading
+        path of the list's last entry is resolved (see :func:`last_checkpoint_path`).
+
+    Raises:
+        FileNotFoundError: if ``model`` is neither a file nor a directory, if a
+            directory's list is missing/empty/blank, or if a directory's list
+            points at a checkpoint that is not on disk.
+    """
+    model_path = Path(model)
+    if model_path.is_file():
+        return model_path
+    if not model_path.is_dir():
+        raise FileNotFoundError(
+            f"Model path is neither a checkpoint file nor a directory: {model_path}"
+        )
+
+    list_path = model_path / "best_checkpoint.list"
+    if verbose:
+        print("Reading checkpoint list and taking last line.")
+    if not list_path.is_file():
+        raise FileNotFoundError(f"Checkpoint list not found: {list_path}")
+
+    ckpt_path = last_checkpoint_path(model_path)
+    if ckpt_path is None:
+        raise FileNotFoundError(
+            f"Empty checkpoint list or blank last entry: {list_path}. "
+            "Training likely did not save a checkpoint."
+        )
+    if not ckpt_path.is_file():
+        raise FileNotFoundError(
+            f"Checkpoint path from {list_path} does not exist: {ckpt_path}"
+        )
+    return ckpt_path
+
+
+def restore_from_checkpoint_file(
+    model_cls: Type[T], ckpt_path, verbose: bool = True
+) -> T:
+    """Load ``model_cls`` directly from a checkpoint file.
+
+    Raises:
+        FileNotFoundError: if ``ckpt_path`` is not on disk.
+    """
+    ckpt_path = Path(ckpt_path)
+    if not ckpt_path.is_file():
+        raise FileNotFoundError(f"Checkpoint file does not exist: {ckpt_path}")
+    if verbose:
+        print(f"Loading model from {ckpt_path}")
+    return model_cls.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
+        checkpoint_path=str(ckpt_path)
+    )
+
+
 def restore_from_checkpoint_list(
     model_cls: Type[T], model_dir, verbose: bool = True
 ) -> T:
@@ -50,26 +108,5 @@ def restore_from_checkpoint_list(
         FileNotFoundError: if the list is missing, empty, has a blank last
             entry, or points at a checkpoint that is not on disk.
     """
-    list_path = Path(model_dir) / "best_checkpoint.list"
-
-    if verbose:
-        print("Reading checkpoint list and taking last line.")
-    if not list_path.is_file():
-        raise FileNotFoundError(f"Checkpoint list not found: {list_path}")
-
-    ckpt_path = last_checkpoint_path(model_dir)
-    if ckpt_path is None:
-        raise FileNotFoundError(
-            f"Empty checkpoint list or blank last entry: {list_path}. "
-            "Training likely did not save a checkpoint."
-        )
-    if not ckpt_path.is_file():
-        raise FileNotFoundError(
-            f"Checkpoint path from {list_path} does not exist: {ckpt_path}"
-        )
-
-    if verbose:
-        print(f"Loading model from {ckpt_path}")
-    return model_cls.load_from_checkpoint(  # pylint: disable=no-value-for-parameter
-        checkpoint_path=str(ckpt_path)
-    )
+    ckpt_path = resolve_checkpoint_spec(model_dir, verbose=verbose)
+    return restore_from_checkpoint_file(model_cls, ckpt_path, verbose=verbose)

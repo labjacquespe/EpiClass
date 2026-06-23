@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.predict import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR
 
@@ -28,8 +29,10 @@ def test_predict_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Pat
     """
     sys.argv = [
         "predict.py",
+        "--hdf5",
         str(saccer3_small_hdf5_file_list),
-        str(test_dir),  # logdir
+        "--outdir",
+        str(test_dir),
         "--chromsize",
         str(SACCER3_CHROMS),
         "--mmap_dir",
@@ -42,6 +45,37 @@ def test_predict_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Pat
 
 
 @pytest.mark.slow
+def test_predict_single_sample_ckpt_file(
+    test_dir: Path, saccer3_small_hdf5_file_list: Path
+):
+    """Test predicting when --model points directly at a .ckpt file.
+
+    Exercises the file branch of resolve_checkpoint_spec / restore_from_checkpoint_file,
+    i.e. loading a model without going through best_checkpoint.list.
+    """
+    ckpt = last_checkpoint_path(SACCER3_FIXTURES_DIR)
+    assert ckpt is not None and ckpt.is_file(), "Fixture checkpoint not found."
+    sys.argv = [
+        "predict.py",
+        "--hdf5",
+        str(saccer3_small_hdf5_file_list),
+        "--outdir",
+        str(test_dir),
+        "--chromsize",
+        str(SACCER3_CHROMS),
+        "--mmap_dir",
+        str(test_dir / "mmap_cache"),
+        "--model",
+        str(ckpt),
+    ]
+    print("Running predict.py with args:", sys.argv)
+    main_module()
+
+    csv_outputs = list(test_dir.glob("*_test_prediction_*.csv"))
+    assert csv_outputs, "Expected a test_prediction CSV in outdir."
+
+
+@pytest.mark.slow
 def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     """Test end-to-end --chunked prediction path.
 
@@ -51,8 +85,10 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     """
     sys.argv = [
         "predict.py",
+        "--hdf5",
         str(saccer3_chunked_dir),  # directory of chunk_*.h5
-        str(test_dir),  # logdir
+        "--outdir",
+        str(test_dir),
         "--chunked",
         "--model",
         str(SACCER3_FIXTURES_DIR),
@@ -61,7 +97,7 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     main_module()
 
     csv_outputs = list(test_dir.glob("*_test_prediction_*.csv"))
-    assert csv_outputs, "Expected a test_prediction CSV in logdir."
+    assert csv_outputs, "Expected a test_prediction CSV in outdir."
     # The output name carries the model's training provenance: the original training comet
     # experiment id (from the checkpoint path) and the checkpoint stem.
     assert "35d1e5aed6bc4b589ccb23325d75201f" in csv_outputs[0].name

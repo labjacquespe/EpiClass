@@ -110,15 +110,19 @@ printf '%s\n' "python ${program_path}/utils/check_dir.py ${log}"
 python ${program_path}/utils/check_dir.py ${log}
 
 printf '\n%s\n' "Launching following command"
-printf '%s\n' "python ${program_path}/utils/check_dir.py --exists ${mmodel_dirl}"
+printf '%s\n' "python ${program_path}/utils/check_dir.py --exists ${model_dir}"
 python ${program_path}/utils/check_dir.py --exists ${model_dir}
 
 
 # --- launch ---
 
+# --model takes either a model directory (resolved via its best_checkpoint.list, as below)
+# or a direct .ckpt file. Use the direct file (e.g. --model "${checkpoint_file}") to load a
+# model off a mounted filesystem where the absolute paths inside best_checkpoint.list don't
+# resolve. --outdir defaults to a 'predictions' dir next to the checkpoint when omitted.
 printf '\n%s\n' "Launching following command"
-printf '%s\n' "python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model_dir} > ${out1} 2> ${out2}"
-python ${program_path}/predict.py ${hdf5_list} ${chromsizes} ${log} --model ${model_dir} > ${out1} 2> ${out2}
+printf '%s\n' "python ${program_path}/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}"
+python ${program_path}/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}
 
 
 # -- You could then augment the prediction file with new metadata if it is known --

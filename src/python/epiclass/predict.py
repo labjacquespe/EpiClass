@@ -22,8 +22,10 @@ warnings.simplefilter("ignore", category=FutureWarning)
 import lightning.pytorch as pl  # in case GCC or CUDA needs it # pylint: disable=unused-import
 
 from epiclass.argparseutils.DefaultHelpParser import DefaultHelpParser as ArgumentParser
-from epiclass.argparseutils.directorychecker import DirectoryChecker
-from epiclass.core.model_checkpoint import last_checkpoint_path
+from epiclass.core.model_checkpoint import (
+    resolve_checkpoint_spec,
+    restore_from_checkpoint_file,
+)
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.prediction_files import (
     build_prediction_tag,
@@ -41,14 +43,18 @@ from epiclass.utils.time import time_now
 def parse_arguments() -> argparse.Namespace:
     """Argument parser for command line."""
     arg_parser = ArgumentParser()
-    add_data_arguments(arg_parser)
+    add_data_arguments(arg_parser, hdf5_flag=True)
     # fmt: off
     arg_parser.add_argument(
-        "logdir", type=DirectoryChecker(), help="Directory for output logs.",
+        "--model", type=Path, required=True,
+        help="Trained model to use. Either a .ckpt checkpoint file (loaded directly), "
+             "or a directory containing a 'best_checkpoint.list' whose last line points "
+             "to such a file.",
     )
     arg_parser.add_argument(
-        "--model", type=DirectoryChecker(),
-        help="Directory from which to load the model. Defaults to logdir.",
+        "--outdir", type=Path, default=None,
+        help="Directory for the prediction CSV and mmap cache. Defaults to a "
+             "'predictions' directory next to the resolved checkpoint file.",
     )
     # fmt: on
     return arg_parser.parse_args()
@@ -61,27 +67,30 @@ def main():
 
     prepare_inference_runtime()
     cli = parse_arguments()
-    logdir = Path(cli.logdir)
-    model_dir = Path(cli.model) if cli.model else logdir
+
+    # Resolve the checkpoint once: drives both model loading and the default outdir.
+    # A directory model is resolved via its best_checkpoint.list; a .ckpt file is used as-is.
+    ckpt = resolve_checkpoint_spec(cli.model)
+    outdir = Path(cli.outdir) if cli.outdir else ckpt.parent / "predictions"
+    outdir.mkdir(parents=True, exist_ok=True)
 
     # --- Load data ---
     now = time_now()
     fmt = "chunked" if cli.chunked else "single"
     print(f"Loading data ({fmt} format): {now}")
-    _, test_dataset, datasets = build_test_dataset(cli, logdir / "mmap_cache")
+    _, test_dataset, datasets = build_test_dataset(cli, outdir / "mmap_cache")
     print(f"Registered {datasets.test.num_examples} samples  ({time_now() - now})")
 
     # --- Restore model ---
-    my_model = LightningDenseClassifier.restore_model(model_dir)
+    my_model = restore_from_checkpoint_file(LightningDenseClassifier, ckpt)
     print("Model successfully restored.")
 
     # --- Predictions (full softmax vector per sample) ---
     # Tag the output with the model's training provenance: the original training comet
     # experiment id (recovered from the checkpoint path) + checkpoint stem.
-    ckpt = last_checkpoint_path(model_dir)
     tag = build_prediction_tag(experiment_id_from_checkpoint(ckpt), ckpt)
-    model_id = f"{model_dir.stem}_{tag}" if tag else model_dir.stem
-    predict_path = logdir / f"{model_id}_test_prediction_{cli.hdf5.stem}.csv"
+    model_id = tag or ckpt.stem
+    predict_path = outdir / f"{model_id}_test_prediction_{cli.hdf5.stem}.csv"
     write_test_predictions(
         my_model, datasets, test_dataset, predict_path, batch_size=cli.batch_size
     )

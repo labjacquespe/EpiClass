@@ -28,14 +28,26 @@ from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 
 
-def add_data_arguments(arg_parser: argparse.ArgumentParser) -> None:
-    """Register the input-format / data-loading CLI args shared by predict entry points."""
-    # fmt: off
-    arg_parser.add_argument(
-        "hdf5", type=Path,
-        help="For single format: file listing HDF5 paths. "
-             "For chunked format: directory or file of chunk HDF5s.",
+def add_data_arguments(
+    arg_parser: argparse.ArgumentParser, hdf5_flag: bool = False
+) -> None:
+    """Register the input-format / data-loading CLI args shared by predict entry points.
+
+    ``hdf5_flag`` controls how the input is exposed: as the required ``--hdf5`` flag
+    (``predict.py``, all-flag interface) when True, or as a positional (``predict_CV.py``)
+    when False. Either way the value lands on ``cli.hdf5``.
+    """
+    hdf5_help = (
+        "For single format: file listing HDF5 paths. "
+        "For chunked format: directory or file of chunk HDF5s."
     )
+    # fmt: off
+    if hdf5_flag:
+        arg_parser.add_argument(
+            "--hdf5", dest="hdf5", type=Path, required=True, help=hdf5_help,
+        )
+    else:
+        arg_parser.add_argument("hdf5", type=Path, help=hdf5_help)
     arg_parser.add_argument(
         "--chromsize", type=Path,
         help="Chromosome sizes file. Required for single-sample HDF5 format.",
@@ -48,7 +60,8 @@ def add_data_arguments(arg_parser: argparse.ArgumentParser) -> None:
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
         help="Directory for the mmap cache (single format only). "
-             "Defaults to <logdir>/mmap_cache. On HPC, set to $SLURM_TMPDIR.",
+             "Defaults to a 'mmap_cache' dir under the output directory. "
+             "On HPC, set to $SLURM_TMPDIR.",
     )
     arg_parser.add_argument(
         "--hdf5_dir", type=Path,
