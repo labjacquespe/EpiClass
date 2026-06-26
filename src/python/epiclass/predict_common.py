@@ -157,8 +157,9 @@ def build_loader(
     # strict=True opens every HDF5 to validate it exists — necessary when the mmap
     # cache must be built, but pointless (and very slow on Lustre: thousands of
     # small-file opens) when the cache already exists, since the data is then read
-    # from the .npy. On reuse, preload_all's row-count check verifies the cache
-    # matches the file list instead.
+    # from the .npy. On reuse, preload_all validates the cache against the file
+    # list instead -- row count plus the ordered signal-id manifest, so a cache
+    # built from a different file set or order is rebuilt rather than mis-fed.
     loader.register_hdf5s(
         cli.hdf5, hdf5_dir=cli.hdf5_dir, strict=not loader.mmap_exists()
     )

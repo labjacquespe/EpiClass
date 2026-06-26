@@ -349,6 +349,107 @@ class Test_Hdf5Loader:
         fresh.preload_all()
         assert np.load(mmap_path, mmap_mode="r").shape[0] == len(subset_ids)
 
+    # --- Ordered id manifest (row-order validation) ---
+
+    def _reordered_loader(
+        self, test_data: EpiAtlasDataset, mmap_dir: Path, list_dir: Path
+    ) -> Hdf5Loader:
+        """Loader registered on the same files in reversed order, sharing mmap_dir.
+
+        Same file *set* and row count as ``_fresh_loader`` -- only the order
+        differs, which is exactly the silent-corruption case the manifest guards.
+        """
+        files = Hdf5Loader.read_list(test_data.datasource.hdf5_file)
+        reversed_paths = list(files.values())[::-1]
+        reordered_list = list_dir / "reversed.list"
+        reordered_list.write_text(
+            "\n".join(str(p) for p in reversed_paths) + "\n", encoding="utf-8"
+        )
+        hdf5_loader = Hdf5Loader(
+            test_data.datasource.chromsize_file, True, mmap_dir=mmap_dir
+        )
+        hdf5_loader.register_hdf5s(reordered_list, strict=True)
+        return hdf5_loader
+
+    def test_preload_writes_id_manifest(self, loader: Hdf5Loader):
+        """Verify preload_all writes an ordered id manifest matching the row order."""
+        loader.preload_all()
+        manifest = loader._get_manifest_path()
+        assert manifest.is_file()
+        assert manifest.read_text(encoding="utf-8").splitlines() == list(
+            loader.file_paths.keys()
+        )
+
+    def test_integrity_flags_reordered_mmap(
+        self, test_data: EpiAtlasDataset, loader: Hdf5Loader, tmp_path: Path
+    ):
+        """Verify a same-size cache built in a different order is rejected, then rebuilt.
+
+        This is the regression test for the predict_CV scramble: identical files,
+        identical row count, different order -- the row-count check alone passed and
+        every sample was fed another sample's signal.
+        """
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        if len(loader.file_paths) < 2:
+            pytest.skip("Need >1 sample to exercise a reordering.")
+
+        reordered = self._reordered_loader(test_data, loader._mmap_dir, tmp_path)
+        # Same set + count, different order -> manifest mismatch (not row-count).
+        err = reordered._mmap_integrity_error(mmap_path, len(reordered.file_paths))
+        assert err is not None and "manifest" in err
+
+        # Rebuild, then every id must map to its *own* signal in the new order.
+        reordered.preload_all()
+        assert (
+            reordered._mmap_integrity_error(mmap_path, len(reordered.file_paths)) is None
+        )
+        ref = Hdf5Loader(
+            test_data.datasource.chromsize_file, True, mmap_dir=tmp_path / "ref_mmap"
+        )
+        ref.register_hdf5s(tmp_path / "reversed.list", strict=True)
+        ref.preload_all()
+        for sid in reordered.file_paths:
+            assert np.array_equal(reordered.load_signal(sid), ref.load_signal(sid))
+
+    def test_integrity_flags_missing_manifest(self, loader: Hdf5Loader):
+        """Verify a cache without a manifest (legacy/crash) is treated as stale."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        loader._get_manifest_path().unlink()
+
+        # Manifest is gone -> cannot verify order -> treat as stale.
+        err = loader._mmap_integrity_error(mmap_path, len(loader.file_paths))
+        assert err is not None and "manifest" in err
+
+        loader.preload_all()  # rebuilds and re-writes the manifest
+        assert loader._get_manifest_path().is_file()
+        assert loader._mmap_integrity_error(mmap_path, len(loader.file_paths)) is None
+
+    def test_load_signal_reordered_mmap_raises(
+        self, test_data: EpiAtlasDataset, loader: Hdf5Loader, tmp_path: Path
+    ):
+        """Verify reading a reordered cache raises rather than returning wrong rows."""
+        loader.preload_all()
+        if len(loader.file_paths) < 2:
+            pytest.skip("Need >1 sample to exercise a reordering.")
+
+        reordered = self._reordered_loader(test_data, loader._mmap_dir, tmp_path)
+        signal_id = next(iter(reordered.file_paths))
+        with pytest.raises(RuntimeError, match="Corrupt mmap"):
+            reordered.load_signal(signal_id)
+
+    def test_reuse_same_order_ok(self, test_data: EpiAtlasDataset, loader: Hdf5Loader):
+        """Verify an identical (same files, same order) cache is reused, not rebuilt."""
+        loader.preload_all()
+        mmap_path = loader._get_mmap_path()
+        built_mtime = mmap_path.stat().st_mtime_ns
+
+        fresh = self._fresh_loader(test_data, loader._mmap_dir)
+        assert fresh._mmap_integrity_error(mmap_path, len(fresh.file_paths)) is None
+        fresh.preload_all()  # no-op: must not rewrite the cache
+        assert mmap_path.stat().st_mtime_ns == built_mtime
+
     # --- Mmap path naming ---
 
     def test_mmap_path_differs_by_normalization(

@@ -64,16 +64,44 @@ class LazyHdf5Loader:
         suffix = "_norm" if self._normalization else "_raw"
         return self._mmap_dir / f"signals{suffix}.npy"
 
+    def _get_manifest_path(self) -> Path:
+        """Path of the ordered signal-id manifest written beside the mmap.
+
+        The mmap is row-ordered, so reuse is only safe when the registered files
+        match -- in content *and* order -- those it was built from. This sidecar
+        records that order (one signal id per line) so reuse can be validated
+        beyond a bare row count.
+        """
+        suffix = "_norm" if self._normalization else "_raw"
+        return self._mmap_dir / f"signals{suffix}.ids"
+
+    @staticmethod
+    def _read_manifest(manifest_path: Path) -> List[str] | None:
+        """Return the ordered signal ids recorded in ``manifest_path``.
+
+        Returns ``None`` when the manifest is missing or unreadable, which the
+        integrity check treats as "cannot verify -- rebuild".
+        """
+        try:
+            text = manifest_path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        return text.splitlines()
+
     def _mmap_integrity_error(
         self, mmap_path: Path, expected_rows: int | None
     ) -> str | None:
         """Return why the on-disk mmap cache is unusable, or None if it looks sound.
 
         Cheap header-only checks (no data read): the header is readable, the file is
-        not truncated (at least as large as the header declares), and the row count
-        matches the registered sample count. The row-count check is what verifies a
-        reused cache when we skip re-opening the HDF5s — ``predict_CV`` reuses one
-        mmap_dir across classifiers, so a leftover cache can have the wrong rows.
+        not truncated (at least as large as the header declares), the row count
+        matches the registered sample count, and the ordered signal-id manifest
+        matches the registered files. The mmap is row-ordered, so a matching row
+        count is *not* sufficient — a reuse against the same files in a different
+        order would silently feed every sample another sample's signal. The
+        manifest check catches that: ``predict_CV`` reuses one mmap_dir across
+        classifiers, and the same file set can reach it in different orders (e.g.
+        ``tar -tf`` archive order vs ``find | sort``).
         """
         try:
             shape, dtype, header_end = read_npy_header(mmap_path)
@@ -91,6 +119,30 @@ class LazyHdf5Loader:
                 f"row-count mismatch: mmap has {shape[0]} rows but "
                 f"{expected_rows} samples are registered (stale mmap)"
             )
+
+        # Row count alone cannot detect a reordering or a same-size file swap;
+        # compare the ordered signal-id manifest against the registered files.
+        if self._files:
+            expected_ids = list(self._files.keys())
+            manifest_ids = self._read_manifest(self._get_manifest_path())
+            if manifest_ids is None:
+                return (
+                    "no id manifest; cannot verify cache order — rebuilding "
+                    "(cache predates manifest support, or was crash-interrupted)"
+                )
+            if manifest_ids != expected_ids:
+                diff_at = next(
+                    (
+                        i
+                        for i, (got, want) in enumerate(zip(manifest_ids, expected_ids))
+                        if got != want
+                    ),
+                    min(len(manifest_ids), len(expected_ids)),
+                )
+                return (
+                    "id manifest mismatch: cache was built from a different file "
+                    f"set or order (first difference at row {diff_at}); stale mmap"
+                )
         return None
 
     def mmap_exists(self) -> bool:
@@ -413,5 +465,18 @@ class LazyHdf5Loader:
                 tmp_path.unlink()
             raise
 
+        # Record the row order so reuse can be validated beyond a bare row count.
+        # Written after the mmap is in place: a crash between the two renames
+        # leaves an mmap without a manifest, which the integrity check rejects
+        # (rebuild) rather than trusting -- fail safe.
+        self._write_manifest(list(self._files.keys()))
+
         if verbose:
             print("Conversion complete!")
+
+    def _write_manifest(self, signal_ids: List[str]) -> None:
+        """Atomically write the ordered signal-id manifest beside the mmap."""
+        manifest_path = self._get_manifest_path()
+        tmp_path = manifest_path.with_name(f"{manifest_path.name}.{os.getpid()}.tmp")
+        tmp_path.write_text("\n".join(signal_ids) + "\n", encoding="utf-8")
+        os.replace(tmp_path, manifest_path)
