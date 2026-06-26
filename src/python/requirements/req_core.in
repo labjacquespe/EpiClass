@@ -9,8 +9,9 @@ scikit-learn>=1.8.0,<1.9.0
 imbalanced-learn>=0.14.0,<0.15.0
 
 # PyTorch
-# You need to use the install script to install torch with the appropriate CUDA version and avoid unecessary packages (e.g. cpu only).
-torch==2.6.0
+# torch is installed separately by install.py (see --torch-version / DEFAULT_TORCH);
+# the exact version and build/CUDA variant are chosen there, so it is left unpinned here.
+torch
 torchmetrics==1.8.2
 lightning==2.5.5 # pytorch-lightning
 torchinfo==1.8.0

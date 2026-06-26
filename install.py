@@ -180,7 +180,10 @@ def main():
         f"Installing epiclass in editable mode with extra: '{extras_str}'...", flush=True
     )
 
-    cmd = install_cmd + ["-e", epiclass_spec]
+    # Re-state the torch pin so the editable install keeps the version installed
+    # above instead of re-resolving it. req_core.in leaves torch unpinned, so this
+    # does not conflict; torch is already satisfied, so it is not re-downloaded.
+    cmd = install_cmd + ["-e", epiclass_spec, torch_pkg]
     print(f"Running command: {' '.join(cmd)}", flush=True)
     subprocess.check_call(cmd)
 
