@@ -53,7 +53,7 @@ def parse_arguments() -> argparse.Namespace:
         help="CV run directory holding split*/ (or fold_*/) fold sub-directories.",
     )
     arg_parser.add_argument(
-        "--output-dir", type=Path, default=None,
+        "--output_dir", type=Path, default=None,
         help="Where to write the per-fold and concatenated CSVs. "
              "Defaults to <cv_root>/predictionsCV.",
     )

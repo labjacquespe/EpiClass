@@ -44,7 +44,7 @@ def add_data_arguments(
     # fmt: off
     if hdf5_flag:
         arg_parser.add_argument(
-            "--hdf5", dest="hdf5", type=Path, required=True, help=hdf5_help,
+            "--hdf5", type=Path, required=True, help=hdf5_help,
         )
     else:
         arg_parser.add_argument("hdf5", type=Path, help=hdf5_help)
@@ -69,7 +69,7 @@ def add_data_arguments(
              "Useful when HDF5s are copied to $SLURM_TMPDIR.",
     )
     arg_parser.add_argument(
-        "--batch-size", type=int, default=256, dest="batch_size",
+        "--batch_size", type=int, default=256,
         help="Inference batch size. Default: 256.",
     )
     # fmt: on
