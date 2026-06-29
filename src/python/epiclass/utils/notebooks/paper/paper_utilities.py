@@ -1818,13 +1818,22 @@ def save_figure(
 
 
 def pairwise_ttests(
-    all_metrics, metrics_to_compare: List[str] | None = None, k: int = 10
+    all_metrics,
+    metrics_to_compare: List[str] | None = None,
+    k: int = 10,
+    alternative: str = "two-sided",
 ) -> pd.DataFrame:
     """
-    For each metadata category and metric, run Welch's t-test (two-sided) comparing
-    every pair of feature sets across k folds.
+    For each metadata category and metric, run Welch's t-test comparing every pair
+    of feature sets across k folds.
+
+    ** THIS IS NOT FOR PAIRED T-TESTS **
 
     all_metrics format: {feature_set: {category: {split_name: metric_dict}}}
+
+    alternative: passed to scipy.stats.ttest_ind ("two-sided", "less", "greater").
+        Feature sets are paired in dict order, so for a pair (fs_a, fs_b),
+        "greater" tests H1: mean(fs_a) > mean(fs_b).
     """
 
     def significance_symbol(p_value: float) -> str:
@@ -1861,7 +1870,7 @@ def pairwise_ttests(
                 ]
 
                 t_stat, p_val = ttest_ind(
-                    vals_a, vals_b, equal_var=False, alternative="two-sided"
+                    vals_a, vals_b, equal_var=False, alternative=alternative
                 )
 
                 results.append(
