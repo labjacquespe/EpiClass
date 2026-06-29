@@ -1,6 +1,6 @@
 # Notebook Summary
 
-All notebooks live under `src/python/epiclass/utils/notebooks/`.
+All notebooks live under `src/python/epiclass/utils/notebooks/`. Jupyter (`.ipynb`) notebooks are grouped by directory below; interactive marimo (`.py`) apps are in the **Marimo apps** section at the end.
 
 ---
 
@@ -466,3 +466,58 @@ Creates supplementary prediction files for the paper. Merges prediction results 
 
 - **Input:** Per-DB prediction CSVs, metadata JSONs for all public databases, Comet-ML experiment archive
 - **Output:** Comprehensive merged supplementary prediction files, training summary tables
+
+---
+
+## Marimo apps (`.py`)
+
+Interactive [marimo](https://marimo.io) apps (reactive `.py` notebooks, not Jupyter). Run with `marimo edit <path>` (or `marimo run <path>` read-only). Listed by their location in the tree.
+
+### `signal/mo_umap_plot.py`
+
+Interactive UMAP explorer. Loads a precomputed pickled UMAP embedding, colours points by any metadata column, and lets you box/lasso-select points to inspect them in a table; a second panel re-projects the selection onto another embedding (e.g. standard vs densMAP).
+
+- **Input:** `embedding_*_2D_*.pkl` (precomputed UMAP), metadata v2
+- **Output:** Interactive (no files)
+
+### `metadata/mo_celltype_similarity_groups.py`
+
+Explores the within-cohort cell-type Lin-similarity matrix group by group. Pick a similarity threshold and a cell-type group and inspect it as a heatmap and an interactive node-link graph. Needs the `biospecimen_similarity` venv (has `nxontology`).
+
+- **Input:** `celltype_similarity_matrix.csv` (from `evaluate_biospecimen_similarity.ipynb`); optional `*_sweep_groups.csv`
+- **Output:** Interactive (no files)
+
+### `predictions/mo_compare_rna_mapping_predictions.py`
+
+Compares RNA-Seq Unique vs UniqueMultiple mapping predictions per classifier, per fold — UniqueMultiple samples were never seen by the models, so this checks robustness to the mapping change.
+
+- **Input:** `concatenated_test_prediction_*.csv` (per classifier, with an `origin` column)
+- **Output:** Interactive comparison
+
+### `predictions/conformal/mo_conformal_report.py`
+
+Extensive per-classifier conformal-prediction report over a 10-fold CV run: §1 marginal-coverage sanity, §2 per-class coverage/set-size/empty-rate, §3 Mondrian feasibility + marginal-vs-Mondrian, §4 RAPS/SAPS hyperparameter sensitivity, §5 cross-classifier "hands up" scan. RAPS/SAPS focus, LAC/APS faded refs. (See `utils/conformal/methods.md`.)
+
+- **Input:** `split*/validation_prediction.csv` under a classifier run dir
+- **Output:** Cached per-fold `conformal_report.csv`; summary PNGs to `<run>/conformal_report/`
+
+### `predictions/conformal/mo_conformal_exploration.py`
+
+Donor-sex conformal scratchpad — the original exploration notebook (marginal coverage, per-class breakdown, Mondrian comparison) that the report app generalized.
+
+- **Input:** `split*/validation_prediction.csv`
+- **Output:** Interactive (no files)
+
+### `predictions/conformal/mo_conformal_cv_examination.py`
+
+Training-data QC / mislabel flagging. READ-ONLY viewer of the precomputed within-fold leave-one-out sets: per-class flag composition (clean/hedge/disagree/empty), per-class coverage, marginal-vs-Mondrian where feasible, a flagged-sample table, and the flagged samples in UMAP/PCA space coloured by flag. Run `precompute --mode cv-examine` first.
+
+- **Input:** `<run>/conformal_sets/cv_examination_*.csv` (from `python -m epiclass.utils.conformal.precompute --mode cv-examine`), metadata, UMAP/PCA embeddings
+- **Output:** Interactive (no files)
+
+### `predictions/conformal/mo_conformal_deployment.py`
+
+Explore CV+ prediction sets on new data. READ-ONLY viewer: set-size distribution, a browsable prediction-set table, per-predicted-class breakdown, and the new samples in embedding space coloured by set size. Run `precompute --mode deploy` first.
+
+- **Input:** `<data>/conformal_sets/cv_plus_sets_*.csv` (from `precompute --mode deploy`), metadata, UMAP/PCA embeddings
+- **Output:** Interactive (no files)

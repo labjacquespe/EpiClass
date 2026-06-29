@@ -12,7 +12,7 @@ EpiClass (Epigenomic Classifier) is a framework for training neural network mode
   - `epiclass/` — Core package
     - `core/` — Data loading (`lazy/`), model (`model_pytorch.py`), training (`trainer.py`), metadata (`metadata.py`), analysis (`analysis.py`)
     - `core/lazy/` — Lazy data layer: `lazy_hdf5_loader.py`, `chunked_hdf5_loader.py`, `lazy_data_classes.py`, `lazy_fold_factory.py`, `lazy_torch_dataset.py`
-    - `utils/` — Analysis scripts, notebooks, HDF5 utilities, SHAP analysis
+    - `utils/` — Analysis scripts, notebooks, HDF5 utilities, SHAP analysis (notebooks catalogued in `utils/notebooks/NOTEBOOKS.md`)
     - Top-level scripts: `epiatlas_training.py`, `epiatlas_training_no_valid.py`, `predict.py`, `compute_shaps.py`, `general_training.py`
   - `tests/` — pytest test suite (mirrors `core/`, `mains/`, `utils/` structure)
   - `requirements/` — Pinned dependency files per Python version (`req_test-pyX.Y.txt`)
@@ -127,3 +127,4 @@ having to actually attempt the commit.
 - **Training flow**: `epiatlas_training.py` does cross-validation; `epiatlas_training_no_valid.py` trains without validation (for final models). Both use PyTorch Lightning via `trainer.py`. `general_training.py` is the shared backbone used by both.
 - **Experiment tracking**: Comet-ML integration (supports `--offline` mode).
 - **Models are published** to Hugging Face under the "EpiClass models" collection.
+- **Conformal prediction (post-hoc)** (`utils/conformal/`, optional `[conformal]` extra = TorchCP): turns classifier prediction CSVs (`ID, True class, Predicted class, <per-class softmax>`) into *prediction sets* with coverage guarantees, without touching the model. `prediction.py` is the core (LAC/APS/RAPS/SAPS scores, split + class-conditional/Mondrian calibration, CV+); `report.py` builds the per-classifier figures; `methods.md` is the **read-this-first** reference (score choice, Mondrian feasibility, OOD caveats, what an empty set means). `precompute.py` is a separate driver — `python -m epiclass.utils.conformal.precompute --mode cv-examine|deploy` — that writes per-sample set CSVs into `<run>/conformal_sets/`: `cv-examine` gives every 10-fold validation sample an honest **within-fold leave-one-out** set (training-data QC / mislabel flagging, marginal SAPS + Mondrian where feasible); `deploy` wraps CV+ for new data scored under all K fold models. `app_support.py` + the marimo apps under `notebooks/predictions/conformal/` (`mo_conformal_report`, `mo_conformal_exploration`, `mo_conformal_cv_examination`, `mo_conformal_deployment`) are READ-ONLY viewers of the precomputed artifacts (joined to metadata + UMAP/PCA embeddings via the md5sum bridge). Tests in `tests/utils/conformal/`.
