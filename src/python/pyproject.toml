@@ -106,6 +106,14 @@ known_local_folder = ["./epiclass", "./tests"]
 src_paths = ["./epiclass", "./tests"]
 
 
+[tool.marimo.lint]
+# `marimo check` reads this from the nearest pyproject.toml. MF007
+# (markdown-indentation) only asks that mo.md() bodies be dedented to column 0;
+# our notebooks keep them indented to match the surrounding cell, so silence it
+# to keep `marimo check` output actionable (real DAG errors, not cosmetics).
+ignore = ["MF007"]
+
+
 [tool.pyright]
 ignore = [
     "**/epilap/**",
