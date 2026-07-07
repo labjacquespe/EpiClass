@@ -49,6 +49,7 @@ def _():
     import plotly.express as px
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+    from sklearn.metrics import accuracy_score, brier_score_loss, f1_score
 
     from epiclass.core.metadata import Metadata
     from epiclass.utils.conformal.prediction import (
@@ -62,8 +63,11 @@ def _():
         Counter,
         Metadata,
         Path,
+        accuracy_score,
+        brier_score_loss,
         calibrate_predictor,
         classify_flags,
+        f1_score,
         find_signal_id_lists,
         go,
         make_subplots,
@@ -365,6 +369,10 @@ def _(comparisons):
 @app.cell
 def _(comparisons, mo, pd):
     # Per-model summary: pair counts, argmax-disagreement rate, mean distances.
+    # NOTE: like the unstranded summary, n_pairs is summed over folds with a
+    # complement-of-training filter (all_ids - training_ids), so it counts
+    # (fold x pair) rows, not distinct samples, and can exceed a classifier's
+    # sample count. See the "How to read n_pairs" markdown in the unstranded section.
     if comparisons is None or comparisons.empty:
         _summary = mo.md("No data to summarize.")
     else:
@@ -470,6 +478,9 @@ def _():
 @app.cell
 def _(
     Path,
+    accuracy_score,
+    brier_score_loss,
+    f1_score,
     find_concatenated,
     find_signal_id_lists,
     load_concatenated,
@@ -489,7 +500,6 @@ def _(
         and the multiclass Brier score on the full probability vector. Long-form rows:
         (model, split, mapping, Accuracy, F1_macro, Brier, n).
         """
-        from sklearn.metrics import accuracy_score, brier_score_loss, f1_score
 
         def read_validation_ids(cv_root, split_name):
             lists = find_signal_id_lists(
@@ -1130,7 +1140,7 @@ def _(CP_HEADLINE_ALPHA, cp_samples, mo, pd):
             ]
         )
     _view
-    return (cp_confident_wrong,)
+    return
 
 
 @app.cell
@@ -1139,22 +1149,11 @@ def _(mo):
         r"""
     # Unstranded RNA (plusRaw + minusRaw summed) — 2-to-1 vs Unique
 
-    A third representation: the two stranded RNA tracks are **summed into one
-    unstranded signal per EpiRR** (see `utils/preprocessing/sum_stranded_rna_hdf5.py`)
-    and predicted with the same fold models. Because there is now **one** unstranded
-    sample per EpiRR but **two** Unique stranded samples (plusRaw + minusRaw), the
-    match is **2-to-1**: the Unique reference is the **average** of the plusRaw and
-    minusRaw probability vectors (over the strands the fold held out), compared to the
-    single unstranded prediction from the same fold model.
+    A third representation: the two stranded RNA tracks are **summed into one unstranded signal per EpiRR** (see `utils/preprocessing/sum_stranded_rna_hdf5.py`) and predicted with the same fold models. Because there is now **one** unstranded sample per EpiRR but **two** Unique stranded samples (plusRaw + minusRaw), the match is **2-to-1**: the Unique reference is the **average** of the plusRaw and minusRaw probability vectors (over the strands the fold held out), compared to the single unstranded prediction from the same fold model.
 
-    The Unique baseline is re-read from the existing `RNA_UniqueMultiple` run (its rows
-    already hold the Unique predictions), so only the unstranded predictions need to be
-    generated. A **new error** here is a pair the averaged-Unique argmax got right but
-    the unstranded argmax got wrong.
+    The Unique baseline is re-read from the existing `RNA_UniqueMultiple` run (its rows already hold the Unique predictions), so only the unstranded predictions need to be generated. A **new error** here is a pair the averaged-Unique argmax got right but the unstranded argmax got wrong.
 
-    A summed sample's prediction `ID` is a content-free md5 of its two source filenames,
-    so identity is recovered through the **mapping TSV** written by the summing utility
-    (`new_id → source md5 → EpiRR` via the metadata JSON) — see the next cell.
+    A summed sample's prediction `ID` is a content-free md5 of its two source filenames, so identity is recovered through the **mapping TSV** written by the summing utility (`new_id → source md5 → EpiRR` via the metadata JSON) — see the next cell.
     """
     )
     return
@@ -1364,8 +1363,26 @@ def _(uns_comparisons):
 
 
 @app.cell
+def _(mo):
+    mo.md(
+        r"""
+    ### How to read `n_pairs` (it can exceed a classifier's sample count)
+
+    `n_pairs` is summed **over the 10 CV folds**, and the per-fold Unique reference is *every* Unique row **not in that fold's `training` list** (`keep = all_ids − training_ids`, a complement-of-training filter). `predict_CV.py` scores **every** input RNA sample with **every** fold model, so a sample the classifier was never trained on — e.g. an RNA sample with no `cancer_high` label, which is still predicted — sits outside all 10 training lists and therefore survives the filter in **all 10 folds**, counted up to 10×. So `n_pairs` here is a count of *(fold × held-out-or-untrained EpiRR)* rows, not distinct samples, and can run past a classifier's training-sample count (even past the total RNA sample count for tasks trained on a small labelled subset like cancer).
+
+    This is intentional — this table is a stability/agreement diagnostic over all fold models, not a per-sample tally. The **task-metrics** section below instead intersects each fold with its `validation` list (`all_ids ∩ validation_ids`), so there each sample is counted once, in its single held-out fold. The same complement-of-training counting applies to the Unique-vs-UniqueMultiple 1-to-1 per-model summary earlier in the notebook.
+    """
+    )
+    return
+
+
+@app.cell
 def _(mo, pd, uns_comparisons):
     # Per-model summary: pair counts, argmax-disagreement rate, mean distances.
+    # NOTE: n_pairs is summed over folds and uses a complement-of-training filter
+    # (all_ids - training_ids), so untrained-but-predicted samples are counted once
+    # per fold -> the total can exceed a classifier's sample count. See the markdown
+    # cell above; the task-metrics section uses the validation list (one count/sample).
     if uns_comparisons is None or uns_comparisons.empty:
         _summary = mo.md("No data to summarize.")
     else:
@@ -1402,6 +1419,9 @@ def _(mo, uns_comparisons):
 @app.cell
 def _(
     Path,
+    accuracy_score,
+    brier_score_loss,
+    f1_score,
     find_concatenated,
     load_concatenated,
     np,
@@ -1426,7 +1446,6 @@ def _(
         prediction, and scores both against the metadata true label. Long-form rows:
         (model, split, mapping, Accuracy, F1_macro, Brier, n).
         """
-        from sklearn.metrics import accuracy_score, brier_score_loss, f1_score
 
         def _norm(probs):
             mat = np.asarray(probs)

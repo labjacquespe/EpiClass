@@ -391,7 +391,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--pair-list",
         type=Path,
         required=True,
-        help="Text file listing HDF5 pairs to sum (one pair per line).",
+        help=(
+            "Text file listing HDF5 pairs to sum, one pair per line. Fields are "
+            "separated by whitespace (spaces/tabs) and/or commas: two paths, or "
+            "an explicit ID followed by two paths. '#' lines are ignored."
+        ),
     )
     parser.add_argument(
         "--output-dir",
