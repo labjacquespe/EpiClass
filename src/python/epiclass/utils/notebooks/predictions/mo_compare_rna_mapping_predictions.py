@@ -118,12 +118,31 @@ def _(Path):
     PREDICTIONS_SUBDIR = "predictionsCV"
     RUN_SUBDIR = "RNA_UniqueMultiple"
 
+    # Unstranded RNA (plusRaw + minusRaw summed) predictions live in a sibling run
+    # dir; the Unique baseline is re-read from RUN_SUBDIR above (no re-run needed).
+    UNSTRANDED_RUN_SUBDIR = "RNA_Unstranded"
+
+    # Mapping TSV written by utils/preprocessing/sum_stranded_rna_hdf5.py: bridges each
+    # summed sample's new_id -> its two source md5s (-> EpiRR via the metadata JSON).
+    # One shared file for all classifiers (the summed inputs don't depend on the model).
+    UNSTRANDED_PAIR_MAPPING = (
+        Path.home()
+        / "Projects/epiclass/output/paper/data/hdf5/rna_unstranded/pair_mapping.tsv"
+    )
+
     # Metadata mapping Unique md5sum -> epirr_id / track_type.
     METADATA_JSON = (
         Path.home()
         / "Projects/epiclass/output/paper/data/metadata/epiatlas/hg38_2023-epiatlas-dfreeze_v2.1_w_encode_noncore_2.json"
     )
-    return METADATA_JSON, MODELS, PREDICTIONS_SUBDIR, RUN_SUBDIR
+    return (
+        METADATA_JSON,
+        MODELS,
+        PREDICTIONS_SUBDIR,
+        RUN_SUBDIR,
+        UNSTRANDED_PAIR_MAPPING,
+        UNSTRANDED_RUN_SUBDIR,
+    )
 
 
 @app.cell
@@ -1112,6 +1131,492 @@ def _(CP_HEADLINE_ALPHA, cp_samples, mo, pd):
         )
     _view
     return (cp_confident_wrong,)
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    # Unstranded RNA (plusRaw + minusRaw summed) — 2-to-1 vs Unique
+
+    A third representation: the two stranded RNA tracks are **summed into one
+    unstranded signal per EpiRR** (see `utils/preprocessing/sum_stranded_rna_hdf5.py`)
+    and predicted with the same fold models. Because there is now **one** unstranded
+    sample per EpiRR but **two** Unique stranded samples (plusRaw + minusRaw), the
+    match is **2-to-1**: the Unique reference is the **average** of the plusRaw and
+    minusRaw probability vectors (over the strands the fold held out), compared to the
+    single unstranded prediction from the same fold model.
+
+    The Unique baseline is re-read from the existing `RNA_UniqueMultiple` run (its rows
+    already hold the Unique predictions), so only the unstranded predictions need to be
+    generated. A **new error** here is a pair the averaged-Unique argmax got right but
+    the unstranded argmax got wrong.
+
+    A summed sample's prediction `ID` is a content-free md5 of its two source filenames,
+    so identity is recovered through the **mapping TSV** written by the summing utility
+    (`new_id → source md5 → EpiRR` via the metadata JSON) — see the next cell.
+    """
+    )
+    return
+
+
+@app.cell
+def _(
+    Path,
+    find_concatenated,
+    find_signal_id_lists,
+    load_concatenated,
+    np,
+    pd,
+    re,
+    unique_identity,
+):
+    def read_fold_id_list(cv_root, split_name, kind):
+        """Set of signal-IDs in <cv_root>/<split>/<split>_<kind>_*, or None if absent."""
+        lists = find_signal_id_lists(cv_root / split_name, f"{split_name}_{kind}_*")
+        if not lists:
+            return None
+        chosen = sorted(lists)[-1]  # newest timestamp if several
+        return {ln.strip() for ln in chosen.read_text().splitlines() if ln.strip()}
+
+    def unstranded_by_epirr(sub, classes, id_to_epirr):
+        """{EpiRR: (id, prob)} for a fold's unstranded rows (one per EpiRR).
+
+        The summed sample's ``ID`` is a content-free md5 of its two source
+        filenames; ``id_to_epirr`` (built from the utility's mapping TSV +
+        metadata) resolves it to an EpiRR. A bare IHECRE regex is kept as a
+        fallback for hand-named files that already carry the EpiRR.
+        """
+        out = {}
+        for sid, prob in zip(sub["ID"], sub[classes].to_numpy(dtype=float)):
+            epirr = id_to_epirr.get(str(sid))
+            if epirr is None:
+                m = re.search(r"IHECRE\d+(?:\.\d+)?", str(sid))
+                epirr = m.group(0) if m else None
+            if epirr is not None:
+                out[epirr] = (sid, prob)
+        return out
+
+    def unique_avg_by_epirr(sub, classes, metadata, keep_ids):
+        """{EpiRR: (rep_id, mean_prob, n_strands)} averaging Unique strands in keep_ids."""
+        acc = {}
+        for sid, prob in zip(sub["ID"], sub[classes].to_numpy(dtype=float)):
+            if sid not in keep_ids:
+                continue
+            key = unique_identity(sid, metadata)  # (EpiRR, strand) via metadata
+            if key is None:
+                continue
+            epirr = key[0]
+            rep_id, probs = acc.get(epirr, (sid, []))
+            probs.append(prob)
+            acc[epirr] = (rep_id, probs)
+        return {e: (rid, np.mean(ps, axis=0), len(ps)) for e, (rid, ps) in acc.items()}
+
+    def build_unstranded_comparisons(
+        models,
+        metadata,
+        id_to_epirr,
+        predictions_subdir,
+        unique_subdir,
+        unstranded_subdir,
+    ):
+        """Per-EpiRR averaged-Unique vs unstranded comparison. Returns (df, notes).
+
+        Per (model, fold): read the unstranded prediction for each EpiRR (identity via
+        ``id_to_epirr``), average the held-out Unique strand predictions (dropping IDs
+        in the fold's training list) into one reference per EpiRR, match on EpiRR, and
+        measure argmax (dis)agreement + L2 / total-variation distance between the two
+        probability vectors.
+        """
+        rows, notes = [], []
+        for model_name, cv_root in models.items():
+            cv_root = Path(cv_root)
+            u_csv = find_concatenated(cv_root / predictions_subdir / unique_subdir)
+            s_csv = find_concatenated(cv_root / predictions_subdir / unstranded_subdir)
+            if u_csv is None:
+                notes.append(f"{model_name}: no Unique CSV under {unique_subdir}/")
+                continue
+            if s_csv is None:
+                notes.append(
+                    f"{model_name}: no unstranded CSV under {unstranded_subdir}/"
+                )
+                continue
+            u_df, u_classes = load_concatenated(u_csv)
+            s_df, s_classes = load_concatenated(s_csv)
+            if u_classes != s_classes:
+                notes.append(f"{model_name}: class columns differ Unique vs unstranded")
+                continue
+            classes = u_classes
+
+            u_by_split = dict(tuple(g) for g in u_df.groupby("split"))
+            for split_name, s_sub in s_df.groupby("split"):
+                if split_name is None or split_name not in u_by_split:
+                    continue
+                train_ids = read_fold_id_list(cv_root, split_name, "training")
+                if train_ids is None:
+                    notes.append(f"{model_name}/{split_name}: no training list; skipped")
+                    continue
+                u_sub = u_by_split[split_name]
+                keep = set(u_sub["ID"]) - train_ids  # Unique rows not trained on
+                u_map = unique_avg_by_epirr(u_sub, classes, metadata, keep)
+                s_map = unstranded_by_epirr(s_sub, classes, id_to_epirr)
+
+                for epirr in u_map.keys() & s_map.keys():
+                    rep_id, u_prob, n_strands = u_map[epirr]
+                    s_id, s_prob = s_map[epirr]
+                    diff = u_prob - s_prob
+                    rows.append(
+                        dict(
+                            model=model_name,
+                            split=split_name,
+                            epirr=epirr,
+                            n_unique_strands=n_strands,
+                            unique_id=rep_id,
+                            unstranded_id=s_id,
+                            unique_pred=classes[int(np.argmax(u_prob))],
+                            unstranded_pred=classes[int(np.argmax(s_prob))],
+                            argmax_agree=bool(np.argmax(u_prob) == np.argmax(s_prob)),
+                            l2=float(np.linalg.norm(diff)),
+                            tv=float(0.5 * np.abs(diff).sum()),
+                        )
+                    )
+        return pd.DataFrame(rows), notes
+
+    return (
+        build_unstranded_comparisons,
+        read_fold_id_list,
+        unique_avg_by_epirr,
+        unstranded_by_epirr,
+    )
+
+
+@app.cell
+def _(UNSTRANDED_PAIR_MAPPING, metadata, mo, pd, unique_identity):
+    # Build {new_id -> EpiRR} from the utility's mapping TSV: each summed sample's
+    # md5 ID -> its source md5s -> EpiRR via metadata. Either source strand resolves
+    # to the same EpiRR, so the first that hits wins.
+    def _load_unstranded_id_map(mapping_path, meta):
+        if meta is None or not mapping_path.is_file():
+            return {}, mapping_path.is_file()
+        table = pd.read_csv(mapping_path, sep="\t", dtype=str)
+        mapping = {}
+        for _, row in table.iterrows():
+            for src in (row.get("id_a"), row.get("id_b")):
+                key = unique_identity(src, meta) if src else None
+                if key is not None:
+                    mapping[str(row["new_id"])] = key[0]
+                    break
+        return mapping, True
+
+    uns_id_to_epirr, _mapping_found = _load_unstranded_id_map(
+        UNSTRANDED_PAIR_MAPPING, metadata
+    )
+    mo.md(
+        f"Resolved **{len(uns_id_to_epirr)} summed IDs → EpiRR** from `{UNSTRANDED_PAIR_MAPPING}`."
+        if _mapping_found
+        else f"⚠️ Pair-mapping TSV not found at `{UNSTRANDED_PAIR_MAPPING}` — "
+        "summed IDs will fall back to an IHECRE regex (only works for EpiRR-named files)."
+    )
+    return (uns_id_to_epirr,)
+
+
+@app.cell
+def _(
+    MODELS,
+    PREDICTIONS_SUBDIR,
+    RUN_SUBDIR,
+    UNSTRANDED_RUN_SUBDIR,
+    build_unstranded_comparisons,
+    metadata,
+    mo,
+    uns_id_to_epirr,
+):
+    uns_comparisons, _notes = (
+        build_unstranded_comparisons(
+            MODELS,
+            metadata,
+            uns_id_to_epirr,
+            PREDICTIONS_SUBDIR,
+            RUN_SUBDIR,
+            UNSTRANDED_RUN_SUBDIR,
+        )
+        if metadata is not None
+        else (None, ["Metadata not loaded; cannot build comparisons."])
+    )
+
+    _msg = (
+        f"Matched **{len(uns_comparisons)} EpiRR pairs** across "
+        f"{uns_comparisons['model'].nunique()} models.\n\n"
+        if uns_comparisons is not None and not uns_comparisons.empty
+        else "No unstranded pairs matched.\n\n"
+    )
+    if _notes:
+        _msg += "Notes:\n\n" + "\n".join(f"- {n}" for n in _notes)
+    mo.md(_msg)
+    return (uns_comparisons,)
+
+
+@app.cell
+def _(uns_comparisons):
+    # Raw per-EpiRR table (averaged-Unique vs unstranded, per fold).
+    uns_comparisons
+    return
+
+
+@app.cell
+def _(mo, pd, uns_comparisons):
+    # Per-model summary: pair counts, argmax-disagreement rate, mean distances.
+    if uns_comparisons is None or uns_comparisons.empty:
+        _summary = mo.md("No data to summarize.")
+    else:
+        _g = uns_comparisons.groupby("model")
+        _summary = pd.DataFrame(
+            {
+                "n_pairs": _g.size(),
+                "n_disagree": _g["argmax_agree"].apply(lambda s: int((~s).sum())),
+                "disagree_rate": _g["argmax_agree"].apply(lambda s: float((~s).mean())),
+                "mean_l2": _g["l2"].mean(),
+                "mean_tv": _g["tv"].mean(),
+            }
+        ).reset_index()
+    _summary
+    return
+
+
+@app.cell
+def _(mo, uns_comparisons):
+    # New errors: EpiRRs whose argmax class CHANGES from averaged-Unique to unstranded.
+    if uns_comparisons is None or uns_comparisons.empty:
+        _flagged = mo.md("No data.")
+    else:
+        _df = uns_comparisons[~uns_comparisons["argmax_agree"]][
+            ["model", "split", "epirr", "unique_pred", "unstranded_pred", "l2", "tv"]
+        ].sort_values(["model", "l2"], ascending=[True, False])
+        _flagged = mo.vstack(
+            [mo.md(f"### Argmax disagreements: {len(_df)} EpiRR(s)"), mo.ui.table(_df)]
+        )
+    _flagged
+    return
+
+
+@app.cell
+def _(
+    Path,
+    find_concatenated,
+    load_concatenated,
+    np,
+    pd,
+    read_fold_id_list,
+    unique_avg_by_epirr,
+    unstranded_by_epirr,
+):
+    def build_unstranded_task_metrics(
+        models,
+        metadata,
+        id_to_epirr,
+        task_category,
+        predictions_subdir,
+        unique_subdir,
+        unstranded_subdir,
+    ):
+        """Per-task, per-fold Accuracy / macro-F1 / Brier for Unique(avg) vs Unstranded.
+
+        Restricts Unique rows to the fold's validation list (guarantees the true label
+        is in the class space), averages the strands per EpiRR, pairs with the unstranded
+        prediction, and scores both against the metadata true label. Long-form rows:
+        (model, split, mapping, Accuracy, F1_macro, Brier, n).
+        """
+        from sklearn.metrics import accuracy_score, brier_score_loss, f1_score
+
+        def _norm(probs):
+            mat = np.asarray(probs)
+            return mat / mat.sum(axis=1, keepdims=True)
+
+        rows, notes = [], []
+        for model_name, cv_root in models.items():
+            cv_root = Path(cv_root)
+            category = task_category.get(model_name)
+            if category is None:
+                notes.append(f"{model_name}: no metadata category mapping; skipped")
+                continue
+            u_csv = find_concatenated(cv_root / predictions_subdir / unique_subdir)
+            s_csv = find_concatenated(cv_root / predictions_subdir / unstranded_subdir)
+            if u_csv is None or s_csv is None:
+                notes.append(f"{model_name}: missing Unique or unstranded CSV")
+                continue
+            u_df, classes = load_concatenated(u_csv)
+            s_df, s_classes = load_concatenated(s_csv)
+            if classes != s_classes:
+                notes.append(f"{model_name}: class columns differ; skipped")
+                continue
+            cidx = {c: i for i, c in enumerate(classes)}
+
+            u_by_split = dict(tuple(g) for g in u_df.groupby("split"))
+            for split_name, s_sub in s_df.groupby("split"):
+                if split_name is None or split_name not in u_by_split:
+                    continue
+                valid = read_fold_id_list(cv_root, split_name, "validation")
+                if valid is None:
+                    notes.append(f"{model_name}/{split_name}: no validation list")
+                    continue
+                u_sub = u_by_split[split_name]
+                u_map = unique_avg_by_epirr(
+                    u_sub, classes, metadata, set(u_sub["ID"]) & valid
+                )
+                s_map = unstranded_by_epirr(s_sub, classes, id_to_epirr)
+
+                y_true, u_args, s_args, u_probs, s_probs = [], [], [], [], []
+                for epirr in sorted(u_map.keys() & s_map.keys()):
+                    rep_id, u_prob, _ = u_map[epirr]
+                    _, s_prob = s_map[epirr]
+                    rec = metadata.get(rep_id)
+                    true_label = rec.get(category) if rec else None
+                    if not true_label or true_label not in cidx:
+                        continue
+                    y_true.append(true_label)
+                    u_args.append(classes[int(np.argmax(u_prob))])
+                    s_args.append(classes[int(np.argmax(s_prob))])
+                    u_probs.append(u_prob)
+                    s_probs.append(s_prob)
+
+                if not y_true:
+                    continue
+
+                labels = sorted(set(y_true))
+                for mapping, y_pred, p_mat in (
+                    ("Unique (avg)", u_args, _norm(u_probs)),
+                    ("Unstranded", s_args, _norm(s_probs)),
+                ):
+                    rows.append(
+                        dict(
+                            model=model_name,
+                            split=split_name,
+                            mapping=mapping,
+                            Accuracy=accuracy_score(y_true, y_pred),
+                            F1_macro=f1_score(
+                                y_true,
+                                y_pred,
+                                labels=labels,
+                                average="macro",
+                                zero_division=0,
+                            ),
+                            Brier=brier_score_loss(
+                                y_true, p_mat, labels=classes, scale_by_half=False
+                            ),
+                            n=len(y_true),
+                        )
+                    )
+        return pd.DataFrame(rows), notes
+
+    return (build_unstranded_task_metrics,)
+
+
+@app.cell
+def _(
+    MODELS,
+    PREDICTIONS_SUBDIR,
+    RUN_SUBDIR,
+    TASK_CATEGORY,
+    UNSTRANDED_RUN_SUBDIR,
+    build_unstranded_task_metrics,
+    metadata,
+    mo,
+    uns_id_to_epirr,
+):
+    uns_task_metrics, _notes = (
+        build_unstranded_task_metrics(
+            MODELS,
+            metadata,
+            uns_id_to_epirr,
+            TASK_CATEGORY,
+            PREDICTIONS_SUBDIR,
+            RUN_SUBDIR,
+            UNSTRANDED_RUN_SUBDIR,
+        )
+        if metadata is not None
+        else (None, ["Metadata not loaded; cannot compute metrics."])
+    )
+
+    _msg = (
+        f"Computed metrics for **{uns_task_metrics['model'].nunique()} tasks** "
+        f"across {uns_task_metrics['split'].nunique()} folds.\n\n"
+        if uns_task_metrics is not None and not uns_task_metrics.empty
+        else "No metrics computed.\n\n"
+    )
+    if _notes:
+        _msg += "Notes:\n\n" + "\n".join(f"- {n}" for n in _notes)
+    mo.md(_msg)
+    return (uns_task_metrics,)
+
+
+@app.cell
+def _(uns_task_metrics):
+    # Long-form metrics: one row per (task, fold, mapping).
+    uns_task_metrics
+    return
+
+
+@app.cell
+def _(go, make_subplots, mo, uns_task_metrics):
+    # Grouped box plots: Accuracy, macro-F1 and Brier per task, Unique(avg) vs Unstranded,
+    # each box a distribution across the CV folds. Accuracy/F1 higher=better; Brier lower.
+    if uns_task_metrics is None or uns_task_metrics.empty:
+        _out = mo.md("No metrics to plot.")
+    else:
+        _metric_names = ["Accuracy", "F1_macro", "Brier"]
+        _subplot_titles = ["Accuracy (↑)", "F1_macro (↑)", "Brier (↓)"]
+        _mappings = ["Unique (avg)", "Unstranded"]
+        _colors = {"Unique (avg)": "#636EFA", "Unstranded": "#00CC96"}
+
+        _order = (
+            uns_task_metrics[uns_task_metrics["mapping"] == "Unique (avg)"]
+            .groupby("model")["Accuracy"]
+            .mean()
+            .sort_values(ascending=False)
+            .index.tolist()
+        )
+
+        _fig = make_subplots(
+            rows=1,
+            cols=len(_metric_names),
+            subplot_titles=_subplot_titles,
+            horizontal_spacing=0.06,
+        )
+        for _col, _metric in enumerate(_metric_names, start=1):
+            for _mapping in _mappings:
+                _s = uns_task_metrics[uns_task_metrics["mapping"] == _mapping]
+                _fig.add_trace(
+                    go.Box(
+                        x=_s["model"],
+                        y=_s[_metric],
+                        name=_mapping,
+                        fillcolor=_colors[_mapping],
+                        line=dict(color="black", width=1.2),
+                        marker=dict(size=3, color="white", line_width=1),
+                        boxmean=True,
+                        boxpoints="all",
+                        pointpos=0,
+                        legendgroup=_mapping,
+                        showlegend=_col == 1,
+                    ),
+                    row=1,
+                    col=_col,
+                )
+        _fig.update_xaxes(categoryorder="array", categoryarray=_order)
+        _fig.update_yaxes(range=[0, 1.02], row=1, col=1)
+        _fig.update_yaxes(range=[0, 1.02], row=1, col=2)
+        _fig.update_yaxes(rangemode="tozero", row=1, col=3)
+        _fig.update_layout(
+            boxmode="group",
+            template="plotly_white",
+            title_text="RNA-Seq Unique (avg) vs Unstranded — per-task metrics (validation-set pairs, across folds)",
+            yaxis_title="Value",
+            height=550,
+            width=1500,
+        )
+        _out = _fig
+    _out
+    return
 
 
 if __name__ == "__main__":

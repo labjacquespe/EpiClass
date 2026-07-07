@@ -489,10 +489,10 @@ Explores the within-cohort cell-type Lin-similarity matrix group by group. Pick 
 
 ### `predictions/mo_compare_rna_mapping_predictions.py`
 
-Compares RNA-Seq Unique vs UniqueMultiple mapping predictions per classifier, per fold — UniqueMultiple samples were never seen by the models, so this checks robustness to the mapping change.
+Compares RNA-Seq mapping variants against the training Unique mapping, per classifier, per fold, to check robustness to the mapping change. Section 1 pairs Unique vs UniqueMultiple 1-to-1 on `(EpiRR, strand)` (UniqueMultiple never seen by the models), with a conformal-prediction follow-up on the new errors. A later section handles **Unstranded** RNA (plusRaw + minusRaw summed via `utils/preprocessing/sum_stranded_rna_hdf5.py`) as a 2-to-1 comparison: the averaged plus/minus Unique probabilities vs the single unstranded prediction.
 
-- **Input:** `concatenated_test_prediction_*.csv` (per classifier, with an `origin` column)
-- **Output:** Interactive comparison
+- **Input:** `concatenated_test_prediction_*.csv` per classifier (with an `origin` column) under `RNA_UniqueMultiple/` and `RNA_Unstranded/`
+- **Output:** Interactive comparison (tables + metrics box plots)
 
 ### `predictions/conformal/mo_conformal_report.py`
 
