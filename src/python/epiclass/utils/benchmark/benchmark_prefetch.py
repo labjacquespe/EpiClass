@@ -358,11 +358,14 @@ def build_epiatlas_fold(data: Dict[str, Any], mmap_dir: Path):
     return my_data, hparams
 
 
-def _make_epoch_timer(mmap_path: Optional[Path], drop_between: bool):
+def _make_epoch_timer(mmap_path: Optional[Path], drop_between: bool, verbose: bool):
     """Return a Lightning Callback recording per-epoch wall times.
 
     When ``drop_between`` is set it evicts the mmap page cache at the start of
-    every epoch, keeping each measured epoch cold (working set >> RAM).
+    every epoch, keeping each measured epoch cold (working set >> RAM). Epoch
+    start/done lines are always printed (the progress bar and logger are off for
+    clean timing, so these are the only sign of life); the intra-epoch batch
+    heartbeat is only printed when ``verbose`` is set, to keep sweep logs tidy.
     """
     from lightning.pytorch.callbacks import Callback
 
@@ -375,9 +378,33 @@ def _make_epoch_timer(mmap_path: Optional[Path], drop_between: bool):
             if drop_between:
                 drop_page_cache(mmap_path)
             self._t0 = time.perf_counter()
+            n = trainer.num_training_batches
+            print(
+                f"  [epoch {trainer.current_epoch}] start "
+                f"({n} batches"
+                f"{'; page cache dropped' if drop_between else ''})",
+                flush=True,
+            )
+
+        def on_train_batch_end(  # pylint: disable=too-many-arguments
+            self, trainer, pl_module, outputs, batch, batch_idx
+        ) -> None:
+            if not verbose:
+                return
+            total = trainer.num_training_batches
+            step = max(1, total // 10)  # ~10 heartbeats per epoch
+            if batch_idx % step == 0 and batch_idx > 0:
+                rate = (batch_idx + 1) / (time.perf_counter() - self._t0)
+                print(
+                    f"    epoch {trainer.current_epoch}: "
+                    f"{batch_idx + 1}/{total} batches ({rate:.1f} batch/s)",
+                    flush=True,
+                )
 
         def on_train_epoch_end(self, trainer, pl_module) -> None:
-            self.epoch_times.append(time.perf_counter() - self._t0)
+            dt = time.perf_counter() - self._t0
+            self.epoch_times.append(dt)
+            print(f"  [epoch {trainer.current_epoch}] done in {dt:.1f}s", flush=True)
 
     return _EpochTimer()
 
@@ -443,17 +470,27 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
     limit = run_cfg.get("limit_train_batches")
     if isinstance(limit, int):
         n_batches = min(n_batches, limit)
+    print(
+        f"Data ready: {my_data.train.num_examples} train samples, "
+        f"{n_batches} batches/epoch (batch_size={batch_size}), "
+        f"device={'gpu' if gpu else 'cpu'}, cores={n_cores}.",
+        flush=True,
+    )
 
     # Model-free cold delivery pass isolates pure I/O throughput from GPU compute.
     dataloader_only_s: Optional[float] = None
     if run_cfg.get("warmup_dataloader_pass", True):
+        print(f"Cold dataloader-only pass ({n_batches} batches)...", flush=True)
         drop_page_cache(mmap_path)
         dataloader_only_s = _time_dataloader_pass(train_loader, n_batches)
+        print(f"  dataloader-only pass: {dataloader_only_s:.1f}s", flush=True)
 
     model = _build_model(my_data, hparams, logdir)
     epochs = int(run_cfg.get("epochs", hparams.get("training_epochs", 4)))
     drop_between = bool(run_cfg.get("drop_cache_between_epochs", True))
-    timer = _make_epoch_timer(mmap_path, drop_between)
+    timer = _make_epoch_timer(
+        mmap_path, drop_between, verbose=bool(run_cfg.get("verbose", False))
+    )
 
     trainer_kwargs: Dict[str, Any] = {
         "general_log_dir": str(logdir),

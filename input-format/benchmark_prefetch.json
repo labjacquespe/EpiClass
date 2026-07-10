@@ -12,6 +12,7 @@
     "epochs": 4,
     "limit_train_batches": null,
     "repeats": 1,
+    "verbose": false,
     "warmup_dataloader_pass": true
   },
   "sweep": {
