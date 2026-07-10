@@ -10,6 +10,17 @@ from epiclass.core.data.dataset import DataSet
 from epiclass.core.lazy.lazy_data_classes import LazyData
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean env var, accepting 1/0, true/false, yes/no (case-insensitive).
+
+    Returns ``default`` when the variable is unset or empty.
+    """
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
 def create_torch_datasets(
     data: DataSet, batch_size: int
 ) -> Dict[str, Tuple[Dataset, DataLoader]]:
@@ -35,7 +46,17 @@ def _create_lazy(data: DataSet, batch_size: int) -> Dict[str, Tuple[Dataset, Dat
     # Local import: lazy_torch_dataset pulls in torch, avoid loading at module level
     from epiclass.core.lazy.lazy_torch_dataset import create_lazy_dataloaders
 
-    num_workers = int(os.getenv("SLURM_CPUS_PER_TASK", "4"))
+    # DataLoader knobs are env-overridable so a benchmark (or an HPC job) can
+    # sweep them without touching call sites. When unset, defaults reproduce the
+    # historical behaviour exactly. The num_workers==0 guards inside
+    # create_lazy_dataloaders force prefetch/persistent off, so passing them
+    # here is always safe.
+    num_workers = int(
+        os.getenv("EPICLASS_NUM_WORKERS", os.getenv("SLURM_CPUS_PER_TASK", "4"))
+    )
+    prefetch_factor = int(os.getenv("EPICLASS_PREFETCH_FACTOR", "2"))
+    pin_memory = _env_bool("EPICLASS_PIN_MEMORY", torch.cuda.is_available())
+    persistent_workers = _env_bool("EPICLASS_PERSISTENT_WORKERS", num_workers > 0)
 
     train = data.train if data.train.num_examples else None
     val = data.validation if data.validation.num_examples else None
@@ -47,9 +68,9 @@ def _create_lazy(data: DataSet, batch_size: int) -> Dict[str, Tuple[Dataset, Dat
         test_data=test,
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=torch.cuda.is_available(),
-        prefetch_factor=2,
-        persistent_workers=num_workers > 0,
+        pin_memory=pin_memory,
+        prefetch_factor=prefetch_factor,
+        persistent_workers=persistent_workers,
     )
 
 

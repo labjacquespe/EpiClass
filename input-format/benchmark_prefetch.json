@@ -1,0 +1,43 @@
+{
+  "data": {
+    "category": "assay_epiclass",
+    "chromsize": "/abs/path/to/hg38.noy.chrom.sizes",
+    "hdf5_list": "/abs/path/to/hdf5.list",
+    "hyperparameters": "/abs/path/to/hyperparameters.json",
+    "metadata": "/abs/path/to/metadata.json"
+  },
+  "mmap_dir": null,
+  "run": {
+    "drop_cache_between_epochs": true,
+    "epochs": 4,
+    "limit_train_batches": null,
+    "repeats": 1,
+    "warmup_dataloader_pass": true
+  },
+  "sweep": {
+    "batch_size": [
+      64
+    ],
+    "num_physical_cpus": [
+      1,
+      2,
+      4
+    ],
+    "num_workers": [
+      0,
+      2,
+      4,
+      8
+    ],
+    "persistent_workers": [
+      true
+    ],
+    "pin_memory": [
+      true
+    ],
+    "prefetch_factor": [
+      2,
+      4
+    ]
+  }
+}
