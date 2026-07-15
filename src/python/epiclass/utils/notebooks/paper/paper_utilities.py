@@ -27,6 +27,8 @@ from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 from epiclass.core.metadata import Metadata
 
+LOGGER = logging.getLogger(__name__)
+
 ASSAY: str = "assay_epiclass"
 CELL_TYPE: str = "harmonized_sample_ontology_intermediate"
 SEX: str = "harmonized_donor_sex"
@@ -920,32 +922,30 @@ class SplitResultsHandler:
         for parent, _, _ in os.walk(results_dir, followlinks=True):
             # Looking for oversampling only results
             parent = Path(parent)
+            # os.walk descends into every split*/EpiLaP/<hash>/checkpoints leaf, so the
+            # two "not a k-fold run" skips fire hundreds of times -- keep them at DEBUG
+            # (retrievable via the logger, but off the default/verbose output) so the
+            # selected-folder lines below are not drowned out.
             if f"{self.k}fold" not in parent.name:
-                if verbose:
-                    print(f"Skipping {parent}: not {self.k}fold")
+                LOGGER.debug("skip %s: not %sfold", parent, self.k)
                 continue
             if parent.name != f"{self.k}fold-oversampling" and oversampled_only:
-                if verbose:
-                    print(f"Skipping {parent}: not oversampled")
+                LOGGER.debug("skip %s: not oversampled", parent)
                 continue
 
-            if verbose:
-                print(f"Checking {parent}")
-
-            # Get the category + filter
+            # Get the category + filter. Filter skips are one-per-task-folder (low
+            # volume) and explain why a run was dropped, so they stay on verbose output.
             relpath = parent.relative_to(results_dir)
             category = relpath.parts[0].replace("_1l_3000n", "")
-            if verbose:
-                print(f"Checking category: {category}")
             if include_categories is not None:
                 if not any(include_str in category for include_str in include_categories):
                     if verbose:
-                        print(f"Skipping {category}: not in {include_categories}")
+                        print(f"[skip] {category}: category not in {include_categories}")
                     continue
             if exclude_categories is not None:
                 if any(exclude_str in category for exclude_str in exclude_categories):
                     if verbose:
-                        print(f"Skipping {category}: in {exclude_categories}")
+                        print(f"[skip] {category}: category in {exclude_categories}")
                     continue
 
             # Get the rest of the name, ignore certain runs
@@ -962,21 +962,21 @@ class SplitResultsHandler:
                 )
             if rest_of_name:
                 rest_of_name = rest_of_name[0]
-            if verbose:
-                print(f"Rest of name: {rest_of_name}")
 
             # Filter out certain runs
             if include_names is not None:
                 if not any(name in rest_of_name for name in include_names):
                     if verbose:
                         print(
-                            f"Skipping {category} {rest_of_name}: not in {include_names}"
+                            f"[skip] {category} {rest_of_name}: name not in {include_names}"
                         )
                     continue
             if exclude_names is not None:
                 if any(name in rest_of_name for name in exclude_names):
                     if verbose:
-                        print(f"Skipping {category} {rest_of_name}: in {exclude_names}")
+                        print(
+                            f"[skip] {category} {rest_of_name}: name in {exclude_names}"
+                        )
                     continue
 
             full_task_name = category
@@ -984,11 +984,17 @@ class SplitResultsHandler:
                 full_task_name += f"_{rest_of_name}"
 
             # Get the split results
-            if verbose:
-                print(f"Getting split results for {full_task_name}")
             split_results = split_results_handler.read_split_results(parent)
             if not split_results:
                 raise ValueError(f"No split results found in {parent}")
+
+            # One consolidated line per accepted run: task, source folder and split
+            # count together, so provenance is greppable ([select]) without correlating
+            # separate "Checking <path>" / "Getting split results for <task>" lines.
+            if verbose:
+                print(
+                    f"[select] {full_task_name} <- {parent} ({len(split_results)} splits)"
+                )
 
             if (
                 ("sex" in full_task_name) or ("life_stage" in full_task_name)
