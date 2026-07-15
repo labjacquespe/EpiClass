@@ -195,84 +195,24 @@ def _():
 
 
 @app.cell
-def _(Path, find_signal_id_lists, np, pd, re):
-    # ----------------------------- helpers -----------------------------
-    EPIRR_RE = re.compile(r"IHECRE\d+(?:\.\d+)?")
-    STRANDS = ("minusRaw", "plusRaw")
-    META_COLS = ("origin", "ID", "Predicted class", "True class")
-
-    def parse_um_identity(signal_id):
-        """(EpiRR, strand) for a UniqueMultiple signal-ID, or None.
-
-        UniqueMultiple IDs are the full hdf5 stem, e.g.
-        'ihec.rna-seq...IHECRE00000717.1...UniqueMultiple.minusRaw_100kb_can'
-        -> ('IHECRE00000717.1', 'minusRaw'). Unique md5sums have no IHECRE -> None.
-        """
-        m = EPIRR_RE.search(signal_id)
-        if not m:
-            return None
-        strand = next((s for s in STRANDS if s in signal_id), None)
-        return (m.group(0), strand) if strand else None
-
-    def unique_track_to_strand(track_type):
-        """Normalize a Unique track_type ('Unique_minusRaw') to a strand ('minusRaw')."""
-        if not track_type:
-            return None
-        stripped = (
-            track_type[len("Unique_") :]
-            if track_type.startswith("Unique_")
-            else track_type
-        )
-        return stripped if stripped in STRANDS else None
-
-    def unique_identity(signal_id, metadata):
-        """(EpiRR, strand) for a Unique md5sum via metadata, or None."""
-        meta = metadata.get(signal_id)
-        if meta is None:
-            return None
-        strand = unique_track_to_strand(meta.get("track_type"))
-        epirr = meta.get("epirr_id") or meta.get("reference_registry_id")
-        if not epirr or strand is None:
-            return None
-        m = EPIRR_RE.search(str(epirr))
-        return (m.group(0) if m else str(epirr), strand)
+def _(Path, np, pd):
+    # Identity / loading / pairing helpers now live in the committed, conformal-free
+    # module make_rna_read_handling_predictions.py, so this notebook and the paper's
+    # Fig 5G producer share one implementation instead of duplicating it.
+    # build_comparisons stays here -- it is a notebook-only stability diagnostic.
+    from epiclass.utils.notebooks.predictions.make_rna_read_handling_predictions import (
+        build_read_handling_predictions,
+        find_concatenated,
+        load_concatenated,
+        parse_um_identity,
+        read_fold_id_list,
+        unique_identity,
+    )
 
     def prob_distances(p, q):
         """(Euclidean L2, total variation = 0.5*L1) between two probability vectors."""
         diff = p - q
         return float(np.linalg.norm(diff)), float(0.5 * np.abs(diff).sum())
-
-    def split_from_origin(origin):
-        """Fold name ('split3' / 'fold_3') parsed from an `origin` filename, or None."""
-        m = re.match(r"(split\d+|fold_\d+)", str(origin))
-        return m.group(1) if m else None
-
-    def find_concatenated(pred_dir):
-        """The concatenated_test_prediction_*.csv in pred_dir, or None."""
-        if not pred_dir.is_dir():
-            return None
-        hits = sorted(pred_dir.glob("concatenated_test_prediction*.csv"))
-        return hits[0] if hits else None
-
-    def load_concatenated(path):
-        """Return (df, classes). Adds a 'split' column parsed from 'origin'.
-
-        Concatenated columns are: origin, ID, Predicted class, <one column per class>.
-        """
-        df = pd.read_csv(path)
-        classes = [c for c in df.columns if c not in META_COLS]
-        df = df.copy()
-        df["split"] = df["origin"].map(split_from_origin)
-        df["ID"] = df["ID"].astype(str)
-        return df, classes
-
-    def read_training_ids(cv_root, split_name):
-        """Set of signal-IDs in <cv_root>/<split>/<split>_training_*.md5, or None if absent."""
-        lists = find_signal_id_lists(cv_root / split_name, f"{split_name}_training_*")
-        if not lists:
-            return None
-        chosen = sorted(lists)[-1]  # newest timestamp if several
-        return {ln.strip() for ln in chosen.read_text().splitlines() if ln.strip()}
 
     def build_comparisons(models, metadata, predictions_subdir, run_subdir):
         """Per-pair comparison DataFrame across all models/folds. Returns (df, notes)."""
@@ -289,7 +229,7 @@ def _(Path, find_signal_id_lists, np, pd, re):
                 if split_name is None:
                     notes.append(f"{model_name}: {len(sub)} rows with unparsable origin")
                     continue
-                train_ids = read_training_ids(cv_root, split_name)
+                train_ids = read_fold_id_list(cv_root, split_name, "training")
                 if train_ids is None:
                     notes.append(f"{model_name}/{split_name}: no training .md5; skipped")
                     continue
@@ -337,9 +277,11 @@ def _(Path, find_signal_id_lists, np, pd, re):
 
     return (
         build_comparisons,
+        build_read_handling_predictions,
         find_concatenated,
         load_concatenated,
         parse_um_identity,
+        read_fold_id_list,
         unique_identity,
     )
 
@@ -1199,56 +1141,14 @@ def _(mo):
 
 
 @app.cell
-def _(
-    Path,
-    find_concatenated,
-    find_signal_id_lists,
-    load_concatenated,
-    np,
-    pd,
-    re,
-    unique_identity,
-):
-    def read_fold_id_list(cv_root, split_name, kind):
-        """Set of signal-IDs in <cv_root>/<split>/<split>_<kind>_*, or None if absent."""
-        lists = find_signal_id_lists(cv_root / split_name, f"{split_name}_{kind}_*")
-        if not lists:
-            return None
-        chosen = sorted(lists)[-1]  # newest timestamp if several
-        return {ln.strip() for ln in chosen.read_text().splitlines() if ln.strip()}
-
-    def unstranded_by_epirr(sub, classes, id_to_epirr):
-        """{EpiRR: (id, prob)} for a fold's unstranded rows (one per EpiRR).
-
-        The summed sample's ``ID`` is a content-free md5 of its two source
-        filenames; ``id_to_epirr`` (built from the utility's mapping TSV +
-        metadata) resolves it to an EpiRR. A bare IHECRE regex is kept as a
-        fallback for hand-named files that already carry the EpiRR.
-        """
-        out = {}
-        for sid, prob in zip(sub["ID"], sub[classes].to_numpy(dtype=float)):
-            epirr = id_to_epirr.get(str(sid))
-            if epirr is None:
-                m = re.search(r"IHECRE\d+(?:\.\d+)?", str(sid))
-                epirr = m.group(0) if m else None
-            if epirr is not None:
-                out[epirr] = (sid, prob)
-        return out
-
-    def unique_avg_by_epirr(sub, classes, metadata, keep_ids):
-        """{EpiRR: (rep_id, mean_prob, n_strands)} averaging Unique strands in keep_ids."""
-        acc = {}
-        for sid, prob in zip(sub["ID"], sub[classes].to_numpy(dtype=float)):
-            if sid not in keep_ids:
-                continue
-            key = unique_identity(sid, metadata)  # (EpiRR, strand) via metadata
-            if key is None:
-                continue
-            epirr = key[0]
-            rep_id, probs = acc.get(epirr, (sid, []))
-            probs.append(prob)
-            acc[epirr] = (rep_id, probs)
-        return {e: (rid, np.mean(ps, axis=0), len(ps)) for e, (rid, ps) in acc.items()}
+def _(Path, find_concatenated, load_concatenated, np, pd, read_fold_id_list):
+    # Shared unstranded helpers imported from the committed module; the per-EpiRR
+    # averaged-Unique vs unstranded comparison stays here (notebook-only diagnostic).
+    # read_fold_id_list comes from the helpers cell above (single definition).
+    from epiclass.utils.notebooks.predictions.make_rna_read_handling_predictions import (
+        unique_avg_by_epirr,
+        unstranded_by_epirr,
+    )
 
     def build_unstranded_comparisons(
         models,
@@ -1322,7 +1222,6 @@ def _(
 
     return (
         build_unstranded_comparisons,
-        read_fold_id_list,
         unique_avg_by_epirr,
         unstranded_by_epirr,
     )
@@ -1691,30 +1590,58 @@ def _(mo):
 
 
 @app.cell
-def _(mo, pd, task_metrics, uns_task_metrics):
-    # Long-form metrics for the three representations, stitched from the two sections
-    # above: Unique + UniqueMultiple (per-file) and Unstranded (per-EpiRR).
-    _LABELS = {"Unstranded": "Unstranded (summed)"}
-    if (
-        task_metrics is None
-        or uns_task_metrics is None
-        or task_metrics.empty
-        or uns_task_metrics.empty
-    ):
+def _(
+    MODELS,
+    PREDICTIONS_SUBDIR,
+    RUN_SUBDIR,
+    TASK_CATEGORY,
+    UNSTRANDED_RUN_SUBDIR,
+    accuracy_score,
+    build_read_handling_predictions,
+    f1_score,
+    metadata,
+    mo,
+    pd,
+    uns_id_to_epirr,
+):
+    # Long-form Accuracy / macro-F1 for the three representations, scored from the
+    # shared per-sample artifact built by make_rna_read_handling_predictions.py --
+    # the SAME code path as the exported predictions CSV and the paper's Fig 5G, so
+    # the notebook figure and the Quarto figure cannot drift. Unique + UniqueMultiple
+    # are per-file (no probability-vector averaging -> the paper's Unique numbers);
+    # Unstranded is one summed prediction per EpiRR. Brier is dropped here (5G plots
+    # Accuracy / F1 only); see the two-mapping sections above for Brier.
+    if metadata is None:
         combined_metrics = None
-        _out = mo.md(
-            "Need both `task_metrics` and `uns_task_metrics` — run the cells above."
-        )
+        _out = mo.md("Metadata not loaded — fix the CONFIG cell.")
     else:
-        combined_metrics = pd.concat(
-            [
-                task_metrics[task_metrics["mapping"].isin(["Unique", "UniqueMultiple"])],
-                uns_task_metrics[uns_task_metrics["mapping"] == "Unstranded"],
-            ],
-            ignore_index=True,
+        _preds = build_read_handling_predictions(
+            MODELS,
+            metadata,
+            uns_id_to_epirr,
+            TASK_CATEGORY,
+            PREDICTIONS_SUBDIR,
+            RUN_SUBDIR,
+            UNSTRANDED_RUN_SUBDIR,
         )
-        combined_metrics["mapping"] = (
-            combined_metrics["mapping"].map(_LABELS).fillna(combined_metrics["mapping"])
+
+        def _score(_g):
+            _labels = sorted(_g["true_class"].unique())
+            return pd.Series(
+                {
+                    "Accuracy": accuracy_score(_g["true_class"], _g["predicted_class"]),
+                    "F1_macro": f1_score(
+                        _g["true_class"],
+                        _g["predicted_class"],
+                        labels=_labels,
+                        average="macro",
+                        zero_division=0,
+                    ),
+                }
+            )
+
+        combined_metrics = (
+            _preds.groupby(["model", "split", "mapping"]).apply(_score).reset_index()
         )
         _out = combined_metrics
     _out
