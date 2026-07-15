@@ -58,6 +58,7 @@ def _():
         predict_sets,
     )
     from epiclass.utils.general_utility import find_signal_id_lists
+    from epiclass.utils.notebooks.paper.paper_utilities import save_figure
 
     return (
         Counter,
@@ -77,6 +78,7 @@ def _():
         predict_sets,
         px,
         re,
+        save_figure,
     )
 
 
@@ -158,6 +160,38 @@ def _(METADATA_JSON, MODELS):
         if not path.exists():
             raise FileNotFoundError(path)
     return
+
+
+@app.cell
+def _():
+    # Canonical task order + display names on every figure's task axis. Keys are the
+    # MODELS keys (used everywhere internally); only the plot labels change.
+    TASK_ORDER = ["assay", "cancer", "life_stage", "sex", "cell_type", "biomaterial"]
+    TASK_LABELS = {
+        "assay": "Assay",
+        "cancer": "Cancer status",
+        "life_stage": "Life stage",
+        "sex": "Sex",
+        "cell_type": "Biospecimen",
+        "biomaterial": "Biomaterial type",
+    }
+
+    def task_label(task):
+        """Display name for a task key (unknown keys pass through unchanged)."""
+        return TASK_LABELS.get(task, task)
+
+    def order_tasks(present):
+        """Display labels for the tasks present, in TASK_ORDER.
+
+        Tasks missing from the data are dropped; any task in the data but absent
+        from TASK_ORDER is appended (so nothing silently disappears from a plot).
+        """
+        present = list(present)
+        known = [t for t in TASK_ORDER if t in present]
+        extra = [t for t in present if t not in TASK_ORDER]
+        return [task_label(t) for t in known + extra]
+
+    return order_tasks, task_label
 
 
 @app.cell
@@ -416,15 +450,18 @@ def _(comparisons, mo):
 
 
 @app.cell
-def _(comparisons, mo, px):
+def _(comparisons, mo, order_tasks, px, task_label):
     # Distance histograms (per model), one for Euclidean L2 and one for total variation.
     if comparisons is None or comparisons.empty:
         _plots = mo.md("No data to plot.")
     else:
+        _d = comparisons.assign(task=comparisons["model"].map(task_label))
+        _cat = {"task": order_tasks(comparisons["model"].unique())}
         _fig_l2 = px.histogram(
-            comparisons,
+            _d,
             x="l2",
-            color="model",
+            color="task",
+            category_orders=_cat,
             barmode="overlay",
             nbins=60,
             marginal="box",
@@ -432,9 +469,10 @@ def _(comparisons, mo, px):
             template="plotly_white",
         )
         _fig_tv = px.histogram(
-            comparisons,
+            _d,
             x="tv",
-            color="model",
+            color="task",
+            category_orders=_cat,
             barmode="overlay",
             nbins=60,
             marginal="box",
@@ -658,7 +696,7 @@ def _(task_metrics):
 
 
 @app.cell
-def _(go, make_subplots, mo, task_metrics):
+def _(go, make_subplots, mo, order_tasks, task_label, task_metrics):
     # Grouped box plots: Accuracy, macro-F1 and Brier per task, Unique vs
     # UniqueMultiple, each box a distribution across the 10 CV folds (fig2 styling).
     # Accuracy/F1: higher is better (y in [0, 1]). Brier: lower is better.
@@ -668,16 +706,9 @@ def _(go, make_subplots, mo, task_metrics):
         _metric_names = ["Accuracy", "F1_macro", "Brier"]
         _subplot_titles = ["Accuracy (↑)", "F1_macro (↑)", "Brier (↓)"]
         _mappings = ["Unique", "UniqueMultiple"]
-        _colors = {"Unique": "#636EFA", "UniqueMultiple": "#EF553B"}
-
-        # Order tasks by mean Unique accuracy (most accurate first).
-        _order = (
-            task_metrics[task_metrics["mapping"] == "Unique"]
-            .groupby("model")["Accuracy"]
-            .mean()
-            .sort_values(ascending=False)
-            .index.tolist()
-        )
+        # Okabe-Ito (colourblind-safe); same mapping->colour across every figure here.
+        _colors = {"Unique": "#0072B2", "UniqueMultiple": "#D55E00"}
+        _order = order_tasks(task_metrics["model"].unique())
 
         _fig = make_subplots(
             rows=1,
@@ -690,7 +721,7 @@ def _(go, make_subplots, mo, task_metrics):
                 _s = task_metrics[task_metrics["mapping"] == _mapping]
                 _fig.add_trace(
                     go.Box(
-                        x=_s["model"],
+                        x=_s["model"].map(task_label),
                         y=_s[_metric],
                         name=_mapping,
                         fillcolor=_colors[_mapping],
@@ -985,7 +1016,15 @@ def _(cp_summary):
 
 
 @app.cell
-def _(CP_HEADLINE_ALPHA, CP_METHOD, cp_summary, go, mo):
+def _(
+    CP_HEADLINE_ALPHA,
+    CP_METHOD,
+    cp_summary,
+    go,
+    mo,
+    order_tasks,
+    task_label,
+):
     # Headline plot: of the NEW errors (Unique right, Multiple argmax wrong), what does
     # CP do with them at the QC alpha? Stacked fractions per task. "recovered" = hedge
     # still containing the true class; "disagree" = confident-wrong singleton (slipped).
@@ -999,18 +1038,20 @@ def _(CP_HEADLINE_ALPHA, CP_METHOD, cp_summary, go, mo):
         _d["abstain (empty)"] = _d["ne_empty"] / _d["n_new_err"]
         _d["hedge (no true)"] = _d["ne_hedge_out"] / _d["n_new_err"]
         _d["confident-wrong"] = _d["ne_disagree"] / _d["n_new_err"]
-        _d = _d.sort_values("recovered", ascending=False)
+        _order = order_tasks(_d["model"].unique())
+        # Okabe-Ito: bluish-green / sky-blue = caught, vermillion = slipped through.
+        # (Avoids the red-vs-green pairing, which is exactly what deuteranopes lose.)
         _outcomes = {
-            "recovered": "#2ca02c",
-            "abstain (empty)": "#1f77b4",
-            "hedge (no true)": "#ff7f0e",
-            "confident-wrong": "#d62728",
+            "recovered": "#009E73",
+            "abstain (empty)": "#56B4E9",
+            "hedge (no true)": "#E69F00",
+            "confident-wrong": "#D55E00",
         }
         _fig = go.Figure()
         for _label, _color in _outcomes.items():
             _fig.add_trace(
                 go.Bar(
-                    x=_d["model"],
+                    x=_d["model"].map(task_label),
                     y=_d[_label],
                     name=_label,
                     marker_color=_color,
@@ -1019,12 +1060,14 @@ def _(CP_HEADLINE_ALPHA, CP_METHOD, cp_summary, go, mo):
                     hovertemplate="%{x}: %{y:.1%}<extra>" + _label + "</extra>",
                 )
             )
+        _fig.update_xaxes(categoryorder="array", categoryarray=_order)
         _fig.update_layout(
             barmode="stack",
             template="plotly_white",
             title_text=(
                 f"Fate of the new Unique→Multiple errors under {CP_METHOD} "
-                f"(α={CP_HEADLINE_ALPHA}) — green+blue = caught, red = slipped through"
+                f"(α={CP_HEADLINE_ALPHA}) — recovered/abstain = caught, "
+                "confident-wrong = slipped through"
             ),
             yaxis_title="fraction of new errors",
             xaxis_title="task",
@@ -1039,24 +1082,20 @@ def _(CP_HEADLINE_ALPHA, CP_METHOD, cp_summary, go, mo):
 
 
 @app.cell
-def _(CP_METHOD, cp_summary, go, mo):
+def _(CP_METHOD, cp_summary, go, mo, order_tasks, task_label):
     # Coverage vs target across alphas: where does the Unique→Multiple shift break the
     # marginal guarantee? Bars = empirical coverage on Multiple; dashed lines = targets.
     if cp_summary is None or cp_summary.empty:
         _out = mo.md("No conformal results to plot.")
     else:
         _alphas = sorted(cp_summary["alpha"].unique())
-        _order = (
-            cp_summary[cp_summary["alpha"] == _alphas[0]]
-            .sort_values("coverage", ascending=False)["model"]
-            .tolist()
-        )
+        _order = order_tasks(cp_summary["model"].unique())
         _fig = go.Figure()
         for _a in _alphas:
             _s = cp_summary[cp_summary["alpha"] == _a]
             _fig.add_trace(
                 go.Bar(
-                    x=_s["model"],
+                    x=_s["model"].map(task_label),
                     y=_s["coverage"],
                     name=f"α={_a} (cov on Multiple)",
                     hovertemplate="%{x}: cov=%{y:.3f}<extra>α=" + str(_a) + "</extra>",
@@ -1576,7 +1615,7 @@ def _(uns_task_metrics):
 
 
 @app.cell
-def _(go, make_subplots, mo, uns_task_metrics):
+def _(go, make_subplots, mo, order_tasks, task_label, uns_task_metrics):
     # Grouped box plots: Accuracy, macro-F1 and Brier per task, Unique(avg) vs Unstranded,
     # each box a distribution across the CV folds. Accuracy/F1 higher=better; Brier lower.
     if uns_task_metrics is None or uns_task_metrics.empty:
@@ -1585,15 +1624,8 @@ def _(go, make_subplots, mo, uns_task_metrics):
         _metric_names = ["Accuracy", "F1_macro", "Brier"]
         _subplot_titles = ["Accuracy (↑)", "F1_macro (↑)", "Brier (↓)"]
         _mappings = ["Unique (avg)", "Unstranded"]
-        _colors = {"Unique (avg)": "#636EFA", "Unstranded": "#00CC96"}
-
-        _order = (
-            uns_task_metrics[uns_task_metrics["mapping"] == "Unique (avg)"]
-            .groupby("model")["Accuracy"]
-            .mean()
-            .sort_values(ascending=False)
-            .index.tolist()
-        )
+        _colors = {"Unique (avg)": "#0072B2", "Unstranded": "#009E73"}  # Okabe-Ito
+        _order = order_tasks(uns_task_metrics["model"].unique())
 
         _fig = make_subplots(
             rows=1,
@@ -1606,7 +1638,7 @@ def _(go, make_subplots, mo, uns_task_metrics):
                 _s = uns_task_metrics[uns_task_metrics["mapping"] == _mapping]
                 _fig.add_trace(
                     go.Box(
-                        x=_s["model"],
+                        x=_s["model"].map(task_label),
                         y=_s[_metric],
                         name=_mapping,
                         fillcolor=_colors[_mapping],
@@ -1634,6 +1666,143 @@ def _(go, make_subplots, mo, uns_task_metrics):
             width=1500,
         )
         _out = _fig
+    _out
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+    # All three RNA representations side by side — Accuracy / F1
+
+    One figure per metric, three boxes per task, each box a distribution across the CV folds:
+
+    - **Unique** — multi-mapped reads excluded (what the models were trained on).
+    - **UniqueMultiple** — multi-mapped reads included.
+    - **Unstranded (summed)** — the two Unique stranded tracks summed into one signal per EpiRR.
+
+    Unique is taken from the **per-file** section, i.e. every stranded HDF5 file scored on its own with **no averaging of probability vectors** — so these are the same Unique numbers reported elsewhere in the paper. UniqueMultiple is likewise per-file. Unstranded is one prediction per EpiRR by construction (that is what the summing produces); its averaged-Unique companion from the section above is dropped here so the Unique reference stays the paper's.
+
+    Consequence to keep in mind: Unique/UniqueMultiple are scored over stranded files (≈2 per EpiRR) while Unstranded is scored over EpiRRs, so the three do not share an identical row count — but all are restricted to the same fold **validation** sets, so each fold's cohort is the same biological samples.
+    """
+    )
+    return
+
+
+@app.cell
+def _(mo, pd, task_metrics, uns_task_metrics):
+    # Long-form metrics for the three representations, stitched from the two sections
+    # above: Unique + UniqueMultiple (per-file) and Unstranded (per-EpiRR).
+    _LABELS = {"Unstranded": "Unstranded (summed)"}
+    if (
+        task_metrics is None
+        or uns_task_metrics is None
+        or task_metrics.empty
+        or uns_task_metrics.empty
+    ):
+        combined_metrics = None
+        _out = mo.md(
+            "Need both `task_metrics` and `uns_task_metrics` — run the cells above."
+        )
+    else:
+        combined_metrics = pd.concat(
+            [
+                task_metrics[task_metrics["mapping"].isin(["Unique", "UniqueMultiple"])],
+                uns_task_metrics[uns_task_metrics["mapping"] == "Unstranded"],
+            ],
+            ignore_index=True,
+        )
+        combined_metrics["mapping"] = (
+            combined_metrics["mapping"].map(_LABELS).fillna(combined_metrics["mapping"])
+        )
+        _out = combined_metrics
+    _out
+    return (combined_metrics,)
+
+
+@app.cell
+def _(combined_metrics):
+    combined_metrics
+    return
+
+
+@app.cell
+def _(
+    Path,
+    combined_metrics,
+    go,
+    make_subplots,
+    mo,
+    order_tasks,
+    save_figure,
+    task_label,
+):
+    # Accuracy and macro-F1 only (no Brier), three mappings grouped per task.
+    if combined_metrics is None or combined_metrics.empty:
+        _out = mo.md("No metrics to plot.")
+    else:
+        _metric_names = ["Accuracy", "F1_macro"]
+        _subplot_titles = ["Accuracy", "F1_macro"]
+        _mappings = ["Unique", "Unstranded (summed)", "UniqueMultiple"]
+        # Okabe-Ito blue / vermillion / bluish-green — safe under deuteranopia and
+        # protanopia, and consistent with the two-mapping figures above.
+        _colors = {
+            "Unique": "#0072B2",
+            "UniqueMultiple": "#D55E00",
+            "Unstranded (summed)": "#009E73",
+        }
+
+        # Excluding assay, because m-rna/total-rna mistakes are not relevant
+        _metrics = combined_metrics[combined_metrics["model"] != "assay"]
+
+        _order = order_tasks(_metrics["model"].unique())
+
+        _fig = make_subplots(
+            rows=1,
+            cols=len(_metric_names),
+            subplot_titles=_subplot_titles,
+            horizontal_spacing=0.08,
+        )
+        for _col, _metric in enumerate(_metric_names, start=1):
+            for _mapping in _mappings:
+                _s = _metrics[_metrics["mapping"] == _mapping]
+                _fig.add_trace(
+                    go.Box(
+                        x=_s["model"].map(task_label),
+                        y=_s[_metric],
+                        name=_mapping,
+                        fillcolor=_colors[_mapping],
+                        line=dict(color="black", width=1.2),
+                        marker=dict(size=3, color="white", line_width=1),
+                        boxmean=True,
+                        boxpoints="all",
+                        pointpos=0,
+                        legendgroup=_mapping,
+                        showlegend=_col == 1,
+                    ),
+                    row=1,
+                    col=_col,
+                )
+        _fig.update_xaxes(categoryorder="array", categoryarray=_order)
+        _fig.update_yaxes(autorange="min", range=[None, 1.02], row=1, col=1)
+        _fig.update_yaxes(autorange="min", range=[None, 1.02], row=1, col=2)
+        _fig.update_layout(
+            boxmode="group",
+            template="plotly_white",
+            title_text="RNA-Seq read handling — per-task Accuracy / macro-F1 (validation sets, across folds)",
+            yaxis_title="Value",
+            height=550,
+            width=1400,
+            legend=dict(orientation="h", y=-0.15),
+        )
+        _out = _fig
+        save_figure(
+            fig=_fig,
+            logdir=Path.home() / "Projects/epiclass/output/paper/figures/rna_variations",
+            filename="3RNA_variations",
+        )
+
     _out
     return
 
