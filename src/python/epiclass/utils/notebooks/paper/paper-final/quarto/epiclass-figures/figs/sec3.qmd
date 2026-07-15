@@ -485,7 +485,7 @@ Supplementary Figure 8A,D: Inference of the Assay, Biospecimen source, donor Sex
 
 See [PCA section](./sec3.html#sec-pca) for details on the methodology.
 
-![](../resources/Supp9B.png){fig-align="center"}
+![](../resources/Supp8B.png){fig-align="center"}
 
 Supplementary Figure 8B: Distribution of the EpiATLAS and ENCODE data over their two first principal components.
 
