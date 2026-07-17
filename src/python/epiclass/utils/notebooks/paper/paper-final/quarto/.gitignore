@@ -7,5 +7,7 @@ test-site/
 tmp.txt
 *.svg
 *.html
-./epiclass-figures/.gitignore
-./epiclass-figures/site_libs
+/epiclass-figures/.gitignore
+/epiclass-figures/site_libs/
+# Persistent Quarto render dir (output-dir); mirrored to docs/ by post-render.
+/epiclass-figures/epiclass-paper/

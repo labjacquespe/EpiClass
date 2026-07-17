@@ -51,6 +51,7 @@ import plotly.graph_objects as go
 from IPython.display import display
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
+from sklearn.metrics import accuracy_score, f1_score
 
 from epiclass.utils.notebooks.paper.paper_utilities import (
     ASSAY,
@@ -482,6 +483,119 @@ See [Annex A](./sec2-supp.html#sec-annex-a) for a more detailled Epilogos color 
 ![](../resources/Supp5F.png){fig-align="center"}
 
 Supp. Fig. 5F: Genome browser representation of the important regions shown in [Figure 2I](./sec2.html#sec-2I).
+
+
+### G - RNA-Seq read handling: Unique vs UniqueMultiple vs Unstranded
+
+The RNA-Seq classifiers were trained on the **Unique** representation (multi-mapped reads excluded). This panel compares three read-handling variants of the same RNA samples on every non-assay task: **Unique**, **UniqueMultiple** (multi-mapped reads included) and **Unstranded (summed)** (the two Unique stranded tracks summed into one signal per EpiRR). Each fold's model is applied to its held-out RNA validation set for the three variants, so the comparison is on samples the model did not train on and whose true label is in the classifier's class space.
+
+The predictions were produced by `src/python/epiclass/utils/notebooks/predictions/make_rna_read_handling_predictions.py`, which pairs the three variants per sample (resolving md5sums to EpiRRs and restricting to each fold's validation set) and writes a long-form predictions table. Every prediction carries the Comet experiment key of the classifier that produced it. The figure below reads that table and scores Accuracy and macro-F1 per task, fold and variant.
+
+```{python}
+#| label: score-rna-read-handling
+rna_variations_dir = base_data_dir / "rna_variations"
+PathChecker.check_directory(rna_variations_dir)
+# The file starts with a '#'-commented provenance header (metadata source of
+# true_class, model identity); comment="#" skips it.
+rna_preds = pd.read_csv(
+    rna_variations_dir / "rna_read_handling_predictions.csv", comment="#"
+)
+
+
+def score_read_handling(group: pd.DataFrame) -> pd.Series:
+    """Accuracy and macro-F1 of one (task, fold, variant) group vs the true label."""
+    labels = sorted(group["true_class"].unique())
+    return pd.Series(
+        {
+            "Accuracy": accuracy_score(group["true_class"], group["predicted_class"]),
+            "F1_macro": f1_score(
+                group["true_class"],
+                group["predicted_class"],
+                labels=labels,
+                average="macro",
+                zero_division=0,
+            ),
+        }
+    )
+
+
+rna_metrics = (
+    rna_preds.groupby(["model", "split", "mapping"])
+    .apply(score_read_handling)
+    .reset_index()
+)
+```
+
+```{python}
+#| label: plot-rna-read-handling
+#| column: screen-inset
+# Canonical task order + display names; assay is excluded (mRNA/total-RNA confusion
+# is not relevant to this comparison).
+TASK_ORDER = ["cancer", "life_stage", "sex", "cell_type", "biomaterial"]
+TASK_LABELS = {
+    "cancer": "Cancer status",
+    "life_stage": "Life stage",
+    "sex": "Sex",
+    "cell_type": "Biospecimen",
+    "biomaterial": "Biomaterial type",
+}
+MAPPINGS = ["Unique", "Unstranded (summed)", "UniqueMultiple"]
+# Okabe-Ito colourblind-safe palette.
+MAPPING_COLORS = {
+    "Unique": "#0072B2",
+    "UniqueMultiple": "#D55E00",
+    "Unstranded (summed)": "#009E73",
+}
+
+metrics = rna_metrics[rna_metrics["model"] != "assay"]
+present = set(metrics["model"])
+task_order_labels = [TASK_LABELS[t] for t in TASK_ORDER if t in present]
+
+fig = make_subplots(
+    rows=1, cols=2, subplot_titles=["Accuracy", "F1_macro"], horizontal_spacing=0.08
+)
+for col, metric in enumerate(["Accuracy", "F1_macro"], start=1):
+    for mapping in MAPPINGS:
+        sub = metrics[metrics["mapping"] == mapping]
+        fig.add_trace(
+            go.Box(
+                x=sub["model"].map(TASK_LABELS),
+                y=sub[metric],
+                name=mapping,
+                fillcolor=MAPPING_COLORS[mapping],
+                line=dict(color="black", width=1.2),
+                marker=dict(size=3, color="white", line_width=1),
+                boxmean=True,
+                boxpoints="all",
+                pointpos=0,
+                # Show the fold each point comes from on hover (as in Fig 2A,B).
+                hovertemplate="%{text}",
+                text=[
+                    f"{split}: {value:.4f}"
+                    for split, value in zip(sub["split"], sub[metric])
+                ],
+                legendgroup=mapping,
+                showlegend=col == 1,
+            ),
+            row=1,
+            col=col,
+        )
+fig.update_xaxes(categoryorder="array", categoryarray=task_order_labels)
+# Semi auto-scaled: fix the top, let the bottom auto-scale to the data.
+fig.update_yaxes(autorange="min", range=[None, 1.02], row=1, col=1)
+fig.update_yaxes(autorange="min", range=[None, 1.02], row=1, col=2)
+fig.update_layout(
+    boxmode="group",
+    template="plotly_white",
+    yaxis_title="Value",
+    height=550,
+    width=1400,
+    legend=dict(orientation="h", y=-0.15),
+)
+fig.show()
+```
+
+Supp. Fig. 5G: Accuracy and macro-F1 performance metrics using only RNA-seq datasets across three data types and five classifiers, which were trained exclusively on strand-specific signals. Each fold's trained model was applied to its own validation samples (Unique, blue), after summing forward and reverse tracks (Unstranded, green), and on a different version of the RNA-seq data downloaded from EpiATLAS where multi-mapped reads were retained (UniqueMultiple, orange) used only for this particular analysis. Changes in Unstranded and UniqueMultiple relative to Unique correspond to the impact of the data type on the inference since the same trained model was applied to all three data types. Each point is the score from one of the 10 cross-validation folds, computed across all signal files in that fold's validation set. Solid lines are medians, dashed lines means, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
 ## Supplementary Figure 6 - Prediction score threshold impact {#sec-supp6}

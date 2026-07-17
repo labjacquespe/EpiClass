@@ -1,6 +1,15 @@
 #!/bin/bash
-# Quarto post-render cleanup: prune embedded-resource leftovers and publish to docs/.
-# Safe to re-run; verifies working directory before destructive operations.
+# Quarto post-render publish: mirror the rendered site into docs/, dropping the
+# embedded-resource leftovers we don't ship (embed-resources inlines everything).
+#
+# The render directory (Quarto output-dir) is kept IN PLACE and mirrored, never
+# moved. That is deliberate: moving it out empties it, so a subsequent
+# single-section render would only contain that one section and would then wipe
+# every other page out of docs/. Mirroring lets Quarto's incremental
+# single-file renders accumulate on top of the full site, and keeps docs/ in
+# sync without clobbering unrelated sections.
+#
+# Safe to re-run.
 
 set -euo pipefail
 
@@ -18,31 +27,12 @@ if [[ "${folder_name}" != "epiclass-figures" ]]; then
     exit 1
 fi
 
-# --- Validate generated docs path ---
-docs_path="${SCRIPT_DIR}/epiclass-paper"
+# --- Validate the render directory (Quarto output-dir, kept in place) ---
+render_path="${SCRIPT_DIR}/epiclass-paper"
 
-if [[ ! -d "${docs_path}" ]]; then
-    echo "ERROR: Generated docs directory does not exist: ${docs_path}" >&2
+if [[ ! -d "${render_path}" ]]; then
+    echo "ERROR: Rendered output directory does not exist: ${render_path}" >&2
     exit 1
-fi
-
-# --- Cleanup unnecessary resources (we use embed-resources) ---
-resources_path="${docs_path}/resources"
-if [[ -d "${resources_path}" ]]; then
-    echo "Removing ${resources_path}"
-    rm -rf -- "${resources_path}"
-fi
-
-# Remove .qmd files from figs/ (nullglob so no-match isn't an error)
-figs_path="${docs_path}/figs"
-if [[ -d "${figs_path}" ]]; then
-    shopt -s nullglob
-    qmd_files=( "${figs_path}"/*.qmd )
-    shopt -u nullglob
-    if (( ${#qmd_files[@]} > 0 )); then
-        echo "Removing ${#qmd_files[@]} .qmd file(s) from ${figs_path}"
-        rm -f -- "${qmd_files[@]}"
-    fi
 fi
 
 # --- Resolve git root ---
@@ -69,14 +59,20 @@ case "${output_folder}" in
         ;;
 esac
 
-mkdir -p -- "${output_parent}"
+mkdir -p -- "${output_folder}"
 
-if [[ -e "${output_folder}" ]]; then
-    echo "Removing existing ${output_folder}"
-    rm -rf -- "${output_folder}"
-fi
-
-echo "Moving generated docs from ${docs_path} to ${output_folder}"
-mv -- "${docs_path}" "${output_folder}"
+# Mirror the rendered site into docs/. Trailing slashes copy directory contents.
+#   --delete            prune files removed from the render (keeps docs/ in sync)
+#   --delete-excluded   also drop the excluded leftovers if they linger in docs/
+# Excludes are anchored to the transfer root so only the top-level copies are
+# affected. site_libs/ is kept: the figure pages set embed-resources and don't
+# need it, but index.html and about.html do NOT embed and load their navbar,
+# search, theme and syntax-highlighting assets from site_libs/. We only drop
+# resources/ and the source .qmd files copied alongside the figures.
+echo "Mirroring ${render_path}/ -> ${output_folder}/"
+rsync -a --delete --delete-excluded \
+    --exclude='/resources/' \
+    --exclude='/figs/*.qmd' \
+    "${render_path}/" "${output_folder}/"
 
 echo "Done."
