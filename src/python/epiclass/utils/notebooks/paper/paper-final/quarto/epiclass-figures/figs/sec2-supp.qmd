@@ -595,7 +595,7 @@ fig.update_layout(
 fig.show()
 ```
 
-Supp. Fig. 5G: Per-task Accuracy and macro-F1 of the RNA-Seq classifiers under three read-handling variants of the same samples — Unique (blue), Unstranded summed (green) and UniqueMultiple (orange) — each box a distribution across the 10 cross-validation folds, restricted to each fold's validation set. Including multi-mapped reads (UniqueMultiple) degrades performance, most strongly for the Sex classifier, while summing the stranded tracks (Unstranded) stays close to the trained-on Unique representation. Dashed lines represent means, solid lines the medians, boxes the quartiles.
+Supp. Fig. 5G: Accuracy and macro-F1 performance metrics using only RNA-seq datasets across three data types and five classifiers, which were trained exclusively on strand-specific signals. Each fold's trained model was applied to its own validation samples (Unique, blue), after summing forward and reverse tracks (Unstranded, green), and on a different version of the RNA-seq data downloaded from EpiATLAS where multi-mapped reads were retained (UniqueMultiple, orange) used only for this particular analysis. Changes in Unstranded and UniqueMultiple relative to Unique correspond to the impact of the data type on the inference since the same trained model was applied to all three data types. Each point is the score from one of the 10 cross-validation folds, computed across all signal files in that fold's validation set. Solid lines are medians, dashed lines means, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
 ## Supplementary Figure 6 - Prediction score threshold impact {#sec-supp6}
