@@ -135,3 +135,5 @@ ty.toml
 .mypy_cache/
 
 .claude/
+
+src/python/epiclass/utils/benchmark/RESULTS.md
