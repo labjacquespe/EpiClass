@@ -13,6 +13,7 @@ from epiclass.utils.benchmark.benchmark_prefetch import (
     _child_env,
     _normalize_config,
     _validate_models,
+    _validate_prefetch,
     drop_page_cache,
     epoch_dispersion,
     expand_configs,
@@ -247,3 +248,16 @@ def test_unknown_model_rejected_before_data_prep(config):
 def test_no_model_key_is_valid():
     """Omitting model everywhere is fine; the default applies."""
     _validate_models({"sweep": {}, "run": {}})
+
+
+@pytest.mark.parametrize("bad", [0, -1])
+def test_prefetch_factor_below_one_rejected(bad):
+    """torch accepts prefetch_factor=0 then asserts at iteration; fail earlier."""
+    with pytest.raises(ValueError, match="prefetch_factor must be >= 1"):
+        _validate_prefetch({"sweep": {"prefetch_factor": [2, bad]}})
+
+
+def test_prefetch_factor_valid_values_accepted():
+    """1 and above are fine, and None (zero-worker configs) is not checked."""
+    _validate_prefetch({"sweep": {"prefetch_factor": [1, 2, 4, None]}})
+    _validate_prefetch({"sweep": {}})

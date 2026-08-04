@@ -420,6 +420,22 @@ def _validate_data_paths(data: Dict[str, Any]) -> None:
             raise FileNotFoundError(f"config data.{key} not found: {path}")
 
 
+def _validate_prefetch(config: Dict[str, Any]) -> None:
+    """Reject prefetch_factor < 1, which torch accepts then dies on.
+
+    ``DataLoader(prefetch_factor=0)`` constructs fine and only raises
+    ``AssertionError: prefetch_factor must be greater than 0`` when iteration
+    starts -- i.e. after the child has already paid for data preparation. Catch
+    it during expansion instead. Use ``num_workers: 0`` for "no prefetching".
+    """
+    for value in config.get("sweep", {}).get("prefetch_factor", []):
+        if value is not None and int(value) < 1:
+            raise ValueError(
+                f"prefetch_factor must be >= 1 (got {value}); "
+                "set num_workers to 0 for main-process loading with no prefetch."
+            )
+
+
 def _validate_models(config: Dict[str, Any]) -> None:
     """Reject unknown model names before any (slow) data preparation runs."""
     names = list(config.get("sweep", {}).get("model", []))
@@ -447,6 +463,7 @@ def run_orchestrator(
     data = config["data"]
     _validate_data_paths(data)
     _validate_models(config)
+    _validate_prefetch(config)
     run_cfg = config.get("run", {})
     repeats = int(run_cfg.get("repeats", 1))
     mmap_dir_cfg = mmap_dir_override or config.get("mmap_dir")
