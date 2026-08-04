@@ -165,7 +165,7 @@ def do_one_experiment(
         "devices": 1,
     }
     if gpu_available:
-        trainer_kwargs["precision"] = 16
+        trainer_kwargs["precision"] = "16-mixed"
 
     trainer = MyTrainer(**trainer_kwargs)
 

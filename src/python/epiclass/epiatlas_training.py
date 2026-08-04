@@ -312,7 +312,7 @@ def do_one_experiment(
                 callbacks=callbacks,
                 accelerator="gpu",
                 devices=1,
-                precision=16,
+                precision="16-mixed",
                 enable_progress_bar=False,  # Force disable Lightning's default TQDM
             )
         else:

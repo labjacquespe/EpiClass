@@ -763,7 +763,7 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
         "devices": 1,
     }
     if gpu:
-        trainer_kwargs["precision"] = 16
+        trainer_kwargs["precision"] = "16-mixed"
     trainer = MyTrainer(**trainer_kwargs)
 
     drop_page_cache(mmap_path)  # cold epoch 0 even when drop_between is False

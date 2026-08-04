@@ -277,7 +277,7 @@ def train_without_valid(
                 callbacks=callbacks,
                 accelerator="gpu",
                 devices=1,
-                precision=16,
+                precision="16-mixed",
             )
         else:
             trainer = MyTrainer(
