@@ -19,6 +19,10 @@
     "batch_size": [
       64
     ],
+    "drop_cache_between_epochs": [
+      true,
+      false
+    ],
     "num_physical_cpus": [
       1,
       2,

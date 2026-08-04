@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from epiclass.utils.benchmark.benchmark_prefetch import (
+    _child_env,
     _normalize_config,
     drop_page_cache,
     epoch_dispersion,
@@ -172,3 +173,38 @@ def test_clamp_to_zero_cores_forces_main_process_loading():
     assert cfg["num_workers"] == 0
     assert cfg["prefetch_factor"] is None
     assert cfg["persistent_workers"] is False
+
+
+def test_drop_cache_is_a_sweepable_axis():
+    """drop_cache_between_epochs multiplies the product like any other knob."""
+    combos = expand_configs(
+        {
+            "num_workers": [0, 2],
+            "num_physical_cpus": [2],
+            "prefetch_factor": [2],
+            "drop_cache_between_epochs": [True, False],
+        }
+    )
+    assert len(combos) == 4  # 2 worker settings x 2 cache regimes
+    assert {c["drop_cache_between_epochs"] for c in combos} == {True, False}
+    # Every data-path config appears once per cache regime, so cold/warm pair up.
+    for drop in (True, False):
+        workers = sorted(
+            c["num_workers"] for c in combos if c["drop_cache_between_epochs"] is drop
+        )
+        assert workers == [0, 2]
+
+
+def test_run_sweep_keys_are_not_dataloader_env_vars():
+    """Run knobs are overlaid on the run spec, never sent as EPICLASS_* env vars."""
+    cfg = {
+        "num_workers": 2,
+        "num_physical_cpus": 2,
+        "prefetch_factor": 2,
+        "pin_memory": True,
+        "persistent_workers": True,
+        "drop_cache_between_epochs": False,
+    }
+    env = _child_env(cfg)
+    assert not any("DROP_CACHE" in key for key in env)
+    assert env["EPICLASS_NUM_WORKERS"] == "2"

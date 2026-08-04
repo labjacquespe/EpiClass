@@ -60,7 +60,13 @@ SWEEP_KEYS = [
     "pin_memory",
     "persistent_workers",
     "batch_size",
+    "drop_cache_between_epochs",
 ]
+
+# Sweep keys that are *run* knobs rather than DataLoader knobs: they are not
+# passed to the child as EPICLASS_* env vars but overlaid onto the "run" section
+# of the run spec, overriding the run-level default for that configuration.
+RUN_SWEEP_KEYS = ["drop_cache_between_epochs"]
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +183,8 @@ def _run_one_subprocess(
     create_dirs(run_dir)
     spec_path = run_dir / "run_spec.json"
     result_path = run_dir / "result.json"
+    # A swept run knob overrides the run-level default for this configuration.
+    run_cfg = {**run_cfg, **{k: cfg[k] for k in RUN_SWEEP_KEYS if k in cfg}}
     spec = {
         "config_id": config_id,
         "config": cfg,
@@ -279,17 +287,13 @@ def _append_result_csv(results: List[Dict[str, Any]], logdir: Path) -> None:
     pd.DataFrame(results).to_csv(logdir / "benchmark_results.csv", index_label="row")
 
 
-def _print_summary(results: List[Dict[str, Any]]) -> None:
+def _print_summary_group(ok: List[Dict[str, Any]], header: str) -> None:
     """Print the GPU-bound floor and flag each config GPU- vs I/O-bound."""
-    ok = [r for r in results if r.get("steady_epoch_s")]
-    if not ok:
-        print("\nNo successful runs to summarize.")
-        return
     best = min(ok, key=lambda x: x["steady_epoch_s"])
     floor = best["steady_epoch_s"]
     floor_std = best.get("epoch_std_s") or 0.0
     tol = 1.10  # within 10% of the fastest => GPU no longer waiting
-    print("\n=== Summary (cold steady-state epoch time) ===")
+    print(f"\n=== Summary ({header}) ===")
     print(
         f"GPU-bound floor (fastest steady epoch): {floor:.2f}s "
         f"+/- {floor_std:.2f}s (n={best.get('n_steady_epochs')})\n"
@@ -312,6 +316,63 @@ def _print_summary(results: List[Dict[str, Any]]) -> None:
             f"+/- {std:.2f} [{r.get('epoch_min_s', 0):.2f}-{r.get('epoch_max_s', 0):.2f}] "
             f"({r.get('samples_per_s', 0):.0f} samples/s) [{bound}]"
         )
+
+
+def _print_summary(results: List[Dict[str, Any]]) -> None:
+    """Summarize per cache regime.
+
+    Cold (page cache evicted every epoch) and warm configs are summarized
+    separately when both are present: a single floor across both would measure
+    every cold config against the warm best and label them all I/O-bound, which
+    says nothing about whether the *data path* is the limit within its regime.
+    """
+    ok = [r for r in results if r.get("steady_epoch_s")]
+    if not ok:
+        print("\nNo successful runs to summarize.")
+        return
+
+    cold = [r for r in ok if r.get("drop_cache_between_epochs", True)]
+    warm = [r for r in ok if not r.get("drop_cache_between_epochs", True)]
+    if cold and warm:
+        _print_summary_group(cold, "cold steady-state epoch time, cache dropped")
+        _print_summary_group(warm, "warm steady-state epoch time, cache kept")
+        _print_cache_effect(cold, warm)
+    else:
+        label = "cold, cache dropped" if cold else "warm, cache kept"
+        _print_summary_group(ok, f"steady-state epoch time; {label}")
+
+
+def _print_cache_effect(cold: List[Dict[str, Any]], warm: List[Dict[str, Any]]) -> None:
+    """Pair cold vs warm rows of otherwise-identical configs and show the delta.
+
+    This is the direct read on how much page-cache state is worth: a delta near
+    zero means either the cache eviction is not taking effect or the storage is
+    fast enough that it does not matter, and the sweep can be interpreted warm.
+    """
+    keys = [k for k in SWEEP_KEYS if k not in RUN_SWEEP_KEYS]
+    warm_by_cfg = {tuple(r.get(k) for k in keys): r for r in warm}
+
+    print("\n=== Cache effect (cold - warm, same config) ===")
+    paired = False
+    for cold_row in sorted(cold, key=lambda x: x["steady_epoch_s"]):
+        warm_row = warm_by_cfg.get(tuple(cold_row.get(k) for k in keys))
+        if warm_row is None:
+            continue
+        paired = True
+        delta = cold_row["steady_epoch_s"] - warm_row["steady_epoch_s"]
+        spread = (cold_row.get("epoch_std_s") or 0.0) + (
+            warm_row.get("epoch_std_s") or 0.0
+        )
+        verdict = "within noise" if abs(delta) <= spread else "real"
+        print(
+            f"  cpus={cold_row['num_physical_cpus']} "
+            f"workers={cold_row['num_workers']} "
+            f"prefetch={cold_row.get('prefetch_factor')}: "
+            f"cold {cold_row['steady_epoch_s']:.2f}s vs warm "
+            f"{warm_row['steady_epoch_s']:.2f}s -> {delta:+.2f}s ({verdict})"
+        )
+    if not paired:
+        print("  No config was run in both cache regimes; nothing to pair.")
 
 
 def _validate_data_paths(data: Dict[str, Any]) -> None:
@@ -628,6 +689,9 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
         "total_fit_s": total_fit_s,
         "samples_per_s": samples_per_s,
         "dataloader_only_s": dataloader_only_s,
+        # Always recorded (not only when swept) so the CSV states the cache
+        # regime each row was measured in, whatever set it.
+        "drop_cache_between_epochs": drop_between,
         "mmap_bytes": mmap_bytes,
         "cores_pinned": n_cores,
         "device": torch.cuda.get_device_name() if gpu else "cpu",
