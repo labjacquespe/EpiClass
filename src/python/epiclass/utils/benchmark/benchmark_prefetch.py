@@ -69,7 +69,14 @@ SWEEP_KEYS = [
 
 
 def _normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
-    """Force prefetch/persistent off when there are no workers.
+    """Clamp workers to the core cap, then force prefetch/persistent off if none.
+
+    ``num_workers`` is clamped to ``num_physical_cpus`` because the run caps CPU
+    affinity to that many cores: asking for more workers than cores only
+    oversubscribes them onto the same cores, which torch itself warns about
+    ("suggested max number of worker in current system is N"). Clamped configs
+    collapse onto their ``num_workers == num_physical_cpus`` twin and are then
+    de-duplicated by :func:`expand_configs`.
 
     ``num_workers == 0`` runs data loading in the main process; torch rejects
     ``prefetch_factor`` / ``persistent_workers`` there, and the pipeline forces
@@ -77,6 +84,9 @@ def _normalize_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     duplicate configurations.
     """
     cfg = dict(cfg)
+    cores = cfg.get("num_physical_cpus")
+    if cores is not None and int(cfg.get("num_workers", 0)) > int(cores):
+        cfg["num_workers"] = int(cores)
     if int(cfg.get("num_workers", 0)) == 0:
         cfg["prefetch_factor"] = None
         cfg["persistent_workers"] = False
@@ -382,6 +392,16 @@ def cap_cpus() -> int:
     use = avail[:k] if 0 < k < len(avail) else avail
     os.sched_setaffinity(0, set(use))
     print(f"CPU affinity capped to {len(use)} core(s): {sorted(os.sched_getaffinity(0))}")
+
+    # Second line of defence: a hand-run --single-run (or a stale run_spec) could
+    # still ask for more workers than pinned cores, which only oversubscribes them.
+    workers = os.getenv("EPICLASS_NUM_WORKERS")
+    if workers is not None and int(workers) > len(use):
+        print(
+            f"Clamping EPICLASS_NUM_WORKERS {workers} -> {len(use)} "
+            "(cannot exceed the pinned core count)."
+        )
+        os.environ["EPICLASS_NUM_WORKERS"] = str(len(use))
     return len(use)
 
 

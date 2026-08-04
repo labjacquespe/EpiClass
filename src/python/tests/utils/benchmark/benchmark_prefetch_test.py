@@ -20,8 +20,10 @@ from epiclass.utils.benchmark.benchmark_prefetch import (
 def test_cartesian_product_count():
     """Every combination of independent knobs is produced."""
     sweep = {
+        # Core counts stay >= the worker counts so no config is clamped here;
+        # clamping is covered by test_workers_clamped_to_core_count.
         "num_workers": [2, 4],
-        "num_physical_cpus": [1, 2],
+        "num_physical_cpus": [4, 8],
         "prefetch_factor": [2, 4],
         "pin_memory": [True],
         "persistent_workers": [True],
@@ -62,7 +64,7 @@ def test_mixed_zero_and_nonzero_workers():
     """Zero-worker configs dedupe while worker configs keep their prefetch axis."""
     sweep = {
         "num_workers": [0, 4],
-        "num_physical_cpus": [1],
+        "num_physical_cpus": [4],  # >= max workers, so nothing is clamped
         "prefetch_factor": [2, 4],
         "pin_memory": [True],
         "persistent_workers": [True],
@@ -138,3 +140,35 @@ def test_epoch_dispersion_degenerate_inputs():
     assert single["epoch_iqr_s"] == 0.0
     assert single["epoch_min_s"] == single["epoch_max_s"] == 6.81
     assert single["epoch_cv_pct"] == 0.0
+
+
+def test_workers_clamped_to_core_count():
+    """num_workers above num_physical_cpus is clamped, not oversubscribed."""
+    cfg = _normalize_config({"num_workers": 8, "num_physical_cpus": 2})
+    assert cfg["num_workers"] == 2
+
+    # At or below the cap, the request is left untouched.
+    for workers in (1, 2):
+        cfg = _normalize_config({"num_workers": workers, "num_physical_cpus": 2})
+        assert cfg["num_workers"] == workers
+
+
+def test_clamped_configs_are_deduplicated():
+    """Clamping collapses over-provisioned combos onto their workers==cores twin."""
+    combos = expand_configs(
+        {
+            "num_workers": [0, 2, 4, 8],
+            "num_physical_cpus": [2],
+            "prefetch_factor": [2],
+        }
+    )
+    # workers 4 and 8 both clamp to 2, leaving only workers 0 and 2.
+    assert sorted(c["num_workers"] for c in combos) == [0, 2]
+
+
+def test_clamp_to_zero_cores_forces_main_process_loading():
+    """Clamping to a single core keeps workers, but a 0-core cap disables them."""
+    cfg = _normalize_config({"num_workers": 4, "num_physical_cpus": 0})
+    assert cfg["num_workers"] == 0
+    assert cfg["prefetch_factor"] is None
+    assert cfg["persistent_workers"] is False
