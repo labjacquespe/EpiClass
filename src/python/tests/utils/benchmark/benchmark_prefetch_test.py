@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 from epiclass.utils.benchmark.benchmark_prefetch import (
+    MODEL_BUILDERS,
     _child_env,
     _normalize_config,
+    _validate_models,
     drop_page_cache,
     epoch_dispersion,
     expand_configs,
@@ -208,3 +210,40 @@ def test_run_sweep_keys_are_not_dataloader_env_vars():
     env = _child_env(cfg)
     assert not any("DROP_CACHE" in key for key in env)
     assert env["EPICLASS_NUM_WORKERS"] == "2"
+
+
+def test_model_is_a_sweepable_axis():
+    """model multiplies the product and is not sent as a DataLoader env var."""
+    combos = expand_configs(
+        {
+            "num_workers": [0, 2],
+            "num_physical_cpus": [2],
+            "model": ["classifier", "ave"],
+        }
+    )
+    assert len(combos) == 4
+    assert {c["model"] for c in combos} == {"classifier", "ave"}
+    assert not any("MODEL" in key for key in _child_env(combos[0]))
+
+
+def test_known_model_builders():
+    """Both models the benchmark advertises are actually registered."""
+    assert set(MODEL_BUILDERS) == {"classifier", "ave"}
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {"sweep": {"model": ["classifier", "nope"]}},
+        {"run": {"model": "nope"}},
+    ],
+)
+def test_unknown_model_rejected_before_data_prep(config):
+    """A bad model name fails fast, not after minutes of data preparation."""
+    with pytest.raises(ValueError, match="Unknown model"):
+        _validate_models(config)
+
+
+def test_no_model_key_is_valid():
+    """Omitting model everywhere is fine; the default applies."""
+    _validate_models({"sweep": {}, "run": {}})

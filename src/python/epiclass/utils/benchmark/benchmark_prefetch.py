@@ -5,6 +5,13 @@ persistent_workers, batch_size) *and* the number of physical CPU cores actually
 available to the workers, on a realistic short EpiAtlas training run, to find the
 cheapest configuration that keeps the GPU fed.
 
+``model`` selects what consumes the batches -- ``classifier``
+(LightningDenseClassifier) or ``ave`` (LightningAVE) -- and is sweepable, so the
+same data path can be measured against different GPU loads in one job. The
+optimum is load-dependent: a heavier model leaves more room to hide data
+delivery behind compute, so a config that ties on one model need not tie on
+another.
+
 Design:
 
 - One HPC job requests up to N cores (``--cpus-per-task``) and this script sweeps
@@ -61,12 +68,13 @@ SWEEP_KEYS = [
     "persistent_workers",
     "batch_size",
     "drop_cache_between_epochs",
+    "model",
 ]
 
 # Sweep keys that are *run* knobs rather than DataLoader knobs: they are not
 # passed to the child as EPICLASS_* env vars but overlaid onto the "run" section
 # of the run spec, overriding the run-level default for that configuration.
-RUN_SWEEP_KEYS = ["drop_cache_between_epochs"]
+RUN_SWEEP_KEYS = ["drop_cache_between_epochs", "model"]
 
 
 # ---------------------------------------------------------------------------
@@ -155,17 +163,29 @@ def _child_env(cfg: Dict[str, Any]) -> Dict[str, str]:
     numpy/torch) to take effect; affinity is applied inside the child.
     """
     env = os.environ.copy()
-    env["EPICLASS_NUM_WORKERS"] = str(cfg["num_workers"])
-    env["EPICLASS_PIN_MEMORY"] = "1" if cfg["pin_memory"] else "0"
-    env["EPICLASS_PERSISTENT_WORKERS"] = "1" if cfg["persistent_workers"] else "0"
+    # A knob absent from the sweep is left unset so ``_create_lazy`` applies its
+    # production default, rather than the benchmark inventing one.
+    bool_knobs = {"pin_memory": "EPICLASS_PIN_MEMORY"}
+    bool_knobs["persistent_workers"] = "EPICLASS_PERSISTENT_WORKERS"
+    for key, var in bool_knobs.items():
+        if key in cfg:
+            env[var] = "1" if cfg[key] else "0"
+        else:
+            env.pop(var, None)
+
+    if "num_workers" in cfg:
+        env["EPICLASS_NUM_WORKERS"] = str(cfg["num_workers"])
+    # prefetch_factor is None for zero-worker configs, where torch rejects it.
     if cfg.get("prefetch_factor") is not None:
         env["EPICLASS_PREFETCH_FACTOR"] = str(cfg["prefetch_factor"])
     else:
         env.pop("EPICLASS_PREFETCH_FACTOR", None)
-    cpus = str(cfg["num_physical_cpus"])
-    env["EPICLASS_CPU_LIMIT"] = cpus
-    env["OMP_NUM_THREADS"] = cpus
-    env["MKL_NUM_THREADS"] = cpus
+
+    if "num_physical_cpus" in cfg:
+        cpus = str(cfg["num_physical_cpus"])
+        env["EPICLASS_CPU_LIMIT"] = cpus
+        env["OMP_NUM_THREADS"] = cpus
+        env["MKL_NUM_THREADS"] = cpus
     return env
 
 
@@ -318,31 +338,48 @@ def _print_summary_group(ok: List[Dict[str, Any]], header: str) -> None:
         )
 
 
-def _print_summary(results: List[Dict[str, Any]]) -> None:
-    """Summarize per cache regime.
+def _regime_label(row: Dict[str, Any]) -> str:
+    """Human label for the (model, cache regime) a row was measured in."""
+    cache = (
+        "cold, cache dropped"
+        if row.get("drop_cache_between_epochs", True)
+        else ("warm, cache kept")
+    )
+    return f"model={row.get('model', 'classifier')}; {cache}"
 
-    Cold (page cache evicted every epoch) and warm configs are summarized
-    separately when both are present: a single floor across both would measure
-    every cold config against the warm best and label them all I/O-bound, which
-    says nothing about whether the *data path* is the limit within its regime.
+
+def _print_summary(results: List[Dict[str, Any]]) -> None:
+    """Summarize each (model, cache regime) separately.
+
+    A GPU-bound floor is only meaningful among runs whose GPU work and cache
+    state match: a single floor across a light classifier and a heavier AVE (or
+    across cold and warm runs) would rank every config against the cheapest
+    regime and label the rest I/O-bound, which says nothing about whether the
+    *data path* is the limit within any of them.
     """
     ok = [r for r in results if r.get("steady_epoch_s")]
     if not ok:
         print("\nNo successful runs to summarize.")
         return
 
-    cold = [r for r in ok if r.get("drop_cache_between_epochs", True)]
-    warm = [r for r in ok if not r.get("drop_cache_between_epochs", True)]
-    if cold and warm:
-        _print_summary_group(cold, "cold steady-state epoch time, cache dropped")
-        _print_summary_group(warm, "warm steady-state epoch time, cache kept")
-        _print_cache_effect(cold, warm)
-    else:
-        label = "cold, cache dropped" if cold else "warm, cache kept"
-        _print_summary_group(ok, f"steady-state epoch time; {label}")
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in ok:
+        groups.setdefault(_regime_label(row), []).append(row)
+    for label, rows in groups.items():
+        _print_summary_group(rows, label)
+
+    # Cross-regime comparisons, each only when both sides were actually run.
+    for model in sorted({r.get("model", "classifier") for r in ok}):
+        rows = [r for r in ok if r.get("model", "classifier") == model]
+        cold = [r for r in rows if r.get("drop_cache_between_epochs", True)]
+        warm = [r for r in rows if not r.get("drop_cache_between_epochs", True)]
+        if cold and warm:
+            _print_cache_effect(cold, warm, model)
 
 
-def _print_cache_effect(cold: List[Dict[str, Any]], warm: List[Dict[str, Any]]) -> None:
+def _print_cache_effect(
+    cold: List[Dict[str, Any]], warm: List[Dict[str, Any]], model: str = "classifier"
+) -> None:
     """Pair cold vs warm rows of otherwise-identical configs and show the delta.
 
     This is the direct read on how much page-cache state is worth: a delta near
@@ -352,7 +389,7 @@ def _print_cache_effect(cold: List[Dict[str, Any]], warm: List[Dict[str, Any]]) 
     keys = [k for k in SWEEP_KEYS if k not in RUN_SWEEP_KEYS]
     warm_by_cfg = {tuple(r.get(k) for k in keys): r for r in warm}
 
-    print("\n=== Cache effect (cold - warm, same config) ===")
+    print(f"\n=== Cache effect (cold - warm, same config; model={model}) ===")
     paired = False
     for cold_row in sorted(cold, key=lambda x: x["steady_epoch_s"]):
         warm_row = warm_by_cfg.get(tuple(cold_row.get(k) for k in keys))
@@ -383,6 +420,19 @@ def _validate_data_paths(data: Dict[str, Any]) -> None:
             raise FileNotFoundError(f"config data.{key} not found: {path}")
 
 
+def _validate_models(config: Dict[str, Any]) -> None:
+    """Reject unknown model names before any (slow) data preparation runs."""
+    names = list(config.get("sweep", {}).get("model", []))
+    run_model = config.get("run", {}).get("model")
+    if run_model is not None:
+        names.append(run_model)
+    for name in names:
+        if name not in MODEL_BUILDERS:
+            raise ValueError(
+                f"Unknown model {name!r}; expected one of {sorted(MODEL_BUILDERS)}."
+            )
+
+
 def run_orchestrator(
     config: Dict[str, Any],
     logdir: Path,
@@ -396,6 +446,7 @@ def run_orchestrator(
     """
     data = config["data"]
     _validate_data_paths(data)
+    _validate_models(config)
     run_cfg = config.get("run", {})
     repeats = int(run_cfg.get("repeats", 1))
     mmap_dir_cfg = mmap_dir_override or config.get("mmap_dir")
@@ -575,7 +626,7 @@ def _time_dataloader_pass(loader, n_batches: int) -> float:
     return time.perf_counter() - t0
 
 
-def _build_model(my_data, hparams: Dict[str, Any], logdir: Path):
+def _build_classifier(my_data, hparams: Dict[str, Any], logdir: Path):
     """Build the classifier, sizes derived from the fold (as do_one_experiment)."""
     from epiclass.core.model_pytorch import LightningDenseClassifier
 
@@ -590,6 +641,34 @@ def _build_model(my_data, hparams: Dict[str, Any], logdir: Path):
         hl_units=int(os.getenv("LAYER_SIZE", "3000")),
         nb_layer=int(os.getenv("NB_LAYER", "1")),
     )
+
+
+def _build_ave(my_data, hparams: Dict[str, Any], _logdir: Path):
+    """Build the AVE anomaly-detection model on the same fold.
+
+    ``LightningAVE.training_step`` reads ``train_batch[0]`` and ignores labels,
+    so the supervised dataloader built for the classifier is reused as-is: the
+    data path stays byte-for-byte identical and only GPU compute changes, which
+    is exactly the comparison this option exists to make.
+    """
+    from epiclass.core.model_ave import LightningAVE
+
+    return LightningAVE(input_size=my_data.train.signal_length, hparams=hparams)
+
+
+# Model builders selectable via the "model" config key / sweep axis.
+MODEL_BUILDERS = {"classifier": _build_classifier, "ave": _build_ave}
+
+
+def _build_model(my_data, hparams: Dict[str, Any], logdir: Path, model: str):
+    """Dispatch to the requested model builder."""
+    try:
+        builder = MODEL_BUILDERS[model]
+    except KeyError:
+        raise ValueError(
+            f"Unknown model {model!r}; expected one of {sorted(MODEL_BUILDERS)}."
+        ) from None
+    return builder(my_data, hparams, logdir)
 
 
 def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
@@ -642,7 +721,10 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
         dataloader_only_s = _time_dataloader_pass(train_loader, n_batches)
         print(f"  dataloader-only pass: {dataloader_only_s:.1f}s", flush=True)
 
-    model = _build_model(my_data, hparams, logdir)
+    model_name = str(run_cfg.get("model", "classifier"))
+    model = _build_model(my_data, hparams, logdir, model_name)
+    n_params = sum(p.numel() for p in model.parameters())
+    print(f"Model: {model_name} ({n_params/1e6:.1f}M params)", flush=True)
     epochs = int(run_cfg.get("epochs", hparams.get("training_epochs", 4)))
     drop_between = bool(run_cfg.get("drop_cache_between_epochs", True))
     timer = _make_epoch_timer(
@@ -690,8 +772,10 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
         "samples_per_s": samples_per_s,
         "dataloader_only_s": dataloader_only_s,
         # Always recorded (not only when swept) so the CSV states the cache
-        # regime each row was measured in, whatever set it.
+        # regime and model each row was measured in, whatever set them.
         "drop_cache_between_epochs": drop_between,
+        "model": model_name,
+        "n_params": n_params,
         "mmap_bytes": mmap_bytes,
         "cores_pinned": n_cores,
         "device": torch.cuda.get_device_name() if gpu else "cpu",

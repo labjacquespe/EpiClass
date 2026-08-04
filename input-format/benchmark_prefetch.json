@@ -23,6 +23,10 @@
       true,
       false
     ],
+    "model": [
+      "classifier",
+      "ave"
+    ],
     "num_physical_cpus": [
       1,
       2,
