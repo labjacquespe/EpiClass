@@ -201,6 +201,67 @@ def _run_one_subprocess(
     return row
 
 
+def epoch_dispersion(epoch_times: List[float]) -> Dict[str, Any]:
+    """Summarize the spread of per-epoch times, not just their mean.
+
+    Two configs whose mean epoch times differ by 1% are indistinguishable if
+    their epoch-to-epoch spread is 5%, so the sweep is only interpretable with a
+    dispersion measure attached. Returns std (sample, ddof=1), min, max, median,
+    q1/q3 and IQR, plus the raw times so the CSV stays self-contained.
+
+    ``epoch_times`` should be the *steady* epochs (epoch 0 excluded): it carries
+    worker spin-up and the coldest read, so including it inflates every spread.
+    """
+    n = len(epoch_times)
+    if n == 0:
+        return {
+            key: None
+            for key in (
+                "epoch_std_s",
+                "epoch_min_s",
+                "epoch_max_s",
+                "epoch_median_s",
+                "epoch_q1_s",
+                "epoch_q3_s",
+                "epoch_iqr_s",
+                "epoch_cv_pct",
+                "n_steady_epochs",
+                "steady_epoch_times_s",
+            )
+        }
+
+    ordered = sorted(epoch_times)
+    mean = sum(epoch_times) / n
+
+    def _quantile(q: float) -> float:
+        """Linear-interpolation quantile (numpy's default), on ``ordered``."""
+        if n == 1:
+            return ordered[0]
+        pos = q * (n - 1)
+        low = int(pos)
+        high = min(low + 1, n - 1)
+        return ordered[low] + (pos - low) * (ordered[high] - ordered[low])
+
+    # ddof=1: these epochs are a sample of the run's behaviour, not a population.
+    std = (sum((t - mean) ** 2 for t in epoch_times) / (n - 1)) ** 0.5 if n > 1 else 0.0
+    q1, q3 = _quantile(0.25), _quantile(0.75)
+
+    return {
+        "epoch_std_s": std,
+        "epoch_min_s": ordered[0],
+        "epoch_max_s": ordered[-1],
+        "epoch_median_s": _quantile(0.5),
+        "epoch_q1_s": q1,
+        "epoch_q3_s": q3,
+        "epoch_iqr_s": q3 - q1,
+        # Relative spread: comparable across configs with different mean times.
+        "epoch_cv_pct": 100.0 * std / mean if mean else None,
+        "n_steady_epochs": n,
+        # Semicolon-joined so one CSV cell holds the raw series without quoting.
+        "steady_epoch_times_s": ";".join(f"{t:.4f}" for t in epoch_times),
+    }
+
+
 def _append_result_csv(results: List[Dict[str, Any]], logdir: Path) -> None:
     """Rewrite the results CSV (cheap; keeps partial progress on crash)."""
     import pandas as pd
@@ -214,16 +275,31 @@ def _print_summary(results: List[Dict[str, Any]]) -> None:
     if not ok:
         print("\nNo successful runs to summarize.")
         return
-    floor = min(r["steady_epoch_s"] for r in ok)
+    best = min(ok, key=lambda x: x["steady_epoch_s"])
+    floor = best["steady_epoch_s"]
+    floor_std = best.get("epoch_std_s") or 0.0
     tol = 1.10  # within 10% of the fastest => GPU no longer waiting
     print("\n=== Summary (cold steady-state epoch time) ===")
-    print(f"GPU-bound floor (fastest steady epoch): {floor:.2f}s\n")
+    print(
+        f"GPU-bound floor (fastest steady epoch): {floor:.2f}s "
+        f"+/- {floor_std:.2f}s (n={best.get('n_steady_epochs')})\n"
+    )
+    print("  'noise' = gap to the floor is smaller than the two runs' combined")
+    print("  epoch-to-epoch spread, i.e. not a real difference.\n")
     for r in sorted(ok, key=lambda x: x["steady_epoch_s"]):
-        bound = "GPU-bound" if r["steady_epoch_s"] <= floor * tol else "I/O-bound"
+        std = r.get("epoch_std_s") or 0.0
+        gap = r["steady_epoch_s"] - floor
+        if gap <= floor_std + std:
+            bound = "GPU-bound (noise)"
+        elif r["steady_epoch_s"] <= floor * tol:
+            bound = "GPU-bound"
+        else:
+            bound = "I/O-bound"
         print(
             f"  {r['config_id']}: cpus={r['num_physical_cpus']} "
             f"workers={r['num_workers']} prefetch={r.get('prefetch_factor')} "
             f"batch={r['batch_size']} -> {r['steady_epoch_s']:.2f}s "
+            f"+/- {std:.2f} [{r.get('epoch_min_s', 0):.2f}-{r.get('epoch_max_s', 0):.2f}] "
             f"({r.get('samples_per_s', 0):.0f} samples/s) [{bound}]"
         )
 
@@ -528,6 +604,7 @@ def run_single(spec_path: Path, result_file: Path, allow_cpu: bool) -> None:
         "epochs": epochs,
         "first_epoch_s": first_epoch_s,
         "steady_epoch_s": steady_epoch_s,
+        **epoch_dispersion(steady),
         "total_fit_s": total_fit_s,
         "samples_per_s": samples_per_s,
         "dataloader_only_s": dataloader_only_s,
