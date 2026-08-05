@@ -11,6 +11,7 @@ import pytest
 from epiclass.utils.benchmark.benchmark_prefetch import (
     MODEL_BUILDERS,
     _child_env,
+    _is_meaningful,
     _normalize_config,
     _validate_models,
     _validate_prefetch,
@@ -261,3 +262,19 @@ def test_prefetch_factor_valid_values_accepted():
     """1 and above are fine, and None (zero-worker configs) is not checked."""
     _validate_prefetch({"sweep": {"prefetch_factor": [1, 2, 4, None]}})
     _validate_prefetch({"sweep": {}})
+
+
+def test_is_meaningful_requires_both_bars():
+    """A difference must clear the spread AND the relative floor."""
+    # Clears spread (0.05 > 0.01) but is only 0.7% of 6.8s -> drift, not signal.
+    assert not _is_meaningful(0.05, spread=0.01, reference=6.8)
+    # Clears the relative bar (2.9%) but is inside a noisy pair's spread.
+    assert not _is_meaningful(0.20, spread=0.50, reference=6.8)
+    # Clears both.
+    assert _is_meaningful(0.50, spread=0.02, reference=6.8)
+
+
+def test_is_meaningful_is_symmetric_in_sign():
+    """Magnitude decides; direction is the caller's to interpret."""
+    assert _is_meaningful(-0.50, spread=0.02, reference=6.8)
+    assert not _is_meaningful(-0.05, spread=0.01, reference=6.8)

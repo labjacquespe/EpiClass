@@ -76,6 +76,11 @@ SWEEP_KEYS = [
 # of the run spec, overriding the run-level default for that configuration.
 RUN_SWEEP_KEYS = ["drop_cache_between_epochs", "model"]
 
+# Minimum difference, as a fraction of the reference time, for the summary to
+# call two configs different. See _is_meaningful for why a spread-only test is
+# not enough.
+MIN_RELATIVE_DIFF = 0.01
+
 
 # ---------------------------------------------------------------------------
 # Config expansion (orchestrator)
@@ -307,8 +312,22 @@ def _append_result_csv(results: List[Dict[str, Any]], logdir: Path) -> None:
     pd.DataFrame(results).to_csv(logdir / "benchmark_results.csv", index_label="row")
 
 
+def _is_meaningful(delta: float, spread: float, reference: float) -> bool:
+    """Is ``delta`` a real difference, or measurement drift?
+
+    Two bars, both of which must be cleared. The **spread** bar (larger than the
+    two runs' combined epoch-to-epoch standard deviation) catches noisy runs. The
+    **relative** bar catches the opposite failure: epochs here are so
+    reproducible (std often 0.005 s on a 6.8 s epoch, ~0.1%) that the spread test
+    alone declares sub-1% differences significant -- including physically
+    impossible ones, such as a cold epoch beating its own warm twin. A difference
+    under ``MIN_RELATIVE_DIFF`` of the reference time is drift, not signal.
+    """
+    return abs(delta) > spread and abs(delta) > MIN_RELATIVE_DIFF * reference
+
+
 def _print_summary_group(ok: List[Dict[str, Any]], header: str) -> None:
-    """Print the GPU-bound floor and flag each config GPU- vs I/O-bound."""
+    """Rank configs against the fastest one and flag whether each keeps up."""
     best = min(ok, key=lambda x: x["steady_epoch_s"])
     floor = best["steady_epoch_s"]
     floor_std = best.get("epoch_std_s") or 0.0
@@ -316,19 +335,25 @@ def _print_summary_group(ok: List[Dict[str, Any]], header: str) -> None:
     print(f"\n=== Summary ({header}) ===")
     print(
         f"GPU-bound floor (fastest steady epoch): {floor:.2f}s "
-        f"+/- {floor_std:.2f}s (n={best.get('n_steady_epochs')})\n"
+        f"+/- {floor_std:.2f}s (n={best.get('n_steady_epochs')}), "
+        f"config {best['config_id']}\n"
     )
-    print("  'noise' = gap to the floor is smaller than the two runs' combined")
-    print("  epoch-to-epoch spread, i.e. not a real difference.\n")
+    print("  Every config below is compared against that floor config")
+    print(f"  ({best['config_id']}), not against the row above it.")
+    print("  'noise' = the gap to the floor config is smaller than the two")
+    print("  configs' combined epoch-to-epoch spread, or under")
+    print(f"  {MIN_RELATIVE_DIFF:.0%} of the floor time -- i.e. not a real difference.")
+    print(f"  'not GPU-bound' = more than {tol - 1:.0%} slower than the floor;")
+    print("  check dataloader_only_s to tell data starvation from CPU contention.\n")
     for r in sorted(ok, key=lambda x: x["steady_epoch_s"]):
         std = r.get("epoch_std_s") or 0.0
         gap = r["steady_epoch_s"] - floor
-        if gap <= floor_std + std:
+        if not _is_meaningful(gap, floor_std + std, floor):
             bound = "GPU-bound (noise)"
         elif r["steady_epoch_s"] <= floor * tol:
             bound = "GPU-bound"
         else:
-            bound = "I/O-bound"
+            bound = "not GPU-bound"
         print(
             f"  {r['config_id']}: cpus={r['num_physical_cpus']} "
             f"workers={r['num_workers']} prefetch={r.get('prefetch_factor')} "
@@ -390,6 +415,9 @@ def _print_cache_effect(
     warm_by_cfg = {tuple(r.get(k) for k in keys): r for r in warm}
 
     print(f"\n=== Cache effect (cold - warm, same config; model={model}) ===")
+    print("  Positive = cold is slower, i.e. the page cache helped. A 'real'")
+    print("  delta must exceed both the pair's combined spread and")
+    print(f"  {MIN_RELATIVE_DIFF:.0%} of the warm time.\n")
     paired = False
     for cold_row in sorted(cold, key=lambda x: x["steady_epoch_s"]):
         warm_row = warm_by_cfg.get(tuple(cold_row.get(k) for k in keys))
@@ -400,7 +428,10 @@ def _print_cache_effect(
         spread = (cold_row.get("epoch_std_s") or 0.0) + (
             warm_row.get("epoch_std_s") or 0.0
         )
-        verdict = "within noise" if abs(delta) <= spread else "real"
+        meaningful = _is_meaningful(delta, spread, warm_row["steady_epoch_s"])
+        # A negative delta means the cold run beat its warm twin, which no cache
+        # effect can produce; report it as drift however large it looks.
+        verdict = "real" if meaningful and delta > 0 else "within noise"
         print(
             f"  cpus={cold_row['num_physical_cpus']} "
             f"workers={cold_row['num_workers']} "

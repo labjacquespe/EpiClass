@@ -67,14 +67,48 @@ All computed over the **steady** epochs only (epoch 0 excluded, since its spin-u
 | `n_steady_epochs` | How many epochs the statistics rest on. **Check this first.** With `epochs: 4` it is 3, which makes the std directional at best and the IQR nearly meaningless. Use `epochs: 8` or more when a small difference matters. |
 | `steady_epoch_times_s` | The raw per-epoch times, `;`-joined, so anything above can be recomputed. |
 
-The rule: **a gap between two configs smaller than their combined `epoch_std_s` is not a real difference.** The printed summary applies this automatically and labels such rows `GPU-bound (noise)`.
+The rule for calling two configs different: **the gap must exceed both their combined `epoch_std_s` and 1% of the reference time** (`MIN_RELATIVE_DIFF`). The second bar exists because these epochs are extremely reproducible — `epoch_std_s` is often ~0.005 s on a 6.8 s epoch (0.1%), so a spread-only test declares sub-1% differences significant, including physically impossible ones such as a cold epoch beating its own warm twin. The printed summary applies both bars automatically.
 
 ## How to read a sweep
 
-1. Filter to one `(model, drop_cache_between_epochs)` group. Epoch times are only comparable within a group — a heavier model or a colder cache shifts every row.
+1. Filter to one `(model, drop_cache_between_epochs)` group. Epoch times are only comparable within a group — a different model or cache regime shifts every row.
 2. Find the minimum `steady_epoch_s`: the GPU-bound floor.
-3. Everything within the combined spread of that floor is tied. Among the tied configs, **pick the one requesting the fewest cores and workers** — that is the answer, since it frees allocation for other jobs at no throughput cost.
-4. Cross-check with `dataloader_only_s`. Large headroom versus `steady_epoch_s` confirms the workload is GPU-bound and the ranking is not about I/O at all.
+3. Everything tied with that floor (per the rule above) is equivalent. Among the tied configs, **pick the one requesting the fewest cores and workers** — that is the answer, since it frees allocation for other jobs at no throughput cost.
+4. Cross-check with `dataloader_only_s`. Large headroom versus `steady_epoch_s` confirms the workload is GPU-bound and the ranking is not about data delivery at all.
+
+## How to read the printed summary
+
+The script prints one block per `(model, cache regime)` group, then one cache-effect block per model. Grouping is not cosmetic: a single floor spanning two models would rank every config against whichever model is cheaper and label the rest starved, which says nothing about whether the data path limits anything.
+
+### The per-group block
+
+The header names the floor — the fastest config in that group — with its spread, its epoch count, and its `config_id`:
+
+```text
+GPU-bound floor (fastest steady epoch): 6.81s +/- 0.01s (n=5), config cfg008
+```
+
+**Every row below is compared against that floor config, not against the row above it.** The rows are sorted by `steady_epoch_s`, which makes adjacent-row comparison tempting and wrong — a row's label says how it relates to the floor, nothing about its neighbour.
+
+Each row ends in one of three verdicts:
+
+| verdict | meaning |
+| --- | --- |
+| `GPU-bound (noise)` | Tied with the floor: the gap fails at least one of the two bars. **These are the candidates** — take the cheapest. |
+| `GPU-bound` | Measurably slower than the floor but within 10%. Real, usually small, rarely worth extra allocation. |
+| `not GPU-bound` | More than 10% slower. Something other than the GPU sets the pace. |
+
+`not GPU-bound` deliberately does not name a cause. It can be data starvation *or* CPU contention between the main process and its workers, and the epoch time alone cannot distinguish them. Check `dataloader_only_s` in the CSV: if delivery is much faster than the epoch, the data path is keeping up and the loss is contention, not I/O.
+
+### The cache-effect block
+
+Pairs each config's cold row against its warm twin — identical on every sweep key except the cache regime — and reports `cold - warm`:
+
+```text
+cpus=4 workers=0 prefetch=None: cold 6.81s vs warm 6.86s -> -0.05s (within noise)
+```
+
+Positive means cold was slower, i.e. the page cache helped. A **negative** delta means the cold run beat its own warm twin, which no caching effect can produce; those are always reported as noise however large they look, since they can only be drift. A block of near-zero deltas is the answer that page-cache state does not matter for this dataset on this storage — at which point you can stop sweeping the axis and run warm, which is what production does.
 
 
 ## Running a sweep
