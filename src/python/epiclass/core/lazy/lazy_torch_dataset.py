@@ -63,7 +63,9 @@ def create_lazy_dataloaders(
     val_data: Optional[LazyKnownData | LazyUnknownData] = None,
     test_data: Optional[LazyKnownData | LazyUnknownData] = None,
     batch_size: int = 32,
-    num_workers: int = 4,
+    # 0 = load in the main process. Benchmarked as the best setting for the mmap
+    # data path; see utils/torch_data._create_lazy for the reasoning.
+    num_workers: int = 0,
     pin_memory: bool = True,
     prefetch_factor: int = 2,
     persistent_workers: bool = True,

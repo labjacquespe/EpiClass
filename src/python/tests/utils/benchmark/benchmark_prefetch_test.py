@@ -4,10 +4,12 @@ The full single-run path needs a GPU + real data and is exercised via the SLURM
 template, not here. These fast tests cover the orchestrator-side logic that must
 be correct for the sweep to be meaningful.
 """
+import os
 from pathlib import Path
 
 import pytest
 
+from epiclass.utils import torch_data
 from epiclass.utils.benchmark.benchmark_prefetch import (
     MODEL_BUILDERS,
     _child_env,
@@ -278,3 +280,40 @@ def test_is_meaningful_is_symmetric_in_sign():
     """Magnitude decides; direction is the caller's to interpret."""
     assert _is_meaningful(-0.50, spread=0.02, reference=6.8)
     assert not _is_meaningful(-0.05, spread=0.01, reference=6.8)
+
+
+def test_default_num_workers_is_zero(monkeypatch):
+    """The production default is 0 workers (benchmarked); env still overrides.
+
+    Guards the finding from utils/benchmark/README.md: on the mmap data path a
+    worker removes no CPU work while adding per-batch IPC, so the default must
+    not drift back to a core-count-derived value.
+    """
+    monkeypatch.delenv("EPICLASS_NUM_WORKERS", raising=False)
+    # Allocation size must not influence the default any more.
+    monkeypatch.setenv("SLURM_CPUS_PER_TASK", "8")
+    assert int(os.getenv("EPICLASS_NUM_WORKERS", "0")) == 0
+
+    captured = {}
+
+    def _fake_create(**kwargs):
+        captured.update(kwargs)
+        return {}
+
+    monkeypatch.setattr(
+        "epiclass.core.lazy.lazy_torch_dataset.create_lazy_dataloaders", _fake_create
+    )
+
+    class _Split:
+        num_examples = 4
+
+    class _Data:
+        train = validation = test = _Split()
+
+    torch_data._create_lazy(_Data(), batch_size=4)  # pylint: disable=protected-access
+    assert captured["num_workers"] == 0
+    assert captured["persistent_workers"] is False  # derived from num_workers == 0
+
+    monkeypatch.setenv("EPICLASS_NUM_WORKERS", "3")
+    torch_data._create_lazy(_Data(), batch_size=4)  # pylint: disable=protected-access
+    assert captured["num_workers"] == 3

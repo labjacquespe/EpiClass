@@ -47,13 +47,29 @@ def _create_lazy(data: DataSet, batch_size: int) -> Dict[str, Tuple[Dataset, Dat
     from epiclass.core.lazy.lazy_torch_dataset import create_lazy_dataloaders
 
     # DataLoader knobs are env-overridable so a benchmark (or an HPC job) can
-    # sweep them without touching call sites. When unset, defaults reproduce the
-    # historical behaviour exactly. The num_workers==0 guards inside
+    # sweep them without touching call sites. The num_workers==0 guards inside
     # create_lazy_dataloaders force prefetch/persistent off, so passing them
     # here is always safe.
-    num_workers = int(
-        os.getenv("EPICLASS_NUM_WORKERS", os.getenv("SLURM_CPUS_PER_TASK", "4"))
-    )
+    #
+    # num_workers defaults to 0 (load in the main process) on benchmark evidence:
+    # signals come from a memory-mapped .npy, so __getitem__ does no decode or
+    # decompression -- only a collate copy. A worker therefore removes no CPU
+    # work while adding ~7.6 MB of shared-memory IPC per batch. Measured on
+    # 100kb_can / A100, 0 workers matched or beat every worker configuration for
+    # both the classifier and AVE, and needed only 1 core. See
+    # utils/benchmark/README.md.
+    #
+    # This holds where the per-sample vector is small enough that delivery is
+    # not the limit. At much finer resolutions (10kb, 1kb) bytes per sample grow
+    # 10-100x and workers may pay off again -- re-run the benchmark and set
+    # EPICLASS_NUM_WORKERS rather than assuming either way.
+    num_workers = int(os.getenv("EPICLASS_NUM_WORKERS", "0"))
+
+    # Inert at the default num_workers=0 -- create_lazy_dataloaders replaces it
+    # with None there, since torch rejects it without workers. It is kept, at
+    # torch's own default of 2, for the override path above: setting
+    # EPICLASS_NUM_WORKERS>0 needs some queue depth, and the benchmark found 2
+    # vs 4 to differ by under 1%, so there is no evidence for another value.
     prefetch_factor = int(os.getenv("EPICLASS_PREFETCH_FACTOR", "2"))
     pin_memory = _env_bool("EPICLASS_PIN_MEMORY", torch.cuda.is_available())
     persistent_workers = _env_bool("EPICLASS_PERSISTENT_WORKERS", num_workers > 0)
