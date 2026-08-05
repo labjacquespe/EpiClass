@@ -845,11 +845,15 @@ def main():
     if args.allow_missing_chry:
         log.info("  chrY is optional: files missing only chrY will pass")
     if args.outlier_threshold is not None:
+        cap = (
+            "all recorded"
+            if args.max_outliers_per_file is None
+            else f"max {args.max_outliers_per_file} recorded per file"
+        )
         log.info(
-            "  value scan enabled: flagging abs(value) > %e and non-finite values"
-            " (max %d recorded per file)",
+            "  value scan enabled: flagging abs(value) > %e and non-finite values (%s)",
             args.outlier_threshold,
-            args.max_outliers_per_file,
+            cap,
         )
 
     progress = ProgressTracker(len(files), log, log_every=args.log_every)
