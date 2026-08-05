@@ -39,7 +39,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Set
 
@@ -172,7 +172,9 @@ def cli():
         help=(
             "Write offending values found by the value scan to this CSV "
             "(columns: file, dataset, index, value, kind). Requires "
-            "--outlier-threshold. An existing file is overwritten."
+            "--outlier-threshold. The file is created only if there is "
+            "something to write, and an existing file is never overwritten: "
+            "a timestamp is inserted into the name instead."
         ),
     )
     parser.add_argument(
@@ -191,7 +193,11 @@ def cli():
         "--log-file",
         type=str,
         default=None,
-        help="Optional log file path (includes per-file DEBUG detail).",
+        help=(
+            "Optional log file path (includes per-file DEBUG detail). An "
+            "existing file is never overwritten: a timestamp is inserted "
+            "into the name instead."
+        ),
     )
     parser.add_argument(
         "--log-every",
@@ -211,11 +217,37 @@ def cli():
     return args
 
 
+# ── Output paths ────────────────────────────────────────────────────────────
+
+
+def timestamped_path(path: Path) -> Path:
+    """Return `path` if free, else the same name with a timestamp inserted.
+
+    Output from an earlier run is never clobbered: `scan.csv` becomes
+    `scan_20260805-143000.csv`, and a numeric suffix is appended in the
+    (unlikely) event that name is taken too.
+    """
+    if not path.exists():
+        return path
+
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    candidate = path.with_name(f"{path.stem}_{stamp}{path.suffix}")
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.stem}_{stamp}-{counter}{path.suffix}")
+        counter += 1
+    return candidate
+
+
 # ── Logging setup ───────────────────────────────────────────────────────────
 
 
 def setup_logging(logfile=None):
-    """Configure logging to stderr and optionally to a file."""
+    """Configure logging to stderr and optionally to a file.
+
+    An existing log file is not overwritten; the run logs to a timestamped
+    variant of the requested name instead.
+    """
     logger = logging.getLogger("h5integrity")
     logger.setLevel(logging.DEBUG)
     fmt = logging.Formatter(
@@ -229,10 +261,19 @@ def setup_logging(logfile=None):
     logger.addHandler(stream_handler)
     # Optionally log to file (includes DEBUG for per-file detail)
     if logfile:
-        file_handler = logging.FileHandler(logfile, mode="w", encoding="utf-8")
+        requested = Path(logfile)
+        logpath = timestamped_path(requested)
+        logpath.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(logpath, mode="w", encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(fmt)
         logger.addHandler(file_handler)
+        if logpath != requested:
+            logger.warning(
+                "Log file %s already exists; logging to %s instead.",
+                requested,
+                logpath,
+            )
     return logger
 
 
@@ -749,20 +790,63 @@ def _log_result(log, res, failed_files):
 OUTLIER_CSV_FIELDS = ["file", "dataset", "index", "value", "kind"]
 
 
-@contextmanager
-def _open_outlier_writer(csv_path: Path, log):
-    """Yield a csv.DictWriter for offending values, header already written."""
-    if csv_path.exists():
-        log.warning("Output file %s already exists and will be overwritten.", csv_path)
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(csv_path, "w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=OUTLIER_CSV_FIELDS)
-        writer.writeheader()
-        yield writer
+class OutlierCsvWriter:
+    """CSV sink that creates its file only once there is something to write.
+
+    A clean run therefore leaves no output file behind, rather than an empty
+    header-only one that reads like a result. The destination is resolved at
+    that first write, so an existing file is never overwritten: `csv_path`
+    reports where the rows actually went.
+    """
+
+    def __init__(self, csv_path: Path, log):
+        self.csv_path = csv_path
+        self.log = log
+        self.n_written = 0
+        self._handle = None
+        self._writer = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        self.close()
+        return False
+
+    def writerows(self, rows):
+        """Write offending-value rows, opening the file on first use."""
+        if not rows:
+            return
+        if self._writer is None:
+            free_path = timestamped_path(self.csv_path)
+            if free_path != self.csv_path:
+                self.log.warning(
+                    "Output file %s already exists; writing to %s instead.",
+                    self.csv_path,
+                    free_path,
+                )
+                self.csv_path = free_path
+            self.csv_path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = open(  # pylint: disable=consider-using-with
+                self.csv_path, "w", encoding="utf-8", newline=""
+            )
+            self._writer = csv.DictWriter(self._handle, fieldnames=OUTLIER_CSV_FIELDS)
+            self._writer.writeheader()
+        self._writer.writerows(rows)
+        self.n_written += len(rows)
+
+    def close(self):
+        """Close the file, if one was ever opened."""
+        if self._handle is not None:
+            self._handle.close()
+            self._handle = None
 
 
 def _run_checks(files, expected_chromosomes, args, log, progress, writer=None):
-    """Check every file in parallel, returning (failed_files, allowed_missing_count).
+    """Check every file in parallel.
+
+    Returns (failed_files, allowed_missing_count). Offending values go to
+    `writer`, which tracks its own row count.
 
     Results are consumed on the calling thread, so `writer` needs no locking.
     """
@@ -861,15 +945,22 @@ def main():
     with ExitStack() as stack:
         writer = None
         if args.outlier_csv is not None:
-            writer = stack.enter_context(_open_outlier_writer(args.outlier_csv, log))
+            writer = stack.enter_context(OutlierCsvWriter(args.outlier_csv, log))
         failed_files, allowed_missing_count = _run_checks(
             files, expected_chromosomes, args, log, progress, writer
         )
 
     progress.summary()
 
-    if args.outlier_csv is not None:
-        log.info("Offending values written to %s", args.outlier_csv)
+    if writer is not None:
+        if writer.n_written:
+            log.info(
+                "%d offending values written to %s",
+                writer.n_written,
+                writer.csv_path,
+            )
+        else:
+            log.info("No offending values found; no CSV written.")
 
     if allowed_missing_count:
         log.info(

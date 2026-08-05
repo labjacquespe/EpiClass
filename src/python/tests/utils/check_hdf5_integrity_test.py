@@ -15,7 +15,9 @@ Run with:
 
 No external HDF5 tools are invoked.
 """
-# pylint: disable=missing-function-docstring, use-implicit-booleaness-not-comparison
+# One test module per source module, so this one is allowed to run long.
+# pylint: disable=missing-function-docstring, use-implicit-booleaness-not-comparison, too-many-lines
+import logging
 from types import SimpleNamespace
 
 import h5py
@@ -926,6 +928,156 @@ class TestCheckFileValueScan:
         assert r["ok"] is False
         assert r["values_ok"] is False
         assert r["error"]
+
+
+# ── Outlier CSV sink ────────────────────────────────────────────────────────
+
+
+class TestOutlierCsvWriter:
+    """The CSV is created lazily, so a clean run leaves no file behind."""
+
+    def _writer(self, tmp_path, name="out.csv"):
+        return mod.OutlierCsvWriter(tmp_path / name, logging.getLogger("test"))
+
+    def test_no_file_created_when_nothing_written(self, tmp_path):
+        w = self._writer(tmp_path)
+        w.close()
+        assert not (tmp_path / "out.csv").exists()
+        assert w.n_written == 0
+
+    def test_empty_rows_do_not_create_the_file(self, tmp_path):
+        w = self._writer(tmp_path)
+        w.writerows([])
+        w.close()
+        assert not (tmp_path / "out.csv").exists()
+
+    def test_first_write_creates_file_with_header(self, tmp_path):
+        w = self._writer(tmp_path)
+        w.writerows(
+            [
+                {
+                    "file": "a.h5",
+                    "dataset": "chr1",
+                    "index": 3,
+                    "value": 5e10,
+                    "kind": "outlier",
+                }
+            ]
+        )
+        w.close()
+        lines = (tmp_path / "out.csv").read_text(encoding="utf-8").splitlines()
+        assert lines[0] == "file,dataset,index,value,kind"
+        assert lines[1].startswith("a.h5,chr1,3,")
+        assert w.n_written == 1
+
+    def test_header_written_once_across_calls(self, tmp_path):
+        w = self._writer(tmp_path)
+        row = {
+            "file": "a.h5",
+            "dataset": "chr1",
+            "index": 0,
+            "value": 1.0,
+            "kind": "outlier",
+        }
+        w.writerows([row])
+        w.writerows([row, row])
+        w.close()
+        lines = (tmp_path / "out.csv").read_text(encoding="utf-8").splitlines()
+        assert lines.count("file,dataset,index,value,kind") == 1
+        assert len(lines) == 4  # header + 3 rows
+        assert w.n_written == 3
+
+    def test_existing_file_untouched_when_nothing_written(self, tmp_path):
+        # A CSV from an earlier run must not be silently truncated.
+        previous = tmp_path / "out.csv"
+        previous.write_text("previous content\n", encoding="utf-8")
+        w = self._writer(tmp_path)
+        w.close()
+        assert previous.read_text(encoding="utf-8") == "previous content\n"
+
+    def test_existing_file_diverted_to_timestamped_name(self, tmp_path):
+        previous = tmp_path / "out.csv"
+        previous.write_text("previous content\n", encoding="utf-8")
+        w = self._writer(tmp_path)
+        w.writerows(
+            [
+                {
+                    "file": "a.h5",
+                    "dataset": "chr1",
+                    "index": 0,
+                    "value": 1.0,
+                    "kind": "outlier",
+                }
+            ]
+        )
+        w.close()
+        # The earlier run's file survives untouched...
+        assert previous.read_text(encoding="utf-8") == "previous content\n"
+        # ...and csv_path reports where the rows actually went.
+        assert w.csv_path != previous
+        assert w.csv_path.exists()
+        assert w.csv_path.name.startswith("out_")
+        assert w.csv_path.suffix == ".csv"
+        assert "chr1" in w.csv_path.read_text(encoding="utf-8")
+
+    def test_context_manager_closes(self, tmp_path):
+        with self._writer(tmp_path) as w:
+            w.writerows(
+                [
+                    {
+                        "file": "a.h5",
+                        "dataset": "chr1",
+                        "index": 0,
+                        "value": 1.0,
+                        "kind": "outlier",
+                    }
+                ]
+            )
+        # Readable straight after the block, so the handle was flushed/closed.
+        assert (tmp_path / "out.csv").read_text(encoding="utf-8").count("\n") == 2
+
+
+class TestTimestampedPath:
+    """Never clobber an existing file."""
+
+    def test_free_path_returned_unchanged(self, tmp_path):
+        p = tmp_path / "scan.csv"
+        assert mod.timestamped_path(p) == p
+
+    def test_taken_path_gets_timestamp_before_suffix(self, tmp_path):
+        p = tmp_path / "scan.csv"
+        p.touch()
+        out = mod.timestamped_path(p)
+        assert out != p
+        assert not out.exists()
+        assert out.parent == p.parent
+        assert out.name.startswith("scan_")
+        assert out.suffix == ".csv"
+
+    def test_log_file_diverted_instead_of_truncated(self, tmp_path):
+        # setup_logging must not clobber an earlier run's log either.
+        previous = tmp_path / "run.log"
+        previous.write_text("previous run\n", encoding="utf-8")
+        logger = mod.setup_logging(str(previous))
+        try:
+            logger.info("hello")
+            written = [p for p in tmp_path.glob("run_*.log") if p.name != previous.name]
+            assert len(written) == 1
+            assert "hello" in written[0].read_text(encoding="utf-8")
+            assert previous.read_text(encoding="utf-8") == "previous run\n"
+        finally:
+            for handler in list(logger.handlers):
+                handler.close()
+                logger.removeHandler(handler)
+
+    def test_taken_timestamp_gets_numeric_suffix(self, tmp_path, monkeypatch):
+        # Freeze the clock so the first timestamped candidate is taken too.
+        monkeypatch.setattr(mod.time, "strftime", lambda _fmt: "20260805-143000")
+        p = tmp_path / "scan.csv"
+        p.touch()
+        (tmp_path / "scan_20260805-143000.csv").touch()
+        out = mod.timestamped_path(p)
+        assert out.name == "scan_20260805-143000-1.csv"
 
 
 # ── Regex parsing sanity ────────────────────────────────────────────────────
