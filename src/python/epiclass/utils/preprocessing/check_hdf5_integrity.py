@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Two-phase HDF5 file integrity checker:
+Three-phase HDF5 file integrity checker:
 
   Phase 1 — h5check:   Verify file format compliance against the HDF5 spec.
                         This catches low-level corruption (bad superblocks,
@@ -8,6 +8,12 @@ Two-phase HDF5 file integrity checker:
 
   Phase 2 — h5dump -H: Verify that all expected chromosome datasets
                         (chr1-22, chrX, chrY) are present in the metadata.
+
+  Phase 3 — value scan (opt-in, via --outlier-threshold): read the signal with
+                        h5py and flag values whose absolute amplitude exceeds a
+                        threshold, plus any non-finite (NaN / +-Inf) values.
+                        Phases 1 and 2 never read the data, so this is the only
+                        phase that catches corrupted signal in a valid file.
 
 Optional dtype verification (via --dtype-mode):
   float : accept any float dtype; flag 64-bit (F64) as oversized.
@@ -18,9 +24,14 @@ Optional dtype verification (via --dtype-mode):
 
 Usage:
     python check_hdf5_integrity.py file_list.txt -t 8 --dtype-mode float
+
+    # format + datasets + amplitude scan, offending values written to CSV
+    python check_hdf5_integrity.py file_list.txt -t 12 \\
+        --outlier-threshold 1e10 --outlier-csv scan_results.csv
 """
 # pylint: disable=too-many-branches,too-many-positional-arguments
 import argparse
+import csv
 import logging
 import re
 import subprocess
@@ -28,8 +39,12 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Set
+
+import h5py
+import numpy as np
 
 EXPECTED_CHROMOSOMES_HUMAN = [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"]
 EXPECTED_CHROMOSOMES_MOUSE = [f"chr{i}" for i in range(1, 20)] + ["chrX", "chrY"]
@@ -76,7 +91,10 @@ def classify_dtype(dtype):
 def cli():
     """Command-line interface."""
     parser = argparse.ArgumentParser(
-        description="Two-phase HDF5 integrity checker: h5check (format) + h5dump -H (datasets)."
+        description=(
+            "HDF5 integrity checker: h5check (format) + h5dump -H (datasets) "
+            "+ optional value scan (--outlier-threshold)."
+        )
     )
     parser.add_argument(
         "file_list",
@@ -137,6 +155,39 @@ def cli():
         ),
     )
     parser.add_argument(
+        "--outlier-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Enable the value scan (phase 3): flag values whose absolute "
+            "amplitude exceeds this threshold, plus any non-finite (NaN/Inf) "
+            "value. Reads the signal with h5py, so it is much slower than the "
+            "metadata-only phases. Disabled by default."
+        ),
+    )
+    parser.add_argument(
+        "--outlier-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Write offending values found by the value scan to this CSV "
+            "(columns: file, dataset, index, value, kind). Requires "
+            "--outlier-threshold. An existing file is overwritten."
+        ),
+    )
+    parser.add_argument(
+        "--max-outliers-per-file",
+        type=int,
+        default=None,
+        help=(
+            "Cap on individual offending values recorded per file. Unlimited "
+            "by default. Records are held in memory until the file's results "
+            "are written, so a fully corrupted fine-resolution file (millions "
+            "of bins) can cost ~1 GB per in-flight file: cap it on memory-"
+            "constrained jobs. Reported counts stay exact regardless."
+        ),
+    )
+    parser.add_argument(
         "--log-file",
         type=str,
         default=None,
@@ -148,7 +199,16 @@ def cli():
         default=50,
         help="Print progress every N files (default: 50).",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+
+    if args.outlier_csv is not None and args.outlier_threshold is None:
+        parser.error("--outlier-csv requires --outlier-threshold")
+    if args.max_outliers_per_file is not None and args.max_outliers_per_file < 1:
+        parser.error("--max-outliers-per-file must be >= 1")
+    if args.outlier_threshold is not None:
+        args.outlier_threshold = abs(args.outlier_threshold)
+
+    return args
 
 
 # ── Logging setup ───────────────────────────────────────────────────────────
@@ -456,6 +516,96 @@ def run_h5dump_check(
     }
 
 
+def run_value_scan(
+    filepath,
+    expected_chromosomes: Set[str],
+    threshold: float,
+    max_records: int | None = None,
+):
+    """
+    Read chromosome datasets and flag out-of-range and non-finite values.
+
+    Two conditions are reported, both of which indicate corrupted signal:
+      - outlier   : abs(value) > threshold (strictly greater).
+      - nonfinite : NaN or +-Inf. Checked separately because abs(nan) > t is
+                    False, so a pure threshold test silently misses NaN.
+
+    Only datasets named in `expected_chromosomes` are scanned; the file is
+    expected to hold exactly one top-level group (the single-sample layout
+    produced by epigeec), and a different group count is reported as an error.
+
+    Every offending value is recorded by default. `max_records` caps how many
+    are materialised per file, for memory-constrained runs over fine-resolution
+    data where a fully corrupted file holds millions of them; the reported
+    counts stay exact either way.
+
+    Returns dict with 'passed', 'n_outliers', 'n_nonfinite', 'records', 'error'.
+    Each record is {file, dataset, index, value, kind}.
+    """
+    result = {
+        "passed": False,
+        "n_outliers": 0,
+        "n_nonfinite": 0,
+        "records": [],
+        "error": None,
+    }
+
+    records = []
+    n_outliers = 0
+    n_nonfinite = 0
+
+    def _collect(dataset_name, data, mask, kind):
+        """Count masked entries and record them, honouring the per-file cap."""
+        count = int(np.count_nonzero(mask))
+        if not count:
+            return 0
+        room = count if max_records is None else max_records - len(records)
+        if room > 0:
+            for idx in np.flatnonzero(mask)[:room]:
+                records.append(
+                    {
+                        "file": str(filepath),
+                        "dataset": dataset_name,
+                        "index": int(idx),
+                        "value": float(data[idx]),
+                        "kind": kind,
+                    }
+                )
+        return count
+
+    try:
+        with h5py.File(filepath, "r") as h5file:
+            groups = [obj for _, obj in h5file.items() if isinstance(obj, h5py.Group)]
+            if len(groups) != 1:
+                return {
+                    **result,
+                    "error": f"expected 1 group, found {len(groups)}",
+                }
+
+            group = groups[0]
+            for name in expected_chromosomes:
+                dset = group.get(name)  # type: ignore[union-attr]
+                if not isinstance(dset, h5py.Dataset):
+                    # Dataset presence is phase 2's job; nothing to scan here.
+                    continue
+
+                data = np.asarray(dset[...]).ravel()
+                finite = np.isfinite(data)
+                n_nonfinite += _collect(name, data, ~finite, "nonfinite")
+                over = finite & (np.abs(data) > threshold)
+                n_outliers += _collect(name, data, over, "outlier")
+    except (OSError, KeyError, ValueError) as err:
+        return {**result, "error": str(err)}
+
+    return {
+        "passed": not n_outliers and not n_nonfinite,
+        "n_outliers": n_outliers,
+        "n_nonfinite": n_nonfinite,
+        "records": records,
+        "error": None,
+    }
+
+
 def check_file(
     filepath,
     expected_chromosomes: Set[str],
@@ -463,12 +613,23 @@ def check_file(
     h5dump_timeout=120,
     dtype_mode="off",
     allow_missing_chry=False,
+    outlier_threshold=None,
+    max_outliers_per_file=None,
 ):
-    """Run h5check then h5dump -H on a single file, returning a result dict."""
+    """Run h5check, h5dump -H, then (optionally) the value scan on a single file.
+
+    The value scan runs only when `outlier_threshold` is not None, and only if
+    the earlier phases passed — there is no point reading signal out of a file
+    that is already known to be malformed. When it is disabled, 'values_ok'
+    stays True so the overall verdict is unchanged.
+
+    Returns a result dict.
+    """
     result = {
         "file": filepath,
         "h5check_ok": False,
         "datasets_ok": False,
+        "values_ok": True,
         "ok": False,
         "missing": [],
         "missing_allowed": [],
@@ -476,6 +637,9 @@ def check_file(
         "oversized": [],
         "mixed": [],
         "family": None,
+        "n_outliers": 0,
+        "n_nonfinite": 0,
+        "records": [],
         "error": None,
     }
 
@@ -512,6 +676,23 @@ def check_file(
             result["mixed"] = h5d["mixed"]
         return result
 
+    # Phase 3: value scan (opt-in)
+    if outlier_threshold is not None:
+        scan = run_value_scan(
+            filepath,
+            expected_chromosomes=expected_chromosomes,
+            threshold=outlier_threshold,
+            max_records=max_outliers_per_file,
+        )
+        result["values_ok"] = scan["passed"]
+        result["n_outliers"] = scan["n_outliers"]
+        result["n_nonfinite"] = scan["n_nonfinite"]
+        result["records"] = scan["records"]
+        if not scan["passed"]:
+            if scan["error"]:
+                result["error"] = scan["error"]
+            return result
+
     result["ok"] = True
     return result
 
@@ -530,6 +711,10 @@ def format_failure(res):
         reasons.append(f"oversized dtype {', '.join(res['oversized'])}")
     if res["mixed"]:
         reasons.append(f"mixed dtype families {', '.join(res['mixed'])}")
+    if res.get("n_outliers"):
+        reasons.append(f"{res['n_outliers']} values above threshold")
+    if res.get("n_nonfinite"):
+        reasons.append(f"{res['n_nonfinite']} non-finite values")
 
     return "; ".join(reasons)
 
@@ -548,11 +733,67 @@ def _log_result(log, res, failed_files):
             log.debug("OK    %s", fname)
         return
     if res["error"]:
-        phase = "h5check" if not res["h5check_ok"] else "h5dump"
+        if not res["h5check_ok"]:
+            phase = "h5check"
+        elif not res["datasets_ok"]:
+            phase = "h5dump"
+        else:
+            phase = "values"
         log.warning("FAIL  %s  [%s] %s", fname, phase, res["error"])
     else:
-        log.warning("FAIL  %s  [datasets] %s", fname, format_failure(res))
+        phase = "datasets" if not res["datasets_ok"] else "values"
+        log.warning("FAIL  %s  [%s] %s", fname, phase, format_failure(res))
     failed_files.append(res)
+
+
+OUTLIER_CSV_FIELDS = ["file", "dataset", "index", "value", "kind"]
+
+
+@contextmanager
+def _open_outlier_writer(csv_path: Path, log):
+    """Yield a csv.DictWriter for offending values, header already written."""
+    if csv_path.exists():
+        log.warning("Output file %s already exists and will be overwritten.", csv_path)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(csv_path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=OUTLIER_CSV_FIELDS)
+        writer.writeheader()
+        yield writer
+
+
+def _run_checks(files, expected_chromosomes, args, log, progress, writer=None):
+    """Check every file in parallel, returning (failed_files, allowed_missing_count).
+
+    Results are consumed on the calling thread, so `writer` needs no locking.
+    """
+    failed_files = []
+    allowed_missing_count = 0
+
+    with ThreadPoolExecutor(max_workers=args.threads) as pool:
+        futures = {
+            pool.submit(
+                check_file,
+                f,
+                expected_chromosomes,
+                args.h5check_timeout,
+                args.h5dump_timeout,
+                args.dtype_mode,
+                args.allow_missing_chry,
+                args.outlier_threshold,
+                args.max_outliers_per_file,
+            ): f
+            for f in files
+        }
+        for future in as_completed(futures):
+            res = future.result()
+            _log_result(log, res, failed_files)
+            progress.record(res["ok"])
+            if res["ok"] and res.get("missing_allowed"):
+                allowed_missing_count += 1
+            if writer is not None and res.get("records"):
+                writer.writerows(res["records"])
+
+    return failed_files, allowed_missing_count
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -603,32 +844,28 @@ def main():
         )
     if args.allow_missing_chry:
         log.info("  chrY is optional: files missing only chrY will pass")
+    if args.outlier_threshold is not None:
+        log.info(
+            "  value scan enabled: flagging abs(value) > %e and non-finite values"
+            " (max %d recorded per file)",
+            args.outlier_threshold,
+            args.max_outliers_per_file,
+        )
 
     progress = ProgressTracker(len(files), log, log_every=args.log_every)
-    failed_files = []
-    allowed_missing_count = 0
 
-    with ThreadPoolExecutor(max_workers=args.threads) as pool:
-        futures = {
-            pool.submit(
-                check_file,
-                f,
-                expected_chromosomes,
-                args.h5check_timeout,
-                args.h5dump_timeout,
-                args.dtype_mode,
-                args.allow_missing_chry,
-            ): f
-            for f in files
-        }
-        for future in as_completed(futures):
-            res = future.result()
-            _log_result(log, res, failed_files)
-            progress.record(res["ok"])
-            if res["ok"] and res.get("missing_allowed"):
-                allowed_missing_count += 1
+    with ExitStack() as stack:
+        writer = None
+        if args.outlier_csv is not None:
+            writer = stack.enter_context(_open_outlier_writer(args.outlier_csv, log))
+        failed_files, allowed_missing_count = _run_checks(
+            files, expected_chromosomes, args, log, progress, writer
+        )
 
     progress.summary()
+
+    if args.outlier_csv is not None:
+        log.info("Offending values written to %s", args.outlier_csv)
 
     if allowed_missing_count:
         log.info(

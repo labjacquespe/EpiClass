@@ -4,7 +4,8 @@ Tests for check_hdf5_integrity.py.
 These tests exercise the dtype classification and dataset verification logic
 in isolation (unit tests), plus the full `run_h5dump_check` / `check_file`
 path with `subprocess.run` monkeypatched to return canned `h5dump -H` /
-`h5check` output (integration tests).
+`h5check` output (integration tests). The value scan (`run_value_scan`) is
+exercised against real, tiny HDF5 files written to tmp_path.
 
 Both human (chr1-22, chrX, chrY = 24 chromosomes) and mouse
 (chr1-19, chrX, chrY = 21 chromosomes) contexts are exercised.
@@ -17,6 +18,8 @@ No external HDF5 tools are invoked.
 # pylint: disable=missing-function-docstring, use-implicit-booleaness-not-comparison
 from types import SimpleNamespace
 
+import h5py
+import numpy as np
 import pytest
 
 from epiclass.utils.preprocessing import check_hdf5_integrity as mod
@@ -26,6 +29,7 @@ from epiclass.utils.preprocessing.check_hdf5_integrity import (
     check_file,
     classify_dtype,
     run_h5dump_check,
+    run_value_scan,
     verify_dtypes,
 )
 
@@ -66,6 +70,26 @@ def _uniform(dtype, chroms=None):
     """All chromosomes mapped to the same dtype. Defaults to the human set."""
     chroms = chroms if chroms is not None else EXPECTED_CHROMOSOMES_HUMAN
     return {c: dtype for c in chroms}
+
+
+def _write_hdf5(path, chrom_arrays, group_name="sample", extra_groups=0):
+    """Write a single-sample HDF5: one top-level group holding chrom datasets.
+
+    `extra_groups` adds sibling top-level groups, to exercise the group-count
+    guard in the value scan.
+    """
+    with h5py.File(path, "w") as f:
+        grp = f.create_group(group_name)
+        for chrom, values in chrom_arrays.items():
+            grp.create_dataset(chrom, data=np.asarray(values, dtype=np.float32))
+        for i in range(extra_groups):
+            f.create_group(f"extra{i}")
+    return path
+
+
+def _clean_file(tmp_path, name="clean.h5", chroms=("chr1", "chr2")):
+    """A small, all-finite, in-range file."""
+    return _write_hdf5(tmp_path / name, {c: [0.0, 1.5, -2.5] for c in chroms})
 
 
 def _fake_run_factory(
@@ -648,6 +672,8 @@ class TestFormatFailure:
             "wrong_dtype": [],
             "oversized": [],
             "mixed": [],
+            "n_outliers": 0,
+            "n_nonfinite": 0,
         }
         res.update(overrides)
         return res
@@ -672,18 +698,234 @@ class TestFormatFailure:
         r = self._base(mixed=["chr5=H5T_STD_U32LE"])
         assert mod.format_failure(r) == "mixed dtype families chr5=H5T_STD_U32LE"
 
+    def test_outliers_only(self):
+        r = self._base(n_outliers=3)
+        assert mod.format_failure(r) == "3 values above threshold"
+
+    def test_nonfinite_only(self):
+        r = self._base(n_nonfinite=2)
+        assert mod.format_failure(r) == "2 non-finite values"
+
+    def test_zero_counts_produce_no_reason(self):
+        # A file failing for another reason must not gain a "0 values" clause.
+        r = self._base(missing=["chr1"], n_outliers=0, n_nonfinite=0)
+        assert mod.format_failure(r) == "missing chr1"
+
+    def test_missing_count_keys_tolerated(self):
+        # Results built before the value scan existed lack the count keys.
+        r = self._base(missing=["chr1"])
+        del r["n_outliers"]
+        del r["n_nonfinite"]
+        assert mod.format_failure(r) == "missing chr1"
+
     def test_combined_reasons(self):
         r = self._base(
             missing=["chrY"],
             oversized=["chr3=H5T_IEEE_F64LE"],
             mixed=["chr5=H5T_STD_U32LE"],
+            n_outliers=1,
+            n_nonfinite=4,
         )
         msg = mod.format_failure(r)
         assert "missing chrY" in msg
         assert "oversized dtype chr3=H5T_IEEE_F64LE" in msg
         assert "mixed dtype families chr5=H5T_STD_U32LE" in msg
+        assert "1 values above threshold" in msg
+        assert "4 non-finite values" in msg
         # Reasons are joined by '; '
-        assert msg.count("; ") == 2
+        assert msg.count("; ") == 4
+
+
+# ── run_value_scan (phase 3) ────────────────────────────────────────────────
+
+
+class TestRunValueScan:
+    """Amplitude / non-finite scanning over real (tiny) HDF5 files."""
+
+    def test_clean_file_passes(self, tmp_path):
+        f = _clean_file(tmp_path)
+        r = run_value_scan(str(f), {"chr1", "chr2"}, threshold=1e10)
+        assert r["passed"] is True
+        assert r["n_outliers"] == 0
+        assert r["n_nonfinite"] == 0
+        assert r["records"] == []
+        assert r["error"] is None
+
+    def test_single_outlier_flagged_with_position_and_value(self, tmp_path):
+        f = _write_hdf5(tmp_path / "hot.h5", {"chr1": [0.0, 5e10, 1.0]})
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is False
+        assert r["n_outliers"] == 1
+        assert r["n_nonfinite"] == 0
+        (rec,) = r["records"]
+        assert rec["dataset"] == "chr1"
+        assert rec["index"] == 1
+        assert rec["value"] == pytest.approx(5e10)
+        assert rec["kind"] == "outlier"
+
+    def test_negative_outlier_flagged(self, tmp_path):
+        # The threshold is on absolute amplitude.
+        f = _write_hdf5(tmp_path / "cold.h5", {"chr1": [0.0, -5e10]})
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["n_outliers"] == 1
+        assert r["records"][0]["value"] == pytest.approx(-5e10)
+
+    def test_value_exactly_at_threshold_not_flagged(self, tmp_path):
+        # Comparison is strictly greater-than.
+        f = _write_hdf5(tmp_path / "edge.h5", {"chr1": [100.0, -100.0]})
+        r = run_value_scan(str(f), {"chr1"}, threshold=100.0)
+        assert r["passed"] is True
+        assert r["n_outliers"] == 0
+
+    def test_nan_and_inf_counted_as_nonfinite_not_outliers(self, tmp_path):
+        # abs(nan) > t is False, which is exactly why non-finite gets its own
+        # check; inf must not be double-counted as an outlier either.
+        f = _write_hdf5(
+            tmp_path / "nan.h5",
+            {"chr1": [np.nan, np.inf, -np.inf, 1.0]},
+        )
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is False
+        assert r["n_nonfinite"] == 3
+        assert r["n_outliers"] == 0
+        assert {rec["kind"] for rec in r["records"]} == {"nonfinite"}
+
+    def test_outliers_and_nonfinite_both_reported(self, tmp_path):
+        f = _write_hdf5(tmp_path / "both.h5", {"chr1": [np.nan, 5e10, 1.0]})
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["n_nonfinite"] == 1
+        assert r["n_outliers"] == 1
+        assert {rec["kind"] for rec in r["records"]} == {"nonfinite", "outlier"}
+
+    def test_only_expected_chromosomes_scanned(self, tmp_path):
+        # A stray dataset outside the expected set is ignored.
+        f = _write_hdf5(
+            tmp_path / "stray.h5",
+            {"chr1": [1.0], "chrM": [5e10]},
+        )
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is True
+        assert r["n_outliers"] == 0
+
+    def test_missing_dataset_is_not_an_error(self, tmp_path):
+        # Dataset presence is phase 2's job; the scan just skips absentees.
+        f = _write_hdf5(tmp_path / "partial.h5", {"chr1": [1.0]})
+        r = run_value_scan(str(f), {"chr1", "chr2"}, threshold=1e10)
+        assert r["passed"] is True
+        assert r["error"] is None
+
+    @pytest.mark.parametrize("extra_groups, expected", [(1, 2), (2, 3)])
+    def test_multiple_top_level_groups_errors(self, tmp_path, extra_groups, expected):
+        f = _write_hdf5(tmp_path / "multi.h5", {"chr1": [1.0]}, extra_groups=extra_groups)
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is False
+        assert r["error"] == f"expected 1 group, found {expected}"
+
+    def test_zero_groups_errors(self, tmp_path):
+        f = tmp_path / "empty.h5"
+        with h5py.File(f, "w") as handle:
+            handle.create_dataset("chr1", data=np.zeros(3, dtype=np.float32))
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is False
+        assert r["error"] == "expected 1 group, found 0"
+
+    def test_unreadable_file_reports_error(self, tmp_path):
+        f = tmp_path / "notanhdf5.h5"
+        f.write_bytes(b"definitely not HDF5")
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["passed"] is False
+        assert r["error"]
+
+    def test_uncapped_by_default(self, tmp_path):
+        # Every offending value is recorded unless a cap is asked for.
+        f = _write_hdf5(tmp_path / "many.h5", {"chr1": [5e10] * 50})
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10)
+        assert r["n_outliers"] == 50
+        assert len(r["records"]) == 50
+
+    def test_max_records_caps_records_but_not_counts(self, tmp_path):
+        f = _write_hdf5(tmp_path / "many.h5", {"chr1": [5e10] * 50})
+        r = run_value_scan(str(f), {"chr1"}, threshold=1e10, max_records=5)
+        assert r["n_outliers"] == 50  # count stays exact
+        assert len(r["records"]) == 5  # storage is capped
+
+    def test_records_cap_is_per_file_across_datasets(self, tmp_path):
+        f = _write_hdf5(
+            tmp_path / "many2.h5",
+            {"chr1": [5e10] * 10, "chr2": [5e10] * 10},
+        )
+        r = run_value_scan(str(f), {"chr1", "chr2"}, threshold=1e10, max_records=12)
+        assert r["n_outliers"] == 20
+        assert len(r["records"]) == 12
+
+
+# ── check_file with the value scan wired in ─────────────────────────────────
+
+
+class TestCheckFileValueScan:
+    """Phase 3 gating and its effect on the overall verdict."""
+
+    def _mock_tools(self, monkeypatch, chroms):
+        stdout = _h5dump_stdout(_uniform("H5T_IEEE_F32LE", chroms))
+        monkeypatch.setattr(mod.subprocess, "run", _fake_run_factory(stdout))
+
+    def test_scan_skipped_when_threshold_is_none(self, monkeypatch, tmp_path):
+        # A file full of outliers still passes when the scan is disabled.
+        chroms = ["chr1"]
+        f = _write_hdf5(tmp_path / "hot.h5", {"chr1": [5e10]})
+        self._mock_tools(monkeypatch, chroms)
+        r = check_file(str(f), set(chroms), dtype_mode="off")
+        assert r["ok"] is True
+        assert r["values_ok"] is True
+        assert r["n_outliers"] == 0
+        assert r["records"] == []
+
+    def test_outlier_fails_otherwise_valid_file(self, monkeypatch, tmp_path):
+        chroms = ["chr1"]
+        f = _write_hdf5(tmp_path / "hot.h5", {"chr1": [0.0, 5e10]})
+        self._mock_tools(monkeypatch, chroms)
+        r = check_file(str(f), set(chroms), dtype_mode="off", outlier_threshold=1e10)
+        assert r["ok"] is False
+        assert r["h5check_ok"] is True
+        assert r["datasets_ok"] is True
+        assert r["values_ok"] is False
+        assert r["n_outliers"] == 1
+        assert r["error"] is None
+        assert "1 values above threshold" in mod.format_failure(r)
+
+    def test_clean_file_passes_with_scan_enabled(self, monkeypatch, tmp_path):
+        chroms = ["chr1", "chr2"]
+        f = _clean_file(tmp_path, chroms=chroms)
+        self._mock_tools(monkeypatch, chroms)
+        r = check_file(str(f), set(chroms), dtype_mode="off", outlier_threshold=1e10)
+        assert r["ok"] is True
+        assert r["values_ok"] is True
+
+    def test_scan_not_run_when_h5check_fails(self, monkeypatch, tmp_path):
+        # Short-circuit: no scan result is produced for a malformed file.
+        f = _write_hdf5(tmp_path / "hot.h5", {"chr1": [5e10]})
+        monkeypatch.setattr(
+            mod.subprocess,
+            "run",
+            _fake_run_factory(
+                _h5dump_stdout(_uniform("H5T_IEEE_F32LE", ["chr1"])),
+                h5check_returncode=1,
+                h5check_stderr="bad superblock",
+            ),
+        )
+        r = check_file(str(f), {"chr1"}, dtype_mode="off", outlier_threshold=1e10)
+        assert r["ok"] is False
+        assert r["n_outliers"] == 0
+        assert r["records"] == []
+
+    def test_scan_error_surfaces_as_result_error(self, monkeypatch, tmp_path):
+        f = tmp_path / "broken.h5"
+        f.write_bytes(b"not HDF5")
+        self._mock_tools(monkeypatch, ["chr1"])
+        r = check_file(str(f), {"chr1"}, dtype_mode="off", outlier_threshold=1e10)
+        assert r["ok"] is False
+        assert r["values_ok"] is False
+        assert r["error"]
 
 
 # ── Regex parsing sanity ────────────────────────────────────────────────────
