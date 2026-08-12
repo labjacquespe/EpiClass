@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --account=:::your-account:::
 #SBATCH --job-name=:::your-job-name:::
-#SBATCH --output=%x-%j.out
+#SBATCH --output=%x-job%j.out
 #SBATCH --time=:::time::: # ex: 48:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=:::memory::: # ex: 16G
@@ -25,11 +25,59 @@
 # epigeec already on PATH). Cluster-specific defaults are marked "EDIT" below and
 # can also be overridden per-run via -C / -L / -o.
 #
-# Examples:
-#   sbatch --job-name=hdf5_1kb make_hdf5_template.sh -d /path/to/bw -r 1000 -c noy
-#   sbatch make_hdf5_template.sh -l samples.list -r 1000,10000,100000 -c can -o /out/dir
+# --- Examples & expected output directory --- #
+#
+# 1) Directory input, explicit -o, multiple resolutions:
+#      bash make_hdf5_template.sh -t -r 1000,10000,100000 -c can \
+#        -L "${base_dir}" -o "${base_dir}/hdf5" -d "${base_dir}/bw"
+#    -o is explicit and -n is not given, so OUTBASE is taken as the literal
+#    target (no basename-of--d subdir added). Multiple resolutions still each
+#    get their own labelled subdir under it:
+#      ${base_dir}/hdf5/1kb/
+#      ${base_dir}/hdf5/10kb/
+#      ${base_dir}/hdf5/100kb/
+#
+# 2) Filelist input, explicit -o, single resolution:
+#      sbatch --job-name my_hdf5_100kb_can --time=12:00:00 \
+#        make_hdf5_template.sh -c can -r 100000 \
+#        -l bw/my_samples_bw.list -o hdf5/full_genome/my_samples_100kb_can/
+#    -o is explicit and -n is not given, so again no name subdir is added; a
+#    single resolution also drops the per-resolution subdir, so OUTBASE is the
+#    literal, final output directory:
+#      hdf5/full_genome/my_samples_100kb_can/
+#
+# In both cases, passing -n NAME would still add NAME under OUTBASE. The
+# basename-of--d auto-naming only kicks in when -o is left at its built-in
+# default (see -n in usage() below).
+#
+# 3) Directory input, both -o and -n pertinent, single resolution:
+#      for cohort in ENCODE TCGA GTEx; do
+#        sbatch --job-name "my_hdf5_${cohort}_1kb_can" --time=24:00:00 \
+#          make_hdf5_template.sh -c can -r 1000 \
+#          -d "/path/to/${cohort}/bw" -o "${base_dir}/hdf5/full_genome" -n "${cohort}"
+#      done
+#    -o is a fixed constant shared by every submission (the common parent for
+#    this genome build); folding "${cohort}" into -o instead would work too
+#    (-n is never strictly required once -o is explicit -- see -n in usage()
+#    below), but -n is still worth setting here: with -d input the script
+#    writes a temp bigWig list to "tmp_${out_name}_input_bw.list" in the
+#    current working directory (not under -o). Without -n it would default to
+#    the shared "tmp__input_bw.list" for every cohort (each -d's basename is
+#    the same generic "bw", so no per-cohort name is derived), and concurrent
+#    sbatch submissions from the same CWD would clobber each other's temp list.
+#    Since -n is set, it is always appended regardless of -o being explicit:
+#      ${base_dir}/hdf5/full_genome/ENCODE/
+#      ${base_dir}/hdf5/full_genome/TCGA/
+#      ${base_dir}/hdf5/full_genome/GTEx/
 
 set -e
+
+# Capture the invocation before anything can touch the positional parameters, for
+# the stdout banner and the archived launch script further down. printf %q keeps it
+# copy-pasteable (quoting and spaces survive). The script path itself is not worth
+# recording here: under sbatch, $0 is slurmd's spool copy (.../slurm_script), not
+# the submitted path.
+launch_args="$(printf '%q ' "$@")"
 
 # --- CLI --- #
 
@@ -49,12 +97,16 @@ usage() {
     echo "                Defaults to \${gen_path}/epiclass/input/chromsizes."
     echo "  -L LOGDIR     Directory for GNU parallel joblogs / failure lists."
     echo "                Defaults to \${gen_path}/epiclass/output/sub/slurm_files."
-    echo "  -o OUTBASE    Output base directory; results go to OUTBASE/NAME/RESOLUTION/."
-    echo "                For a single -r resolution the RESOLUTION subdir is dropped"
-    echo "                (OUTBASE/NAME is the literal target). Defaults to \${epiatlas_dir}/hdf5."
+    echo "  -o OUTBASE    Output base directory; results go to OUTBASE/NAME/RESOLUTION/,"
+    echo "                or just OUTBASE/RESOLUTION when no NAME applies (see -n)."
+    echo "                For a single -r resolution the RESOLUTION subdir is dropped."
+    echo "                Defaults to \${epiatlas_dir}/hdf5."
     echo "  -n NAME       Optional subdirectory under OUTBASE (then /RESOLUTION)."
-    echo "                Defaults to the basename of -d DIR. With -l it is optional"
-    echo "                when -o is given, but required with the default OUTBASE."
+    echo "                When -o is explicit, OUTBASE is assumed to already be the"
+    echo "                intended target: NAME is only added if you pass -n yourself."
+    echo "                When -o is left at its default, NAME defaults to the basename"
+    echo "                of -d DIR (to keep unrelated runs from colliding); with -l and"
+    echo "                the default OUTBASE, -n is then required."
     echo "  -j JOBTAG     Prefix for joblog / failure-list filenames, to tell runs apart."
     echo "                Defaults to the SLURM job name. NOTE: to rename the actual"
     echo "                SLURM job + its %x stdout file, pass 'sbatch --job-name=...'."
@@ -72,6 +124,7 @@ chrom_name=""
 chromsize_dir=""
 log_folder=""
 out_base=""
+out_base_explicit=false
 out_name=""
 job_tag=""
 while getopts "htr:c:C:L:o:n:j:d:l:" optchar; do
@@ -82,7 +135,7 @@ while getopts "htr:c:C:L:o:n:j:d:l:" optchar; do
         c) chrom_name="${OPTARG}" ;;
         C) chromsize_dir="${OPTARG}" ;;
         L) log_folder="${OPTARG}" ;;
-        o) out_base="${OPTARG}" ;;
+        o) out_base="${OPTARG}"; out_base_explicit=true ;;
         n) out_name="${OPTARG}" ;;
         j) job_tag="${OPTARG}" ;;
         d) input_dir="${OPTARG}" ;;
@@ -129,14 +182,21 @@ for ((i = 1; i < ${#res_sizes[@]}; i++)); do
   fi
 done
 
-# Output subdirectory name (under OUTBASE): explicit -n wins; otherwise default to
-# the -d directory basename. With -l there is no directory to infer from: that is
-# fine if -o was given (OUTBASE is then the full target), but with the default
-# OUTBASE we require -n so unrelated runs don't all dump into the same hdf5 dir.
-if [[ -z "${out_name}" ]]; then
+# Output subdirectory name (under OUTBASE): explicit -n always wins.
+#
+# When -o was given explicitly, OUTBASE is assumed to already BE the intended
+# target directory (that's the point of typing it out), so no name subdir is
+# added unless -n is also given -- avoids nonsense like -o base/hdf5 -d base/bw
+# silently landing in base/hdf5/bw.
+#
+# When -o was left at its built-in default, unrelated runs would otherwise all
+# dump into the same shared hdf5 dir, so a name is still required: derived from
+# the -d directory basename, or -- since -l has no directory to infer from --
+# demanded explicitly via -n.
+if [[ -z "${out_name}" && "${out_base_explicit}" == false ]]; then
   if [[ -n "${input_dir}" ]]; then
     out_name="$(basename "${input_dir%/}")"
-  elif [[ -z "${out_base}" ]]; then
+  else
     echo "With -l and the default output base, an output name is required:"
     echo "pass -n NAME, or give an explicit -o OUTBASE. Exiting."
     exit 1
@@ -173,9 +233,9 @@ log_time "Setting up paths."
 # === EDIT: cluster-specific path defaults ===================================
 # These define the default locations for chromsizes (-C), joblogs (-L), and
 # output (-o) when those flags are not passed. Point them at your own layout.
-gen_path="/lustre06/project/6007017/rabyj"
-scratch_dir="/lustre07/scratch/rabyj"
-epiatlas_dir="${scratch_dir}/local_ihec_data/epiatlas"
+gen_path=":::project-path:::"          # ex: /project/<group>/<user>
+scratch_dir=":::scratch-path:::"       # ex: /scratch/<user>
+epiatlas_dir="${scratch_dir}/:::data-subdir:::"  # ex: local_ihec_data/epiatlas
 # ===========================================================================
 
 # Apply defaults for any path not overridden on the CLI (-C/-L/-o).
@@ -203,6 +263,7 @@ if [[ -n "${out_name}" ]]; then
 else
   out_root="${out_base}"
 fi
+echo "Output directory: ${out_root} (per-resolution subdirs added below when multiple -r values are given)"
 
 # Per-resolution subdir keeps multiple resolutions apart. For a single resolution
 # it is redundant (the filename already carries the resolution tag), so outputs go
@@ -246,7 +307,7 @@ if [[ -n "${input_dir}" ]]; then
     exit 1
   fi
   bw_list="tmp_${out_name}_input_bw.list"
-  find "${input_dir}" -type f -name '*.bw' | sort > "${bw_list}"
+  find "${input_dir}" -type f \( -iname '*.bw' -o -iname '*.bigwig' \) | sort > "${bw_list}"
   echo "Input mode: directory '${input_dir}' -> $(wc -l < "${bw_list}") bigWigs"
 else
   if [[ ! -f "${input_list}" ]]; then
@@ -263,6 +324,7 @@ fi
 total_input=$(wc -l < "${bw_list}")
 
 echo "=========================================="
+echo "Invocation args:      ${launch_args}"
 echo "Resolutions:          ${resolution_arg} bp"
 echo "Total input files:    ${total_input}"
 for i in "${!res_labels[@]}"; do
@@ -317,7 +379,7 @@ if [[ ${in_slurm} -eq 1 ]]; then
   # uv config + the epigeec / epigeec-converter install sources for your site.
   export UV_CONFIG_FILE="$HOME/.config/uv/compute.toml"
   epigeec_wheel="$HOME/wheelhouse/epigeec*.whl"
-  epigeec_converter_src="/lustre06/project/6007017/rabyj/sources/epigeec_converter"
+  epigeec_converter_src="${gen_path}/:::epigeec-converter-source:::"  # ex: sources/epigeec_converter
   # =========================================================================
 
   # Build the venv via an absolute path rather than cd-ing: changing the working
@@ -401,13 +463,61 @@ flush_to_final() {
     rm -rf "${SLURM_TMPDIR}"
   fi
 }
+
+# -- SLURM stdout archiving --
+# The '#SBATCH --output=' path above is relative, so the .out only exists in the
+# submission directory. Copy it next to the joblogs so everything about a run lives
+# in one place. Runs from the EXIT trap, and last, so the copy includes the final
+# summary lines rather than stopping just short of them. (Exits that happen before
+# the trap is installed -- bad arguments, missing paths, nothing to process -- are
+# not archived; nothing has run yet at that point.)
+# The glob tolerates either '%x-%j.out' or '%x-job%j.out' in the SBATCH directive.
 # shellcheck disable=SC2329  # invoked indirectly via the EXIT trap
-trap flush_to_final EXIT  # safety net if the job is killed before the explicit call
+copy_slurm_out() {
+  [[ ${in_slurm} -eq 1 ]] || return 0
+  local out_file
+  for out_file in "${SLURM_SUBMIT_DIR}"/"${SLURM_JOB_NAME}"-*"${SLURM_JOB_ID}".out; do
+    # Never let an archiving hiccup change the job's exit status.
+    [[ -f "${out_file}" ]] && { cp -v "${out_file}" "${log_folder}/" || true; }
+  done
+  return 0  # a non-matching glob must not leak a failure status into the trap
+}
+
+# shellcheck disable=SC2329  # invoked indirectly via the EXIT trap
+run_exit_hooks() {
+  flush_to_final
+  copy_slurm_out
+}
+trap run_exit_hooks EXIT  # safety net if the job is killed before the explicit call
 
 # Helper: count failed jobs (exit code != 0) in a GNU parallel joblog
 count_failures() {  # $1=joblog
   awk -F'\t' 'NR>1 && $7 != 0' "$1" | wc -l
 }
+
+# -- Archive the launch script --
+# All preconditions have passed and no epigeec work has started yet: save the exact
+# submitted script alongside the logs, so a run can be reproduced even after this
+# file is edited. scontrol can only do this while the job is alive, hence here and
+# not in the exit trap.
+#
+# 'scontrol write batch_script' dumps the script body only -- the CLI arguments are
+# NOT part of it, so two runs with completely different -r/-c/-d would archive
+# byte-identical scripts. Append the invocation ourselves to make the copy
+# self-contained. (The scheduler does keep the arguments, but awkwardly: 'scontrol
+# show job' has them in Command= only until the job record is purged, and 'sacct
+# --format=SubmitLine' only if accounting stores it.) Relative -d/-l/-o paths
+# resolve against the submit dir, so that is recorded too.
+if [[ ${in_slurm} -eq 1 ]]; then
+  script_copy="${log_folder}/launch_script_${job_tag}_job${SLURM_JOB_ID}.sh"
+  scontrol write batch_script "${SLURM_JOB_ID}" "${script_copy}"
+  {
+    echo ""
+    echo "# --- Invocation, appended by the running job --- #"
+    echo "# submitted from: ${SLURM_SUBMIT_DIR}"
+    echo "# args:           ${launch_args}"
+  } >> "${script_copy}"
+fi
 
 # -- Main script --
 
