@@ -473,6 +473,13 @@ Creates supplementary prediction files for the paper. Merges prediction results 
 
 Interactive [marimo](https://marimo.io) apps (reactive `.py` notebooks, not Jupyter). Run with `marimo edit <path>` (or `marimo run <path>` read-only). Listed by their location in the tree.
 
+### `signal/mo_compare_rna.py`
+
+Preliminary QC (archived, not expected to re-run): histograms each RNA-Seq `UniqueMultiple` track against its `Unique` counterpart at 100kb-bin level to gauge how much multimapped reads change the signal. Per sample/strand: raw per-bin difference (all bins) over a coverage-filtered log2 ratio (bins holding 99% of signal, since fold-change is unstable at near-zero coverage). Motivated the read-handling robustness check in `predictions/mo_compare_rna_mapping_predictions.py`. Loads via `LazyHdf5Loader`; `DATA_DIR` is hardcoded to the original scratch location.
+
+- **Input:** paired `*.Unique.*` / `*.UniqueMultiple.*` 100kb HDF5s, `hg38.can.chrom.sizes`
+- **Output:** Interactive (no files)
+
 ### `signal/mo_umap_plot.py`
 
 Interactive UMAP explorer. Loads a precomputed pickled UMAP embedding, colours points by any metadata column, and lets you box/lasso-select points to inspect them in a table; a second panel re-projects the selection onto another embedding (e.g. standard vs densMAP).
