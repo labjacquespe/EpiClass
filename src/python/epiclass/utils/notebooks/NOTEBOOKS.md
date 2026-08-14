@@ -414,9 +414,9 @@ Development version of Figure 2. Covers sex and life stage mislabel analyses, ch
 
 ### `paper/figures-dev/rebuttal.ipynb`
 
-Analyses conducted in response to peer reviewer comments. Includes comparison of UUID-based vs EpiRR-based cross-validation fold assignment strategies, and additional reviewer-requested analyses.
+Analyses supporting the point-by-point responses to the peer reviewers, organized by reviewer and comment number so each section maps to the rebuttal document.
 
-- **Input:** EpiATLAS metadata JSON, fold assignment files, prediction CSVs
+- **Input:** EpiATLAS metadata JSON, fold assignment files, prediction CSVs, feature-set result folders (`mixed/`), Supplementary File 1 & 3 CSVs
 - **Output:** Rebuttal figures (HTML/PNG/SVG)
 
 ---
