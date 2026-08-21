@@ -1815,7 +1815,7 @@ def prepare_metric_sets_per_assay(
         print("Loading metadata.")
     metadata = metadata_handler.load_metadata("v2")
     metadata.convert_classes(ASSAY, ASSAY_MERGE_DICT)
-    md5_per_assay = metadata.md5_per_class(ASSAY)
+    md5_per_assay = metadata.ids_per_class(ASSAY)
     md5_per_assay = {k: set(v) for k, v in md5_per_assay.items()}
 
     if verbose:

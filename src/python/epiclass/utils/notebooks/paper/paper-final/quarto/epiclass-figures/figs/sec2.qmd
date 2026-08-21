@@ -597,7 +597,7 @@ def compute_chrY_zscores(
 
     # Filter out md5s not in metadata version
     metadata = MetadataHandler(paper_dir).load_metadata(version)
-    md5s = set(metadata.md5s)
+    md5s = set(metadata.signal_ids)
     chrY_df = chrY_df[chrY_df["filename"].isin(md5s)]
 
     # Make sure all values are non-zero
