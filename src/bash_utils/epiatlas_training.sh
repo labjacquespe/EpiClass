@@ -15,6 +15,10 @@
 
 set -e # exit on error
 
+log_time() {
+    echo "Time: $(date +%F_%T) - $1"
+}
+
 export PYTHONUNBUFFERED=TRUE
 # export UV_CONFIG_FILE="$HOME/.config/uv/compute.toml"
 
@@ -102,10 +106,12 @@ done
 
 if [[ -n "$SLURM_JOB_ID" ]]; then
   # create venv on the fly
+  log_time "Starting venv setup"
   cd $SLURM_TMPDIR
   python -m venv epiclass_env
   source epiclass_env/bin/activate
   python ${gen_program_path}/install.py &> job${SLURM_JOB_ID}_venv_setup.log
+  log_time "Venv setup done"
 else
   source /path/to/preinstalled/venv/bin/activate # MODIFY
 fi
@@ -128,7 +134,7 @@ fi
 
 # --- MAIN PROGRAM ---
 
-echo "Time before launch: $(date +%F_%T)"
+log_time "Launching training"
 printf '\n%s\n' "Launching following command"
 if [[ -n "$NO_VALID" ]]; then #if variable exists
   # --- complete training without validation set launch ---
@@ -139,13 +145,14 @@ if [[ -n "$NO_VALID" ]]; then #if variable exists
 
   printf '%s\n' "python ${program_path}/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
   python ${program_path}/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
-  echo "Time after launch: $(date +%F_%T)"
+  log_time "Training done"
   exit
 
 elif [[ -n "$RESTORE" ]]; then
   # --- kfold launch ---
   printf '%s\n' "python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore > ${out1} 2> ${out2}"
   python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore >"${out1}" 2>"${out2}"
+  log_time "Training (restore) done"
   exit
 
 else
@@ -153,7 +160,7 @@ else
   printf '%s\n' "python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
   python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
 fi
-echo "Time after launch: $(date +%F_%T)"
+log_time "Training done"
 
 
 # --- More logging ---

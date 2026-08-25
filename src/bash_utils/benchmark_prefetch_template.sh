@@ -26,6 +26,10 @@
 
 set -e # exit on error
 
+log_time() {
+    echo "Time: $(date +%F_%T) - $1"
+}
+
 export PYTHONUNBUFFERED=TRUE
 
 # For HPC environments
@@ -82,10 +86,12 @@ done
 
 if [[ -n "$SLURM_JOB_ID" ]]; then
   # create venv on the fly
+  log_time "Starting venv setup"
   cd $SLURM_TMPDIR
   python -m venv epiclass_env
   source epiclass_env/bin/activate
   python ${gen_program_path}/install.py &> job${SLURM_JOB_ID}_venv_setup.log
+  log_time "Venv setup done"
 else
   source /path/to/preinstalled/venv/bin/activate # MODIFY
 fi
@@ -96,11 +102,11 @@ fi
 cd ${program_path}
 mkdir -p ${logdir}
 
-echo "Time before launch: $(date +%F_%T)"
+log_time "Launching benchmark"
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python -m epiclass.utils.benchmark.benchmark_prefetch --config ${config} --logdir ${logdir}"
 python -m epiclass.utils.benchmark.benchmark_prefetch --config ${config} --logdir ${logdir}
-echo "Time after launch: $(date +%F_%T)"
+log_time "Benchmark done"
 
 # Copy slurm output file to log dir
 if [[ -n "$SLURM_JOB_ID" ]]; then

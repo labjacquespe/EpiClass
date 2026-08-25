@@ -12,7 +12,11 @@
 # shellcheck disable=SC2086  # Don't warn about double quoting
 # shellcheck disable=SC1091  # Don't warn about sourcing unreachable files
 
-echo "$(date +%F_%T) - Starting script"
+log_time() {
+    echo "Time: $(date +%F_%T) - $1"
+}
+
+log_time "Starting script"
 
 ml StdEnv/2020 python/3.8
 
@@ -34,7 +38,7 @@ program_path="${gen_program_path}/src/python/epiclass"
 slurm_out_folder="${gen_path}/epilap/output/sub/slurm_files"
 
 # use correct environment
-echo "$(date +%F_%T) - Loading and/or creating the virtual environment"
+log_time "Loading and/or creating the virtual environment"
 set -e
 if [[ -n "$SLURM_JOB_ID" ]];
 then
@@ -69,7 +73,7 @@ chroms="${input_path}/chromsizes/hg38.noy.chrom.sizes"
 out1="${output_log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.o"
 out2="${output_log}/output_job${SLURM_JOB_ID}_${SLURM_JOB_NAME}_${timestamp}.e"
 
-echo "$(date +%F_%T) - Evaluating paths."
+log_time "Evaluating paths."
 for path in ${list_background} ${list_explain} ${chroms}; do
   if [ ! -f ${path} ]; then
     echo "${path} is not a file. Please check the path."
@@ -80,7 +84,7 @@ for path in ${list_background} ${list_explain} ${chroms}; do
 done
 
 # --- Pre-checks ---
-echo "$(date +%F_%T) - Executing pre-checks"
+log_time "Executing pre-checks"
 set -e # in case check_dir fails, to stop bash script
 program_path="${gen_path}/sources/epiclass/src/python/epiclass"
 cd ${program_path}
@@ -103,7 +107,7 @@ fi
 
 if [[ -n "$SLURM_JOB_ID" ]];
 then
-  echo "$(date +%F_%T) - Extracting hdf5s"
+  log_time "Extracting hdf5s"
   tar_file=":::full_tar_path:::"  # IMPORTANT
 
   cd $SLURM_TMPDIR
@@ -116,6 +120,7 @@ then
   folder_name=$(basename $folder_name)
   echo "Using folder_name: $folder_name"
   export HDF5_PARENT="${folder_name}" # IMPORTANT
+  log_time "Extraction done"
 fi
 
 
@@ -128,11 +133,11 @@ set +e
 basecmd="python ${program_path}/compute_shaps.py -m ${model} --background_hdf5 ${list_background} --explain_hdf5 ${list_explain} --chromsize ${chroms} -l ${output_log} -o explain_${category}"
 basecmd="${basecmd} --model_dir ${model_path}"
 
-echo "$(date +%F_%T) - Running main program"
+log_time "Running main program"
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "${basecmd} > ${out1} 2> ${out2}"
 ${basecmd} > ${out1} 2> ${out2}
-echo "$(date +%F_%T) - Time after main program"
+log_time "Main program done"
 
 
 # Copy slurm output file to log dir
@@ -142,4 +147,4 @@ then
   cp -v ${slurm_out_folder}/${slurm_out_file} ${output_log}/
 fi
 
-echo "$(date +%F_%T) - END OF SCRIPT"
+log_time "END OF SCRIPT"
