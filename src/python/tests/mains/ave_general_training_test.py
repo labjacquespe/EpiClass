@@ -11,9 +11,7 @@ import pytest
 from epiclass.core.lazy.general_fold_factory import GeneralFoldFactory
 from epiclass.core.metadata import Metadata
 from epiclass.mains.ave_general_training import main as main_module
-from tests.epilap_test_data import FIXTURES_DIR
-
-SACCER3_DIR = FIXTURES_DIR / "saccer3"
+from tests.epilap_test_data import SACCER3_DIR
 
 
 @pytest.fixture(name="test_dir")

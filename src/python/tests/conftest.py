@@ -20,12 +20,13 @@ from epiclass.core.model_pytorch import LightningDenseClassifier
 from tests.epilap_test_data import (
     DEFAULT_TEST_LOGDIR,
     FIXTURES_DIR,
+    MODELS_DIR,
+    SACCER3_DIR,
     EpiAtlasTreatmentTestData,
 )
 
 RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
 
-SACCER3_DIR = FIXTURES_DIR / "saccer3"
 
 # Some scripts (epiatlas_training_no_valid.py) call LazyEpiAtlasFoldFactory
 # without passing mmap_dir, so the loader writes signals_*.npy under the cwd's
@@ -94,13 +95,15 @@ def pytest_sessionstart(session):
             "Search for: fixtures.tar.zstd"
         )
         pytest.exit(reason=message, returncode=1)
-    checkpoint_file = FIXTURES_DIR / "saccer3" / "best_checkpoint.list"
-    if not checkpoint_file.exists():
-        checkpoint_template = checkpoint_file.parent / "best_checkpoint_template.list"
+    # Each trained-model fixture ships a best_checkpoint_template.list with THIS_FOLDER
+    # placeholders; materialize the absolute-path best_checkpoint.list every model dir needs.
+    for model_dir in sorted(MODELS_DIR.glob("*")):
+        checkpoint_template = model_dir / "best_checkpoint_template.list"
+        checkpoint_file = model_dir / "best_checkpoint.list"
+        if checkpoint_file.exists() or not checkpoint_template.is_file():
+            continue
         lines = checkpoint_template.read_text().splitlines()
-        lines = [
-            re.sub(r"THIS_FOLDER", str(checkpoint_file.parent), line) for line in lines
-        ]
+        lines = [re.sub(r"THIS_FOLDER", str(model_dir), line) for line in lines]
         checkpoint_file.write_text("\n".join(lines))
 
 

@@ -29,6 +29,14 @@ if not FIXTURES_DIR.exists():
         )
     )
 
+# Fixture inputs and trained model fixtures are kept apart: SACCER3_DIR holds only
+# model-agnostic inputs, while each trained model gets its own MODELS_DIR sub-directory
+# (see tests/fixtures_gen/ for the scripts that regenerate them).
+SACCER3_DIR = FIXTURES_DIR / "saccer3"
+MODELS_DIR = FIXTURES_DIR / "models"
+SACCER3_MLP_DIR = MODELS_DIR / "saccer3_mlp"
+SACCER3_AVE_DIR = MODELS_DIR / "saccer3_ave"
+
 
 class EpiAtlasTreatmentTestData:
     """Create and handle mock/test EpiAtlasFoldFactory"""

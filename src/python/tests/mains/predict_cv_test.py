@@ -5,17 +5,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.mains.predict_CV import discover_fold_dirs, main as main_module
-from tests.epilap_test_data import FIXTURES_DIR
+from tests.epilap_test_data import SACCER3_MLP_DIR
 
-SACCER3_FIXTURES_DIR = FIXTURES_DIR / "saccer3"
-REAL_CKPT = (
-    SACCER3_FIXTURES_DIR
-    / "EpiLaP"
-    / "35d1e5aed6bc4b589ccb23325d75201f"
-    / "checkpoints"
-    / "epoch=1-step=57.ckpt"
-)
+# Resolved from the fixture's own best_checkpoint.list rather than hardcoded, so
+# regenerating the model fixture (tests/fixtures_gen/) does not break these tests.
+REAL_CKPT = last_checkpoint_path(SACCER3_MLP_DIR)
 
 
 def _make_cv_root(tmp_path: Path, n_folds: int = 2) -> Path:
@@ -58,8 +54,10 @@ def test_predict_cv_chunked(tmp_path: Path, saccer3_chunked_dir: Path):
     assert len(per_fold) == 2, f"Expected one CSV per fold, got {per_fold}"
     # Filenames carry each fold model's training provenance: the original training comet
     # experiment id (from the checkpoint path) and the checkpoint stem.
-    assert all("35d1e5aed6bc4b589ccb23325d75201f" in p.name for p in per_fold)
-    assert all("epoch=1-step=57" in p.name for p in per_fold)
+    assert REAL_CKPT is not None
+    # comet experiment id + checkpoint stem, both taken from the fixture's own path
+    assert all(REAL_CKPT.parent.parent.name in p.name for p in per_fold)
+    assert all(REAL_CKPT.stem in p.name for p in per_fold)
 
     fold_df = pd.read_csv(per_fold[0], index_col="ID")
     assert "Predicted class" in fold_df.columns

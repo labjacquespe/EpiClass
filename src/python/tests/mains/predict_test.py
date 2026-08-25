@@ -8,10 +8,9 @@ import pytest
 
 from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.mains.predict import main as main_module
-from tests.epilap_test_data import FIXTURES_DIR
+from tests.epilap_test_data import SACCER3_DIR, SACCER3_MLP_DIR
 
-SACCER3_FIXTURES_DIR = FIXTURES_DIR / "saccer3"
-SACCER3_CHROMS = SACCER3_FIXTURES_DIR / "saccer3.can.chrom.sizes"
+SACCER3_CHROMS = SACCER3_DIR / "saccer3.can.chrom.sizes"
 
 
 @pytest.fixture(name="test_dir")
@@ -38,7 +37,7 @@ def test_predict_single_sample(test_dir: Path, saccer3_small_hdf5_file_list: Pat
         "--mmap_dir",
         str(test_dir / "mmap_cache"),
         "--model",
-        str(SACCER3_FIXTURES_DIR),
+        str(SACCER3_MLP_DIR),
     ]
     print("Running predict.py with args:", sys.argv)
     main_module()
@@ -53,7 +52,7 @@ def test_predict_single_sample_ckpt_file(
     Exercises the file branch of resolve_checkpoint_spec / restore_from_checkpoint_file,
     i.e. loading a model without going through best_checkpoint.list.
     """
-    ckpt = last_checkpoint_path(SACCER3_FIXTURES_DIR)
+    ckpt = last_checkpoint_path(SACCER3_MLP_DIR)
     assert ckpt is not None and ckpt.is_file(), "Fixture checkpoint not found."
     sys.argv = [
         "predict.py",
@@ -91,7 +90,7 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
         str(test_dir),
         "--chunked",
         "--model",
-        str(SACCER3_FIXTURES_DIR),
+        str(SACCER3_MLP_DIR),
     ]
     print("Running predict.py with args:", sys.argv)
     main_module()
@@ -100,8 +99,10 @@ def test_predict_chunked(test_dir: Path, saccer3_chunked_dir: Path):
     assert csv_outputs, "Expected a test_prediction CSV in outdir."
     # The output name carries the model's training provenance: the original training comet
     # experiment id (from the checkpoint path) and the checkpoint stem.
-    assert "35d1e5aed6bc4b589ccb23325d75201f" in csv_outputs[0].name
-    assert "epoch=1-step=57" in csv_outputs[0].name
+    ckpt = last_checkpoint_path(SACCER3_MLP_DIR)
+    assert ckpt is not None
+    assert ckpt.parent.parent.name in csv_outputs[0].name  # comet experiment id
+    assert ckpt.stem in csv_outputs[0].name
 
     df = pd.read_csv(csv_outputs[0], index_col="ID")
     assert df.index.name == "ID"

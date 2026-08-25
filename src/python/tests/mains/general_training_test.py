@@ -7,9 +7,7 @@ import pytest
 
 from epiclass.mains.general_training import main as main_module
 from epiclass.utils.general_utility import find_signal_id_lists
-from tests.epilap_test_data import FIXTURES_DIR
-
-SACCER3_DIR = FIXTURES_DIR / "saccer3"
+from tests.epilap_test_data import SACCER3_DIR, SACCER3_MLP_DIR
 
 
 @pytest.fixture(name="test_dir")
@@ -41,7 +39,7 @@ def test_cross_validation_training(
     sys.argv = [
         "general_training.py",
         "assay",
-        str(SACCER3_DIR / "saccer3_hparams.json"),
+        str(SACCER3_MLP_DIR / "saccer3_hparams.json"),
         str(hdf5_list),
         str(SACCER3_DIR / "saccer3.can.chrom.sizes"),
         str(metadata),
@@ -89,7 +87,7 @@ def test_cross_validation_training_with_folds(
     sys.argv = [
         "general_training.py",
         "assay",
-        str(SACCER3_DIR / "saccer3_hparams.json"),
+        str(SACCER3_MLP_DIR / "saccer3_hparams.json"),
         str(hdf5_list),
         str(SACCER3_DIR / "saccer3.can.chrom.sizes"),
         str(metadata),

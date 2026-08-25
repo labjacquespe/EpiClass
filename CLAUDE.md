@@ -44,7 +44,11 @@ under `src/python/tests/` — so any of these work:
 
 ```bash
 # One-time: uncompress fixtures
-cd src/python/tests && tar -xf fixtures.tar.xz
+cd src/python/tests && zstd -dc fixtures.tar.zstd | tar -xf -
+
+# After changing anything under fixtures/, repack the committed archive:
+bash pack_fixtures.sh            # rewrites fixtures.tar.zstd + fixtures.tar.index
+bash pack_fixtures.sh --check    # verify the archive matches the working tree
 
 # All three invocation styles resolve the same rootdir + configfile:
 cd src/python      && pytest tests -n auto

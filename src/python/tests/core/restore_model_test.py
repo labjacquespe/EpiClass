@@ -15,16 +15,11 @@ import pytest
 
 from epiclass.core.model_checkpoint import last_checkpoint_path
 from epiclass.core.model_pytorch import LightningDenseClassifier
-from tests.epilap_test_data import FIXTURES_DIR
+from tests.epilap_test_data import SACCER3_MLP_DIR
 
-SACCER3_DIR = FIXTURES_DIR / "saccer3"
-REAL_CKPT = (
-    SACCER3_DIR
-    / "EpiLaP"
-    / "35d1e5aed6bc4b589ccb23325d75201f"
-    / "checkpoints"
-    / "epoch=1-step=57.ckpt"
-)
+# Resolved from the fixture's own best_checkpoint.list rather than hardcoded, so
+# regenerating the model fixture (tests/fixtures_gen/) does not break these tests.
+REAL_CKPT = last_checkpoint_path(SACCER3_MLP_DIR)
 
 
 @pytest.fixture
