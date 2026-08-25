@@ -153,6 +153,8 @@ class LightningAVE(pl.LightningModule):
             nn.Dropout(self.dropout_rate, inplace=False),
             nn.Linear(h1, self._x_size),
         ]
+        # "sigmoid" matches input min-max normalized to [0, 1]; z-score normalized
+        # input (unbounded, signed) needs "linear" or reconstruction is biased.
         if self.output_activation_name == "sigmoid":
             layers.append(nn.Sigmoid())
         elif self.output_activation_name != "linear":
