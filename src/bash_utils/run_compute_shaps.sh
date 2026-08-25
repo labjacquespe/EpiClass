@@ -1,7 +1,7 @@
 #!/bin/bash
 base_dir="$HOME/Projects"
 
-code="$base_dir/sources/epiclass/src/python/epiclass/compute_shaps.py"
+code="$base_dir/sources/epiclass/src/python/epiclass/mains/compute_shaps.py"
 env="$base_dir/epilap/venv-epilap-pytorch/bin/activate"
 
 . $env

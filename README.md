@@ -102,7 +102,7 @@ Check the available backends with `flexiblas list`, and confirm which library is
 
 - See the `input-format/` folder for examples of required input files.
 - The `src/bash_utils/` folder contains SLURM-compatible job launcher templates.
-- Main training scripts are in `src/python/epiclass/`.
+- All command-line entry points live in `src/python/epiclass/mains/`.
 
 ### Key Scripts
 
@@ -112,6 +112,8 @@ Check the available backends with `flexiblas list`, and confirm which library is
 - `predict.py`: Uses a trained model to generate predictions on new data.
 - `compute_shaps.py`: Computes SHAP values using a trained model and a representative background set.
 - `general_training.py`: A more general training script that can be used for non-EpiATLAS datasets.
+- `predict_CV.py`: Predicts new data with every fold model of a cross-validation run.
+- `ave_training.py` / `ave_general_training.py`: Train the unsupervised AVE anomaly-detection model (EpiATLAS folds / general datasets).
 
 ## Metadata Handling
 

@@ -143,22 +143,22 @@ if [[ -n "$NO_VALID" ]]; then #if variable exists
     printf '\n%s\n' "Incoherent log path, changing log to $log"
   fi
 
-  printf '%s\n' "python ${program_path}/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
-  python ${program_path}/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
+  printf '%s\n' "python ${program_path}/mains/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
+  python ${program_path}/mains/epiatlas_training_no_valid.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
   log_time "Training done"
   exit
 
 elif [[ -n "$RESTORE" ]]; then
   # --- kfold launch ---
-  printf '%s\n' "python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore > ${out1} 2> ${out2}"
-  python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore >"${out1}" 2>"${out2}"
+  printf '%s\n' "python ${program_path}/mains/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore > ${out1} 2> ${out2}"
+  python ${program_path}/mains/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} --restore >"${out1}" 2>"${out2}"
   log_time "Training (restore) done"
   exit
 
 else
   # --- kfold launch ---
-  printf '%s\n' "python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
-  python ${program_path}/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
+  printf '%s\n' "python ${program_path}/mains/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} > ${out1} 2> ${out2}"
+  python ${program_path}/mains/epiatlas_training.py $category ${hparams} ${hdf5_list} ${chroms} ${metadata} ${log} >"${out1}" 2>"${out2}"
 fi
 log_time "Training done"
 

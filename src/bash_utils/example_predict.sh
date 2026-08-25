@@ -121,8 +121,8 @@ python ${program_path}/utils/check_dir.py --exists ${model_dir}
 # model off a mounted filesystem where the absolute paths inside best_checkpoint.list don't
 # resolve. --outdir defaults to a 'predictions' dir next to the checkpoint when omitted.
 printf '\n%s\n' "Launching following command"
-printf '%s\n' "python ${program_path}/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}"
-python ${program_path}/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}
+printf '%s\n' "python ${program_path}/mains/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}"
+python ${program_path}/mains/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}
 
 
 # -- You could then augment the prediction file with new metadata if it is known --

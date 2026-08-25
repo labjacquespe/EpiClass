@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from epiclass.epiatlas_training_no_valid import main as main_module
+from epiclass.mains.epiatlas_training_no_valid import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR, EpiAtlasTreatmentTestData
 
 

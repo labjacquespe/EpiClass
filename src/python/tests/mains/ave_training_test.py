@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from epiclass.ave_training import main as main_module
+from epiclass.mains.ave_training import main as main_module
 from tests.epilap_test_data import EpiAtlasTreatmentTestData
 
 

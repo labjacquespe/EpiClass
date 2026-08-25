@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from epiclass.predict_CV import discover_fold_dirs, main as main_module
+from epiclass.mains.predict_CV import discover_fold_dirs, main as main_module
 from tests.epilap_test_data import FIXTURES_DIR
 
 SACCER3_FIXTURES_DIR = FIXTURES_DIR / "saccer3"

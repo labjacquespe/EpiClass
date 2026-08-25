@@ -33,7 +33,7 @@ from epiclass.core.prediction_files import (
     build_prediction_tag,
     experiment_id_from_checkpoint,
 )
-from epiclass.predict_common import (
+from epiclass.mains.predict_common import (
     DirectoryChecker,
     add_data_arguments,
     build_test_dataset,

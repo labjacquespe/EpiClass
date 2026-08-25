@@ -130,7 +130,7 @@ set +e
 # usage: compute_shaps.py [-h] -m {NN,LGBM} --background_hdf5 background-hdf5 --explain_hdf5 explain-hdf5 --chromsize CHROMSIZE [-l LOGDIR] [-o --output-name]
 #                        [--model_file model_file] [--model_dir MODEL_DIR]
 
-basecmd="python ${program_path}/compute_shaps.py -m ${model} --background_hdf5 ${list_background} --explain_hdf5 ${list_explain} --chromsize ${chroms} -l ${output_log} -o explain_${category}"
+basecmd="python ${program_path}/mains/compute_shaps.py -m ${model} --background_hdf5 ${list_background} --explain_hdf5 ${list_explain} --chromsize ${chroms} -l ${output_log} -o explain_${category}"
 basecmd="${basecmd} --model_dir ${model_path}"
 
 log_time "Running main program"

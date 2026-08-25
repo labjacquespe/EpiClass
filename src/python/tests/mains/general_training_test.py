@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from epiclass.general_training import main as main_module
+from epiclass.mains.general_training import main as main_module
 from epiclass.utils.general_utility import find_signal_id_lists
 from tests.epilap_test_data import FIXTURES_DIR
 
