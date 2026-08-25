@@ -1,7 +1,6 @@
 """Integration test for ave_general_training.py using saccer3 fixtures."""
 # pylint: disable=duplicate-code, protected-access
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -50,10 +49,14 @@ def _write_ave_hparams(path: Path) -> Path:
 @pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
 def test_ave_general_training(
-    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+    test_dir: Path,
+    saccer3_small_training_data: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """AVE training + scoring succeeds on saccer3 (no-UUID) data with assay folds."""
-    os.environ["MAX_SPLIT"] = "0"  # only run the first fold to keep the test fast
+    # monkeypatch, not os.environ: a leaked MAX_SPLIT would silently cut a later
+    # test's fold loop short.
+    monkeypatch.setenv("MAX_SPLIT", "0")  # only run the first fold to keep the test fast
 
     hdf5_list, metadata = saccer3_small_training_data
     hparams_file = _write_ave_hparams(test_dir / "ave_hparams.json")
@@ -110,10 +113,12 @@ def _split_md5s_into_folds(metadata_path: Path, n_folds: int = 2) -> dict:
 @pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
 def test_ave_general_training_with_folds(
-    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+    test_dir: Path,
+    saccer3_small_training_data: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """--folds runs leave-one-fold-out: split0 scores exactly fold0's samples."""
-    os.environ["MAX_SPLIT"] = "0"  # only run the first fold to keep the test fast
+    monkeypatch.setenv("MAX_SPLIT", "0")  # only run the first fold to keep the test fast
 
     hdf5_list, metadata = saccer3_small_training_data
     hparams_file = _write_ave_hparams(test_dir / "ave_hparams.json")

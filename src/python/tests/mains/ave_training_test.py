@@ -1,7 +1,6 @@
 """Integration test for ave_training.py using the EpiAtlas mock data fixture."""
 # pylint: disable=duplicate-code
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -49,10 +48,12 @@ def _write_ave_hparams(path: Path) -> Path:
 )
 @pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
-def test_ave_training(test_dir: Path):
+def test_ave_training(test_dir: Path, monkeypatch: pytest.MonkeyPatch):
     """Basic AVE training + reconstruction-error scoring succeeds on the mock data."""
-    os.environ["MIN_CLASS_SIZE"] = "1"
-    os.environ["MAX_SPLIT"] = "0"  # only run the first fold to keep the test fast
+    # monkeypatch, not os.environ: these are read by every training main, so a leaked
+    # value would silently reshape a later test's folds.
+    monkeypatch.setenv("MIN_CLASS_SIZE", "1")
+    monkeypatch.setenv("MAX_SPLIT", "0")  # only run the first fold to keep the test fast
 
     datasource = EpiAtlasTreatmentTestData.test_data(
         min_class_size=1,

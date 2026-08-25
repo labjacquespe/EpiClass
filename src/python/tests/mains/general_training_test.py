@@ -25,7 +25,9 @@ def fixture_test_dir(mk_logdir) -> Path:
 @pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
 def test_cross_validation_training(
-    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+    test_dir: Path,
+    saccer3_small_training_data: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Test if basic training succeeds.
 
@@ -34,6 +36,10 @@ def test_cross_validation_training(
     that the CV flow produces fold dirs + prediction files, so the full
     set just slows training without adding coverage.
     """
+    # Independent of any MIN_SPLIT / MAX_SPLIT left set by another test module.
+    monkeypatch.delenv("MIN_SPLIT", raising=False)
+    monkeypatch.delenv("MAX_SPLIT", raising=False)
+
     hdf5_list, metadata = saccer3_small_training_data
     # fmt: off
     sys.argv = [
@@ -69,10 +75,53 @@ def test_cross_validation_training(
 )
 @pytest.mark.filterwarnings("ignore:The number of training batches")
 @pytest.mark.slow
+def test_max_split_limits_folds(
+    test_dir: Path,
+    saccer3_small_training_data: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """MAX_SPLIT bounds the fold loop, as it does for the other training mains."""
+    monkeypatch.setenv("MAX_SPLIT", "0")
+
+    hdf5_list, metadata = saccer3_small_training_data
+    # fmt: off
+    sys.argv = [
+        "general_training.py",
+        "assay",
+        str(SACCER3_MLP_DIR / "saccer3_hparams.json"),
+        str(hdf5_list),
+        str(SACCER3_DIR / "saccer3.can.chrom.sizes"),
+        str(metadata),
+        str(test_dir),
+        "--n_fold", "2",
+        "--hl_units", "10",
+        "--min_class_size", "10",
+    ]
+    # fmt: on
+    main_module()
+
+    assert (test_dir / "fold_0" / "best_checkpoint.list").is_file()
+    assert not (test_dir / "fold_1").exists(), "MAX_SPLIT=0 should skip the second fold"
+
+
+@pytest.mark.filterwarnings(
+    "ignore:The 'val_dataloader' does not have many workers.*:UserWarning"
+)
+@pytest.mark.filterwarnings(
+    "ignore:The 'train_dataloader' does not have many workers.*:UserWarning"
+)
+@pytest.mark.filterwarnings("ignore:The number of training batches")
+@pytest.mark.slow
 def test_cross_validation_training_with_folds(
-    test_dir: Path, saccer3_small_training_data: tuple[Path, Path]
+    test_dir: Path,
+    saccer3_small_training_data: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """--folds drives leave-one-fold-out CV for the classifier too."""
+    # Independent of any MIN_SPLIT / MAX_SPLIT left set by another test module.
+    monkeypatch.delenv("MIN_SPLIT", raising=False)
+    monkeypatch.delenv("MAX_SPLIT", raising=False)
+
     hdf5_list, metadata = saccer3_small_training_data
 
     # Build a 2-fold definition keyed by md5sum.

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import warnings
 from pathlib import Path
 from typing import Any, Dict
@@ -260,9 +261,19 @@ def main():
     print(f"Loading time: {time_now() - loading_begin}")
 
     # Cross-validation training
+    # Same MIN_SPLIT / MAX_SPLIT contract as epiatlas_training.py, ave_training.py and
+    # ave_general_training.py: an inclusive fold range, so a run can be split across jobs
+    # (or cut short to a single fold).
+    min_split = int(os.getenv("MIN_SPLIT", "0"))
+    max_split = int(os.getenv("MAX_SPLIT", "42"))
+
     oversample = hparams.get("oversample", hparams.get("oversampling", True))
 
     for i, my_data in enumerate(fold_factory.yield_split(oversample=oversample)):
+        # Skip if not in inclusive range
+        if not (min_split <= i <= max_split):  # pylint: disable=superfluous-parens
+            continue
+
         print(f"\n{'='*60}")
         print(f"FOLD {i+1}/{fold_factory.k}")
         print(f"  Training:   {my_data.train.num_examples} samples")

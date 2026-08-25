@@ -20,6 +20,7 @@ tests/core/restore_model_test.py.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -67,6 +68,10 @@ def main() -> None:
         hdf5_list = write_hdf5_list(tmp_dir / "saccer3.list")
         run_dir = tmp_dir / "run"
         run_dir.mkdir()
+
+        # One trained model is all a fixture needs; the fold factory just refuses
+        # fewer than 2 folds, so bound the loop instead. Overridable from the shell.
+        os.environ.setdefault("MAX_SPLIT", "0")
 
         # Imported here so the heavyweight training stack is only loaded when running.
         from epiclass.mains.general_training import (  # pylint: disable=import-outside-toplevel
