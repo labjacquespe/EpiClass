@@ -76,6 +76,30 @@ def fixture_verbose_splits(pytestconfig) -> bool:
     return bool(pytestconfig.getoption("--verbose-splits"))
 
 
+# xdist hands items to workers in collection order, so the last thing collected
+# bounds the makespan. compute_umap_single_sample is ~50s -- longer than the
+# whole non-slow suite's ideal makespan -- so it goes first. Hoisting only this
+# one is unmeasured; hoisting all 22 `slow` tests measured ~15% slower (157.7s
+# vs 136.6s, twice). Mechanism unknown: thread oversubscription was the obvious
+# suspect but capping torch threads changed nothing. Before adding a nodeid here,
+# time the suite with and without it -- "it's slow" is not evidence that hoisting
+# it helps.
+LONG_FIRST_NODEIDS = ("compute_umap_test.py::test_compute_umap_single_sample",)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Hoist the few measured-longest tests, keeping collection order otherwise.
+
+    Must stay deterministic: every xdist worker re-runs this hook and the
+    resulting order has to match, or xdist aborts with a collection mismatch.
+    """
+    items.sort(
+        key=lambda item: 0
+        if any(nodeid in item.nodeid for nodeid in LONG_FIRST_NODEIDS)
+        else 1
+    )
+
+
 def pytest_exception_interact(node, call, report):
     """Intercept FileNotFoundError only when it points at the (un)extracted
     fixtures directory, so we don't swallow tracebacks for unrelated missing

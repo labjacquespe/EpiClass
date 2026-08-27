@@ -67,7 +67,9 @@ collect from the whole repo with no config.
 
 Test markers (declared in `src/python/pyproject.toml`):
 
-- `slow`: integration / long-running tests (skipped unless explicitly selected)
+- `slow`: integration / long-running tests. **Not** auto-skipped: a plain
+  `pytest tests` runs them (572 tests vs 550). Use `make test-fast` /
+  `-m "not slow"` to opt out.
 - `embedding`: PCA / UMAP smoke tests (JIT-heavy, dominate suite time)
 
 The `tests/justfile` provides multi-version test orchestration via `uv`:
@@ -126,7 +128,7 @@ having to actually attempt the commit.
 - **Data pipeline**: Epigenomic signal data is stored in HDF5 files (created by epigeec tool). Two input formats are supported:
   - *Single-sample HDF5*: one file per sample with per-chromosome datasets. Requires a chromosome sizes file (`--chromsize`). Loaded via `LazyHdf5Loader`, which preloads all samples into a single memory-mapped `.npy` file (`preload_all()`) and exposes it via `as_mmap()`. Chromosome sizes files + resolution define the genomic bins.
   - *Chunked HDF5* (`--chunked`): multi-sample HDF5 files produced by `utils/preprocessing/hdf5_chunks_creation.py`. No chromosome sizes needed. Loaded via `ChunkedHdf5Loader`, which streams chunk-by-chunk (true streaming for PCA; materializes for UMAP due to random-access requirement).
-- **Lazy data layer** (`core/lazy/`): all data access goes through this stack. `LazyKnownData` / `LazyUnknownData` hold sample IDs + a loader reference; signals are read on demand. `LazyEpiAtlasFoldFactory` drives cross-validation. `LazyHdf5Dataset` wraps them as a PyTorch `Dataset`. `as_mmap(mmap_mode="c")` is required for UMAP (copy-on-write so numba's jitted kernels accept the array); `mmap_mode="r"` is sufficient for everything else.
+- **Lazy data layer** (`core/lazy/`): all data access goes through this stack. `LazyKnownData` / `LazyUnknownData` hold sample IDs + a loader reference; signals are read on demand. `LazyEpiAtlasFoldFactory` drives cross-validation. `LazyHdf5Dataset` wraps them as a PyTorch `Dataset`. `as_mmap(mmap_mode="c")` is required for UMAP (copy-on-write so numba's jitted kernels accept the array); `mmap_mode="r"` is sufficient for everything else. The mmap cache directory defaults to `$EPICLASS_MMAP_DIR`, else `./mmap_cache`; set it per-process when several processes load different sample sets at once (pytest-xdist workers do this in `tests/conftest.py`, and on HPC point it at `$SLURM_TMPDIR`).
 - **Metadata**: The `Metadata` class (`core/metadata.py`) handles label management. Any value (including empty strings) in a label category is treated as a valid label — use `remove_missing_labels()` to clean. Track/assay constants live in `core/epiatlas_constants.py`.
 - **Training flow** (all under `epiclass/mains/`): `epiatlas_training.py` does cross-validation; `epiatlas_training_no_valid.py` trains without validation (for final models). Both use PyTorch Lightning via `trainer.py`. `general_training.py` is the shared backbone used by both.
 - **Experiment tracking**: Comet-ML integration (supports `--offline` mode).
