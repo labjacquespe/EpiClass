@@ -57,7 +57,8 @@ class LazyEpiAtlasDataset:
             force_filter: Filter metadata even if signal_id_list provided
             metadata: Optional pre-loaded metadata
             mmap_dir: Directory for the memory-mapped .npy file. Defaults to
-                ./mmap_cache. On HPC, set to $SLURM_TMPDIR for fast local storage.
+                $EPICLASS_MMAP_DIR, else ./mmap_cache. On HPC, set to
+                $SLURM_TMPDIR for fast local storage.
         """
         self._datasource = datasource
         self._label_category = label_category

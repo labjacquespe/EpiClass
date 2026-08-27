@@ -50,9 +50,11 @@ class LazyHdf5Loader:
         self._chroms = LazyHdf5Loader.load_chroms(chrom_file)
         self._files: Dict[str, Path] = {}
 
-        # Setup mmap cache directory
+        # Setup mmap cache directory. EPICLASS_MMAP_DIR overrides the default so
+        # concurrent processes can be pointed at private caches (pytest-xdist
+        # workers, or $SLURM_TMPDIR on HPC) instead of racing on ./mmap_cache.
         if mmap_dir is None:
-            mmap_dir = Path("./mmap_cache")
+            mmap_dir = Path(os.environ.get("EPICLASS_MMAP_DIR", "./mmap_cache"))
         self._mmap_dir = Path(mmap_dir)
         self._mmap_dir.mkdir(parents=True, exist_ok=True)
 

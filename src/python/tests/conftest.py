@@ -32,7 +32,23 @@ RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
 # without passing mmap_dir, so the loader writes signals_*.npy under the cwd's
 # ./mmap_cache. A leftover from a previous run with different mock data shapes
 # causes preload_all() to skip generation and downstream loads to fail.
-LOCAL_MMAP_DIR = Path("./mmap_cache")
+#
+# That default path is process-independent, so every xdist worker would share
+# one cache: workers register different sample sets, so they take turns
+# unlinking and rebuilding the same signals_*.npy, and a worker's
+# pytest_sessionstart wipe (below) can delete the .tmp another worker is
+# mid-write on -- surfacing as FileNotFoundError in os.replace(). Give each
+# worker its own cache via EPICLASS_MMAP_DIR so there is nothing to race on.
+LOCAL_MMAP_DIR = Path("./mmap_cache") / os.environ.get("PYTEST_XDIST_WORKER", "main")
+
+
+def pytest_configure(config):
+    """Point this worker's loaders at a private mmap cache.
+
+    Runs before collection in the controller and in every worker, so it is set
+    before any test can construct a loader.
+    """
+    os.environ["EPICLASS_MMAP_DIR"] = str(LOCAL_MMAP_DIR)
 
 
 def pytest_addoption(parser):
@@ -120,9 +136,14 @@ def pytest_sessionfinish(session, exitstatus):
     if RUN_LOGDIR.exists():
         shutil.rmtree(RUN_LOGDIR)
 
-    # Drop the cwd-relative mmap cache so the next session starts clean too.
+    # Drop this worker's mmap cache so the next session starts clean too, and
+    # the shared parent once the last worker has emptied it.
     if LOCAL_MMAP_DIR.exists():
         shutil.rmtree(LOCAL_MMAP_DIR, ignore_errors=True)
+    try:
+        LOCAL_MMAP_DIR.parent.rmdir()
+    except OSError:
+        pass  # other workers still hold caches, or it is already gone
 
 
 def nottest(obj):
