@@ -135,7 +135,10 @@ def main():
 
 
 def write_concatenated(
-    per_fold_csvs: List[Path], output_dir: Path, hdf5_stem: str
+    per_fold_csvs: List[Path],
+    output_dir: Path,
+    hdf5_stem: str,
+    name_prefix: str = "concatenated_test_prediction",
 ) -> Path:
     """Stack the per-fold prediction CSVs, tagging each row with its source filename.
 
@@ -149,7 +152,7 @@ def write_concatenated(
         df.insert(0, "origin", csv.name)
         frames.append(df)
     concat = pd.concat(frames, ignore_index=True)
-    concat_path = output_dir / f"concatenated_test_prediction_{hdf5_stem}.csv"
+    concat_path = output_dir / f"{name_prefix}_{hdf5_stem}.csv"
     concat.to_csv(concat_path, index=False)
     print(f"Wrote concatenated predictions ({len(concat)} rows) to '{concat_path}'")
     return concat_path

@@ -116,6 +116,33 @@ def test_reconstruction_errors_one_per_sample(model, dataset):
     assert np.all(np.isfinite(errors))
 
 
+def test_reconstruction_errors_are_deterministic(model, dataset):
+    """Scoring must not resample the VAE latent: identical input, identical score."""
+    first = model.reconstruction_errors(dataset, batch_size=8)
+    second = model.reconstruction_errors(dataset, batch_size=8)
+    np.testing.assert_allclose(first, second)
+
+
+def test_reconstruction_errors_sampling_opt_in(model, dataset):
+    """With sample=True the VAE latent is drawn, so repeated scoring varies."""
+    first = model.reconstruction_errors(dataset, batch_size=8, sample=True)
+    second = model.reconstruction_errors(dataset, batch_size=8, sample=True)
+    assert not np.allclose(first, second)
+
+
+def test_hidden_sizes_read_from_hparams(hparams):
+    """ae_hidden / vae_hidden / latent_dim are honoured as hyperparameters."""
+    hparams = dict(hparams, ae_hidden=[16, 8], vae_hidden=[16, 8], latent_dim=4)
+    model = LightningAVE(input_size=INPUT_SIZE, hparams=hparams)
+
+    assert model.ae_encoder[0].out_features == 16
+    assert model.vae_encoder[0].out_features == 16
+    assert model.ae_encoder[-1].out_features == 4  # latent
+    assert model.vae_encoder[-1].out_features == 8  # mu + log_var
+    assert model.decoder[0].in_features == 4  # decoder mirrors the AE sizing
+    assert model.decoder[-1].out_features == INPUT_SIZE
+
+
 def test_contamination_threshold_flags_expected_count(model):
     """The contamination threshold flags ~rate fraction of samples."""
     errors = np.arange(100, dtype=np.float32)

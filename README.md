@@ -114,6 +114,7 @@ Check the available backends with `flexiblas list`, and confirm which library is
 - `general_training.py`: A more general training script that can be used for non-EpiATLAS datasets.
 - `predict_CV.py`: Predicts new data with every fold model of a cross-validation run.
 - `ave_training.py` / `ave_general_training.py`: Train the unsupervised AVE anomaly-detection model (EpiATLAS folds / general datasets).
+- `ave_predict.py` / `ave_predict_CV.py`: Score new data with a trained AVE, writing per-sample reconstruction errors (one model / every fold model of a CV run).
 
 ## Metadata Handling
 

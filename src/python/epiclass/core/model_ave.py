@@ -71,6 +71,14 @@ def bounded_sublinear_sizes(input_dim: int) -> Tuple[int, int]:
     return h1, h2
 
 
+def _hidden_pair(value) -> Optional[Tuple[int, int]]:
+    """Coerce an ``(H1, H2)`` hidden-size hparam to a tuple, or None when unset."""
+    if value is None:
+        return None
+    h1, h2 = value
+    return int(h1), int(h2)
+
+
 # pylint: disable=too-many-ancestors
 class LightningAVE(pl.LightningModule):
     """Hybrid AE+VAE anomaly-detection model (shared decoder, weighted fusion)."""
@@ -90,10 +98,13 @@ class LightningAVE(pl.LightningModule):
             hparams: Hyperparameter dict (see module docstring for keys).
             mapping: Optional ``{index: label}`` map, kept for reference only;
                 labels are not used by the unsupervised loss.
-            ae_hidden / vae_hidden: Optional ``(H1, H2)`` overrides per branch.
-                When omitted, the bounded sub-linear heuristic is used.
-            latent_dim: Optional latent dimension override (default 128). The AE
-                and VAE latents share this size so the weighted average is defined.
+            ae_hidden / vae_hidden: Optional ``(H1, H2)`` overrides per branch,
+                also readable from the same-named hparams keys. When neither is
+                given, the bounded sub-linear heuristic is used. The decoder
+                mirrors the AE branch's sizing.
+            latent_dim: Optional latent dimension override (default 128), also
+                readable from the ``latent_dim`` hparam. The AE and VAE latents
+                share this size so the weighted average is defined.
         """
         super().__init__()
         self.save_hyperparameters()
@@ -113,17 +124,26 @@ class LightningAVE(pl.LightningModule):
         self.output_activation_name = hparams.get("output_activation", "linear")
 
         # -- layer sizing --
+        # Explicit constructor arguments win; otherwise the same keys are read from
+        # hparams (so a hyperparameters JSON can size the network), and only then does
+        # the bounded sub-linear heuristic apply.
         default_h1, default_h2 = bounded_sublinear_sizes(input_size)
+        ae_hidden = ae_hidden or _hidden_pair(hparams.get("ae_hidden"))
+        vae_hidden = vae_hidden or _hidden_pair(hparams.get("vae_hidden"))
+        latent_dim = latent_dim or hparams.get("latent_dim")
+
         self._ae_h1, self._ae_h2 = ae_hidden or (default_h1, default_h2)
         self._vae_h1, self._vae_h2 = vae_hidden or (default_h1, default_h2)
         self._latent_dim = latent_dim or _DEFAULT_LATENT_DIM
+        # The decoder mirrors whichever sizing the AE branch ended up with.
+        dec_h1, dec_h2 = self._ae_h1, self._ae_h2
 
         # -- network --
         self.ae_encoder = self._build_encoder(self._ae_h1, self._ae_h2, self._latent_dim)
         self.vae_encoder = self._build_encoder(
             self._vae_h1, self._vae_h2, self._latent_dim * 2
         )
-        self.decoder = self._build_decoder(default_h1, default_h2)
+        self.decoder = self._build_decoder(dec_h1, dec_h2)
 
     # --- Network construction ---
     def _build_encoder(self, h1: int, h2: int, out_dim: int) -> nn.Sequential:
@@ -172,11 +192,18 @@ class LightningAVE(pl.LightningModule):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def _encode_decode(self, x: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
-        """Return ``(reconstruction, mu, log_var)`` for input batch ``x``."""
+    def _encode_decode(
+        self, x: Tensor, sample: bool = True
+    ) -> Tuple[Tensor, Tensor, Tensor]:
+        """Return ``(reconstruction, mu, log_var)`` for input batch ``x``.
+
+        With ``sample=False`` the VAE branch uses the posterior mean instead of
+        drawing ``eps``, making the reconstruction deterministic. Training always
+        samples; scoring does not (see :meth:`reconstruction_errors`).
+        """
         z_ae = self.ae_encoder(x)
         mu, log_var = torch.chunk(self.vae_encoder(x), 2, dim=1)
-        z_vae = self.reparameterize(mu, log_var)
+        z_vae = self.reparameterize(mu, log_var) if sample else mu
         z_hybrid = self.fusion_weight * z_ae + (1.0 - self.fusion_weight) * z_vae
         reconstruction = self.decoder(z_hybrid)
         return reconstruction, mu, log_var
@@ -228,13 +255,20 @@ class LightningAVE(pl.LightningModule):
 
     # --- Scoring / thresholding ---
     def reconstruction_errors(
-        self, dataset: Dataset, batch_size: int = 256
+        self, dataset: Dataset, batch_size: int = 256, sample: bool = False
     ) -> np.ndarray:
         """Return the per-sample mean squared reconstruction error.
 
         Iterates ``dataset`` (unshuffled) via a DataLoader so it works for
         streaming lazy datasets without materialising the full signal matrix.
         The returned array is aligned with the dataset's index order.
+
+        Scoring defaults to ``sample=False``: the VAE branch uses its posterior
+        mean rather than drawing a latent sample, so the same model and the same
+        input always yield the same error. Sampling here would make the score
+        itself random -- on saccer3 the same samples moved by tens of percent
+        between runs -- which is not something an outlier score can afford. Pass
+        ``sample=True`` to draw instead, e.g. to estimate the score's spread.
         """
         self.cpu()
         self.eval()
@@ -243,7 +277,7 @@ class LightningAVE(pl.LightningModule):
         with torch.no_grad():
             for batch in loader:
                 x = batch[0].cpu()
-                reconstruction = self(x)
+                reconstruction, _, _ = self._encode_decode(x, sample=sample)
                 err = torch.mean((reconstruction - x) ** 2, dim=1)
                 errors.append(err.numpy())
         return np.concatenate(errors) if errors else np.empty(0, dtype=np.float32)
