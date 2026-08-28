@@ -4,8 +4,9 @@
 
 PYTEST ?= pytest
 SACCER3_HDF5_DIR := ./fixtures/saccer3/hdf5/saccer3_2016-07
+NUMBA_CACHE_DIR := ./.numba_cache
 
-.PHONY: help test test-fast test-slow demo-test clean-saccer3 clean-all
+.PHONY: help test test-fast test-slow demo-test clean-saccer3 clean-numba-cache clean-all
 
 help:
 	@echo ""
@@ -15,6 +16,7 @@ help:
 	@echo "  test-slow          Run only slow/integration tests"
 	@echo "  demo-test          Run demo training/predict using saccer3."
 	@echo "  clean-saccer3      Remove extracted saccer3 HDF5 files"
+	@echo "  clean-numba-cache  Remove cached numba kernels (forces recompile)"
 	@echo "  clean-all          Clean test data + pytest cache"
 	@echo "----------------------------------------"
 	@echo ""
@@ -58,7 +60,16 @@ clean-saccer3:
 		echo "No saccer3 extracted data found."; \
 	fi
 
-clean-all: clean-saccer3
+clean-numba-cache:
+	@echo "Cleaning numba kernel cache..."
+	@if [ -d "$(NUMBA_CACHE_DIR)" ]; then \
+		rm -rf "$(NUMBA_CACHE_DIR)"; \
+		echo "Removed $(NUMBA_CACHE_DIR)"; \
+	else \
+		echo "No numba cache found."; \
+	fi
+
+clean-all: clean-saccer3 clean-numba-cache
 	@echo "Cleaning pytest cache..."
 	@rm -rf .pytest_cache
 	@echo "All clean."

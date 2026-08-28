@@ -24,6 +24,7 @@ from tests.epilap_test_data import (
     SACCER3_DIR,
     EpiAtlasTreatmentTestData,
 )
+from tests.numba_cache import install as install_numba_cache
 
 RUN_LOGDIR = DEFAULT_TEST_LOGDIR / uuid.uuid4().hex
 
@@ -49,6 +50,10 @@ def pytest_configure(config):
     before any test can construct a loader.
     """
     os.environ["EPICLASS_MMAP_DIR"] = str(LOCAL_MMAP_DIR)
+
+    # Before collection imports umap/pynndescent, whose @numba.njit decorators
+    # run at import time and would otherwise compile uncached.
+    install_numba_cache()
 
 
 def pytest_addoption(parser):

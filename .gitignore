@@ -140,3 +140,6 @@ src/python/epiclass/utils/benchmark/RESULTS.md
 # CocoIndex Code (ccc) — local-only semantic search index
 /.cocoindex_code/
 CLAUDE.local.md
+
+# numba kernel cache written by the test suite (tests/numba_cache.py)
+src/python/tests/.numba_cache/

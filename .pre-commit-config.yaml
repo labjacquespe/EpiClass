@@ -42,7 +42,7 @@ repos:
     - id: forbid-submodules
     - id: mixed-line-ending
     - id: name-tests-test
-      exclude: .*epilap_test_data\.py|.*/tests/fixtures_gen/.*
+      exclude: .*epilap_test_data\.py|.*numba_cache\.py|.*/tests/fixtures_gen/.*
     - id: pretty-format-json
       args: [--autofix]
       exclude: \.ipynb$|search.json

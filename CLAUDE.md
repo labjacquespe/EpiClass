@@ -75,10 +75,18 @@ Test markers (declared in `src/python/pyproject.toml`):
 **Before changing test scheduling, read `src/python/tests/BENCHMARKS.md`.**
 It records what was measured and what was tried and rejected. Several
 intuitive changes made the suite *slower* — longest-first ordering costs
-+64%, `-n 6`/`-n 8` cost +18–24%, and hoisting one UMAP test without the
-other cost ~15%. The suite is dominated by numba JIT in `umap-learn`
-(no `cache=True`), so the two UMAP tests must stay adjacent in collection
-order to share one process.
++64%, `-n 6`/`-n 8` cost +18–24%, hoisting one UMAP test without the other
+cost ~15%, and deferring `compute_umap_test.py`'s module-level import cost
++18s on that test. The suite is dominated by numba JIT in `umap-learn`
+(which ships no `cache=True`), so the two UMAP tests must stay adjacent in
+collection order to share one process.
+
+`tests/numba_cache.py` injects `cache=True` into every numba declaration so
+compiled kernels persist in `tests/.numba_cache` (~16% off wall once warm;
+the populating run is ~20s slower). `EPICLASS_NO_NUMBA_CACHE=1` disables it,
+`EPICLASS_NUMBA_CACHE=<dir>` relocates it, `make clean-numba-cache` drops it.
+Always A/B **interleaved within one campaign** — wall times drift enough
+between campaigns to invert a 16% result.
 
 The `tests/justfile` provides multi-version test orchestration via `uv`:
 

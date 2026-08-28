@@ -18,7 +18,7 @@ Dependency versions the conclusions actually depend on:
 | --- | --- | --- |
 | `umap-learn` | 0.5.12 | 117 `@numba.njit` decorators, **none** with `cache=True` — this is the single biggest driver of suite time |
 | `pynndescent` | 0.6.0 | 227 `@numba.njit`, only 20 with `cache=True` |
-| `numba` | 0.63.1 | JIT backend; `NUMBA_CACHE_DIR` only helps functions declared `cache=True` |
+| `numba` | 0.63.1 | JIT backend; only writes a disk cache for functions declared `cache=True`, which `tests/numba_cache.py` now injects (Finding 8) |
 | `pytest-xdist` | 3.8.0 | The opening-chunk distribution described below is an implementation detail of this version |
 | `pytest` | 8.3.5 | |
 | `psutil` | 7.2.1 | Present ⇒ `-n auto` means 4, not 8 |
@@ -80,7 +80,7 @@ Work is extremely skewed — the top 4 tests are 48% of all work, the top 16 are
 
 ## Finding 1: the dominant cost is numba JIT, not computation
 
-`umap-learn` 0.5.12 has **117 `@numba.njit` decorators and zero with `cache=True`**; `pynndescent` 0.6.0 has 207 of 227 uncached. Compilation therefore happens in **every process** that touches UMAP and **cannot be persisted to disk** — numba only writes a cache for functions declared `cache=True`, so setting `NUMBA_CACHE_DIR` does nothing for this.
+`umap-learn` 0.5.12 has **117 `@numba.njit` decorators and zero with `cache=True`**; `pynndescent` 0.6.0 has 207 of 227 uncached. Compilation therefore happens in **every process** that touches UMAP. Numba only writes a disk cache for functions declared `cache=True`, so setting `NUMBA_CACHE_DIR` alone does nothing here — but `cache=True` is just a decorator kwarg, and injecting it is what Finding 8 does.
 
 Decomposing `epiclass.utils.embedding.compute_umap.main()` inside a single process, sweeping sample count:
 
@@ -96,7 +96,7 @@ Actual numeric work is about **2 seconds and flat in sample count**. That is uns
 Three "obvious" fixes are therefore worthless, and should not be re-proposed without new evidence:
 
 - **Reducing `SACCER3_SUBSET_N`** (the 100-sample subset fixture in `tests/conftest.py`) — cost is flat in sample count.
-- **Setting `NUMBA_CACHE_DIR`** — nothing to cache, per above.
+- **Setting `NUMBA_CACHE_DIR` on its own** — nothing is declared cacheable, so there is nothing to write. Forcing `cache=True` first *does* work: Finding 8.
 - **Trimming the embedding sweep** — the test already passes `--max_embeddings 1`, and `compute_umap.py` hardcodes `nn_knn = 100` for the KNN build regardless of that cap, so the cap does not reach the expensive part.
 
 ## Finding 2: JIT is paid per process, so co-location beats balance
@@ -189,9 +189,18 @@ Collection is ~16s per worker, and every worker collects the whole suite — imp
 
 Cold import costs, measured in isolated interpreters: `umap` 8.55s, `lightning` 5.19s, `comet_ml` 2.28s, `shap` 1.81s, `torch` 1.41s, `sklearn` 0.77s.
 
-`utils/compute_umap_test.py` imports `epiclass.utils.embedding.compute_umap` at module scope, which pulls `umap` into **all four workers during collection**, though only one will ever run a UMAP test. Moving that import inside the test body would remove it from three workers' critical path — worth up to ~8.5s. `tests/import_test.py` already demonstrates the pattern: every one of its imports sits inside `test_imports()` rather than at module level, so collecting it costs 0.10s against `compute_umap_test.py`'s 8.58s.
+`utils/compute_umap_test.py` imports `epiclass.utils.embedding.compute_umap` at module scope, which pulls `umap` into **all four workers during collection**, though only one will ever run a UMAP test. `tests/import_test.py` demonstrates the opposite pattern: every one of its imports sits inside `test_imports()`, so collecting it costs 0.10s against `compute_umap_test.py`'s 8.58s.
 
-**Untested.** Listed as the most promising remaining candidate, not as a recommendation.
+This looked like the most promising remaining candidate. **It was measured and it is wrong** (2026-08-28, one round per arm):
+
+| | wall | `single_sample` call |
+| --- | --- | --- |
+| module-level import (current) | 117.1s | 66.6s |
+| import moved into the test bodies | 121.9s | 85.0s |
+
+Deferring the import made the test **18.4s slower**. Collection runs in all four workers *simultaneously at startup*, so an expensive import there overlaps with the other workers' own collection and costs nothing on the critical path. Moving it into the test body reschedules that work to a moment when the other three workers are busy running tests — it then contends for CPU *and* lands on the makespan-determining worker.
+
+**Generalisation worth keeping:** module-scope imports in test files are on the parallel startup path, not the critical path. Deferring an import only helps if it is expensive, the module is collected by workers that never use it, *and* collection is the bottleneck. Here it is not.
 
 ## Finding 7: duplicated fixture setup
 
@@ -213,7 +222,52 @@ Two things are not inherent:
 
 `TestLazyEpiAtlasMetadata`'s `test_data` fixture (`core/epiatlas_treatment_test.py:438`) is **function-scoped**, while the two sibling classes use `scope="class"` for the identical `EpiAtlasTreatmentTestData.test_data()` call. It rebuilds at ~4s per test. This looks like an oversight — but check it against the mutation caveat first: `core/metadata_test.py`'s `test_meta` fixture hands out `test_epiatlas_data_handler.epiatlas_dataset.metadata` and the `env_filtering` tests mutate it in place. That is presumably why several of these fixtures build private copies instead of sharing one, so "just make them all session-scoped" is **not** safe.
 
-`extracted_hdf5_dir` untars `fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz` into pytest's per-run `basetemp`, once per worker, every run. An already-extracted copy sits in `fixtures/saccer3/hdf5/saccer3_2016-07/` and `make clean-saccer3` still targets that path, so the tree was clearly extracted there at some point in the past. A stable, lock-guarded cache directory would make this free after the first run, for every worker and every future run.
+`extracted_hdf5_dir` untars `fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz` into pytest's per-run `basetemp`, once per worker, every run. A stable lock-guarded cache would make that free after the first run — but **measure before building it**, because the extraction is cheap (2026-08-28):
+
+| operation | time |
+| --- | --- |
+| `tarfile` xz extract, as the fixture does it | 0.58s |
+| shell `tar -xf` | 0.35s |
+| `cp -r` of the extracted tree | 0.06s |
+
+1055 files, 4.2 MB compressed, 17 MB expanded. Four workers pay it in parallel, so a cross-run cache saves **~0.6s of wall** in exchange for flock plus staleness invalidation. Rejected as not worth the machinery.
+
+A related worry — that per-worker extraction exists because HDF5 locks files against parallel readers — was also tested and does not apply: 4 processes reading the same 40 fixture files concurrently, 3 passes each, all succeeded with identical checksums. Every consumer of `extracted_hdf5_dir` is read-only; the tests that mutate HDF5s (`convert_hdf5_to_float32_test.py`, the corrupted-file tests) copy first. The locking caveat in `core/lazy/migration_guide.md` is about Lustre, not local disk.
+
+## Finding 8: forcing `cache=True` on umap — the one big win
+
+Finding 1 says compilation cannot be persisted because nothing declares `cache=True`. That is true of umap as shipped, but `cache=True` is only a decorator kwarg, and **all 344 declarations across `umap` and `pynndescent` use the attribute form `@numba.njit` on a plain `import numba`**. Wrapping that single attribute before umap is imported reaches every one of them.
+
+`tests/numba_cache.py` does this, installed from `conftest.pytest_configure` (before collection imports umap). Interleaved A/B, alternating arms so machine drift hits both equally, 3 rounds each (2026-08-28):
+
+| round | cache on | cache off (`EPICLASS_NO_NUMBA_CACHE=1`) |
+| --- | --- | --- |
+| 1 | 111.9s | 121.4s |
+| 2 | 100.3s | 119.5s |
+| 3 | 101.9s | 128.2s |
+| **median** | **101.9s** | **121.4s** |
+
+**-19.5s, ~16%.** Every cached round beat every uncached round. `single_sample` drops 72.7s -> 48.1s (median). `chunked` moves the other way, 4.3s -> 8.2s, because it now pays to *write* newly-encountered signatures that the uncached run inherited for free from the first test's in-process compilation. Net is strongly positive. 562 passed / 10 skipped in every round, both arms.
+
+Costs and caveats:
+
+- **The populating run is slower**: ~140s vs ~121s uncached. One-time per cache generation.
+- **Three kernels never cache.** `nn_descent`, `nn_descent_internal` and `search_closure` (pynndescent) build closures over dynamic globals; numba refuses and warns. They recompile in every process, and the 16% above is what remains after that.
+- **CI gets nothing** unless the cache directory is persisted between runs — it would pay the cold cost every time. Hence `EPICLASS_NO_NUMBA_CACHE=1`.
+- **Concurrency.** Numba writes cache files atomically (temp file + `os.replace`), so torn reads are impossible. The real race is a *lost update*: `save_overload` is a read-modify-write of the index, so two workers saving at once can drop one entry — costing a recompile, not correctness. `numba_cache.py` serializes `save_overload` under an exclusive flock. The lock is held only across the pickle-and-rename, never across compilation, so it costs nothing.
+- Kernels compile for the host CPU (numba's default). The CPU is part of the cache key, so a cache built on another machine misses and recompiles rather than producing wrong code.
+
+`make clean-numba-cache` drops it; `clean-all` includes that.
+
+### numba flags that do not work
+
+Same two UMAP tests, single process, against a 38.3s / 4.81s baseline:
+
+| Setting | `single_sample` | `chunked` | Verdict |
+| --- | --- | --- | --- |
+| `NUMBA_DISABLE_JIT=1` | — | — | **timed out at 400s.** Pure-Python execution of pynndescent's NN-descent loops is hopeless. |
+| `NUMBA_OPT=0` | 44.4s | **208.5s** | Catastrophic — unoptimized kernels then have to actually run. |
+| `NUMBA_OPT=1` | 36.8s | 4.49s | ~4%, within noise. Not worth a knob. |
 
 ## Earlier investigation (2026-08-27)
 
@@ -303,6 +357,9 @@ pytest tests/utils/compute_umap_test.py::test_compute_umap_chunked -p no:xdist -
 A test that is far cheaper in the first form is paying somebody else's compilation, not doing its own work.
 
 ## Method notes
+
+**Interleave the arms.** Absolute wall times drift between campaigns on this machine — the same no-cache configuration measured 111s one hour and 119-128s the next. Comparing an arm measured now against a baseline measured earlier produced a flatly wrong conclusion during the Finding 8 work (a real 16% win briefly looked like no win at all). Alternate A/B/A/B within one campaign and compare medians; never compare across campaigns.
+
 
 Things that burned time and are worth not repeating.
 
