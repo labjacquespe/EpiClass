@@ -435,7 +435,7 @@ class TestLazyEpiAtlasMetadata:
         meta = UUIDMetadata(datasource.metadata_file)
         return datasource, meta
 
-    @pytest.fixture(name="test_data")
+    @pytest.fixture(scope="class", name="test_data")
     def fixture_test_data(self) -> EpiAtlasFoldFactory:
         """Shared mock fold factory (for its datasource + metadata path)."""
         return EpiAtlasTreatmentTestData.test_data()

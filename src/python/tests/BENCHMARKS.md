@@ -211,7 +211,7 @@ Per-fixture instrumentation, one 4-worker run:
 | `test_epiatlas_data_handler` | session | gw0, gw2, gw3 | 4.1 / 7.1 / 4.5s |
 | `test_data` (`TestEpiAtlasFoldFactory`) | class | gw0 | 7.9s |
 | `test_data` (`Test_Hdf5Loader`) | class | gw3 | 8.2s |
-| `test_data` (`TestLazyEpiAtlasMetadata`) | **function** | gw0 | 4.0 + 3.7s |
+| `test_data` (`TestLazyEpiAtlasMetadata`) | **function**, now class (Finding 9) | gw0 | 4.0 + 3.7s |
 | `extracted_hdf5_dir` | session | gw1, gw2 | 4.9 / 1.6s |
 | `saccer3_chunked_dir` | session | gw2 | 5.3s |
 | `big_test_data` | function | gw0 | 6.6s |
@@ -220,7 +220,7 @@ Session scope in pytest means once per *worker process*, not once per run, so a 
 
 Two things are not inherent:
 
-`TestLazyEpiAtlasMetadata`'s `test_data` fixture (`core/epiatlas_treatment_test.py:438`) is **function-scoped**, while the two sibling classes use `scope="class"` for the identical `EpiAtlasTreatmentTestData.test_data()` call. It rebuilds at ~4s per test. This looks like an oversight — but check it against the mutation caveat first: `core/metadata_test.py`'s `test_meta` fixture hands out `test_epiatlas_data_handler.epiatlas_dataset.metadata` and the `env_filtering` tests mutate it in place. That is presumably why several of these fixtures build private copies instead of sharing one, so "just make them all session-scoped" is **not** safe.
+`TestLazyEpiAtlasMetadata`'s `test_data` fixture (`core/epiatlas_treatment_test.py:438`) is **function-scoped**, while the two sibling classes use `scope="class"` for the identical `EpiAtlasTreatmentTestData.test_data()` call. It rebuilds at ~4s per test. This looks like an oversight — but check it against the mutation caveat first: `core/metadata_test.py`'s `test_meta` fixture hands out `test_epiatlas_data_handler.epiatlas_dataset.metadata` and the `env_filtering` tests mutate it in place. That is presumably why several of these fixtures build private copies instead of sharing one, so "just make them all session-scoped" is **not** safe. Class-scoping this one fixture turned out to be safe, and was measured — Finding 9.
 
 `extracted_hdf5_dir` untars `fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz` into pytest's per-run `basetemp`, once per worker, every run. A stable lock-guarded cache would make that free after the first run — but **measure before building it**, because the extraction is cheap (2026-08-28):
 
@@ -268,6 +268,28 @@ Same two UMAP tests, single process, against a 38.3s / 4.81s baseline:
 | `NUMBA_DISABLE_JIT=1` | — | — | **timed out at 400s.** Pure-Python execution of pynndescent's NN-descent loops is hopeless. |
 | `NUMBA_OPT=0` | 44.4s | **208.5s** | Catastrophic — unoptimized kernels then have to actually run. |
 | `NUMBA_OPT=1` | 36.8s | 4.49s | ~4%, within noise. Not worth a knob. |
+
+## Finding 9: class-scoping the last function-scoped `test_data` — real, but unmeasurable at suite level
+
+The oversight flagged in Finding 7. `TestLazyEpiAtlasMetadata` has two tests and rebuilt `EpiAtlasTreatmentTestData.test_data()` for each; its two sibling classes class-scope the identical call. Safe to share here: `EpiDataSource` sets three paths in `__init__` and is read-only afterwards, and the `datasource_and_metadata` fixture stays function-scoped, so each test still gets a fresh `UUIDMetadata`.
+
+Measured on the file alone, single process, 5 interleaved rounds (the suite-level effect is below this machine's resolution, so the file is the only instrument that can see it):
+
+| | function scope | class scope |
+| --- | --- | --- |
+| file duration, median | 7.89s | 7.32s |
+| fixture setup ≥0.02s, total, median | 4.87s | 4.31s |
+
+**-0.6s**, which is exactly one avoided construction. 13 passed in all 10 rounds.
+
+**The 4.0 + 3.7s in Finding 7's table overstates the recoverable work by ~6x.** Those timings come from a 4-worker run, where a fixture that costs 0.67s of CPU measures ~4.0s of elapsed time because it is competing with three other workers. Under `-n auto` the class-scoped build still measures 3.95s. Fixture setup times taken under parallelism are elapsed, not work — only the isolated number tells you how much duplicated work removing a rebuild actually recovers.
+
+Where the saving lands, from a timestamped worker map:
+
+- Both tests dispatch to the same worker, so the class scope is realised rather than paid once per worker. Which worker is not stable (gw2 one run, gw0 the next), but the pair stays together.
+- Worker spans in one run: gw0 72.6s, gw1 72.3s, gw2 76.1s, gw3 73.2s — a 3.8s spread. No worker is a clear long pole, so 0.6s removed from one of them mid-run is worth roughly 0.6/4 = 0.15s of makespan.
+
+That is a factor of 30 below the ~5s this machine can resolve, so no suite-level A/B was run: the null is guaranteed by construction, and measuring it would only produce noise. Keep the change for consistency with the sibling classes, not as a performance fix.
 
 ## Earlier investigation (2026-08-27)
 
