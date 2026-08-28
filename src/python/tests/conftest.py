@@ -388,7 +388,7 @@ def fixture_saccer3_chunked_dir(tmp_path_factory, extracted_hdf5_dir: Path) -> P
         hdf5_list=hdf5_list,
         chrom_file=SACCER3_DIR / "saccer3.can.chrom.sizes",
         output_dir=chunk_dir,
-        samples_per_chunk=50,
+        samples_per_chunk=2000,  # above the saccer3 sample count -> a single chunk file
         normalize=True,
         strict=True,
     )
