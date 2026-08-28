@@ -72,6 +72,14 @@ Test markers (declared in `src/python/pyproject.toml`):
   `-m "not slow"` to opt out.
 - `embedding`: PCA / UMAP smoke tests (JIT-heavy, dominate suite time)
 
+**Before changing test scheduling, read `src/python/tests/BENCHMARKS.md`.**
+It records what was measured and what was tried and rejected. Several
+intuitive changes made the suite *slower* — longest-first ordering costs
++64%, `-n 6`/`-n 8` cost +18–24%, and hoisting one UMAP test without the
+other cost ~15%. The suite is dominated by numba JIT in `umap-learn`
+(no `cache=True`), so the two UMAP tests must stay adjacent in collection
+order to share one process.
+
 The `tests/justfile` provides multi-version test orchestration via `uv`:
 
 ```bash

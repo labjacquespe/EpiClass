@@ -76,15 +76,24 @@ def fixture_verbose_splits(pytestconfig) -> bool:
     return bool(pytestconfig.getoption("--verbose-splits"))
 
 
-# xdist hands items to workers in collection order, so the last thing collected
-# bounds the makespan. compute_umap_single_sample is ~50s -- longer than the
-# whole non-slow suite's ideal makespan -- so it goes first. Hoisting only this
-# one is unmeasured; hoisting all 22 `slow` tests measured ~15% slower (157.7s
-# vs 136.6s, twice). Mechanism unknown: thread oversubscription was the obvious
-# suspect but capping torch threads changed nothing. Before adding a nodeid here,
-# time the suite with and without it -- "it's slow" is not evidence that hoisting
-# it helps.
-LONG_FIRST_NODEIDS = ("compute_umap_test.py::test_compute_umap_single_sample",)
+# xdist gives each worker an opening block of CONSECUTIVE tests
+# (len(items) // n_workers // 4, so 35 here), which makes collection order decide
+# co-location, not just start order. The two UMAP tests must therefore stay
+# ADJACENT: umap-learn declares no cache=True on its ~117 jitted functions, so
+# whichever runs second in the same process reuses the first's compiled kernels
+# and costs 4.4s instead of 47s. Splitting them wastes ~43s of recompilation
+# every run -- which is exactly what hoisting only single_sample did (measured
+# 135s vs 115s wall, three rounds each).
+#
+# Hoisting all 22 `slow` tests was worse still (~15% slower): it put every one of
+# them inside gw0's opening block. Longest-first ordering across the whole suite
+# is worse again (+64%). Before touching this list, time the suite with and
+# without the change AND check the chunked test's own duration -- ~4s means the
+# pair stayed co-located, ~47s means something split them. See tests/BENCHMARKS.md.
+LONG_FIRST_NODEIDS = (
+    "compute_umap_test.py::test_compute_umap_single_sample",
+    "compute_umap_test.py::test_compute_umap_chunked",
+)
 
 
 def pytest_collection_modifyitems(config, items):
