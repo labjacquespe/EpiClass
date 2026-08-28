@@ -94,7 +94,7 @@ The `tests/justfile` provides multi-version test orchestration via `uv`:
 cd src/python/tests
 just test 3.11              # run tests for Python 3.11
 just test 3.11 "test_name"  # filter tests
-just test-all               # run tests for Python 3.10, 3.11, 3.12 in parallel
+just test-all               # run tests for Python 3.11 and 3.12 in parallel
 ```
 
 ### Pre-commit checks (run after editing)
@@ -137,7 +137,8 @@ having to actually attempt the commit.
 - **Import sorting**: isort (black-compatible profile, line length 90)
 - **Linter**: pylint (config in `pyproject.toml`)
 - Pre-commit hooks enforce formatting on both `.py` files and notebooks (via nbQA)
-- Python 3.10–3.12 supported; originally developed with 3.8
+- Python 3.11–3.12 supported (`requires-python = ">=3.11, <3.13"`); 3.10 dropped
+  with the scikit-learn >=1.8.0 upgrade. Originally developed with 3.8
 
 ## Architecture Notes
 
