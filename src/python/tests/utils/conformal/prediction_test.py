@@ -16,6 +16,13 @@ pytest.importorskip("torchcp")
 # pylint: disable=wrong-import-position
 from epiclass.utils.conformal import prediction as cp
 
+# torchcp's BasePredictor.__init__ warns unconditionally, before it even looks
+# at the value -- we never pass `temperature`, so it is warning about its own
+# default. Nothing to migrate here; it goes when torchcp drops the parameter.
+pytestmark = pytest.mark.filterwarnings(
+    r"ignore:The 'temperature' parameter is deprecated:DeprecationWarning"
+)
+
 CLASSES = ["assay_A", "assay_B", "assay_C", "assay_D"]
 
 

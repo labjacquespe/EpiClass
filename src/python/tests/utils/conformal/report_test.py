@@ -18,6 +18,17 @@ import plotly.graph_objects as go
 
 from epiclass.utils.conformal import prediction as cp, report as cpr
 
+# Both third-party and reached only through this file's dependencies: torchcp
+# warns about `temperature` on every predictor construction even though we
+# never pass it, and kaleido calls the deprecated setDaemon() when spawning
+# its export process.
+pytestmark = [
+    pytest.mark.filterwarnings(
+        r"ignore:The 'temperature' parameter is deprecated:DeprecationWarning"
+    ),
+    pytest.mark.filterwarnings(r"ignore:setDaemon\(\) is deprecated:DeprecationWarning"),
+]
+
 CLASSES = ["assay_A", "assay_B", "assay_C", "assay_D"]
 
 

@@ -7,9 +7,16 @@ import pytest
 from epiclass.utils.embedding.compute_umap import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR
 
-pytestmark = pytest.mark.filterwarnings(
-    r"ignore:n_jobs value 1 overridden to 1 by setting random_state.*:UserWarning"
-)
+pytestmark = [
+    pytest.mark.filterwarnings(
+        r"ignore:n_jobs value 1 overridden to 1 by setting random_state.*:UserWarning"
+    ),
+    # Three pynndescent kernels close over dynamic globals and cannot honour the
+    # cache=True that tests/numba_cache.py injects (BENCHMARKS.md, Finding 8).
+    pytest.mark.filterwarnings(
+        r"ignore:.*Cannot cache compiled function.*:numba.core.errors.NumbaWarning"
+    ),
+]
 
 
 @pytest.fixture(name="test_dir")

@@ -16,6 +16,12 @@ from epiclass.utils.metrics.analyze_hdf5_vals import (
 )
 from tests.epilap_test_data import FIXTURES_DIR
 
+# kaleido calls the deprecated setDaemon() when spawning its export process.
+# Third-party, reached only through plotly's static image export.
+pytestmark = pytest.mark.filterwarnings(
+    r"ignore:setDaemon\(\) is deprecated:DeprecationWarning"
+)
+
 
 @pytest.fixture(name="test_dir")
 def fixture_test_dir(mk_logdir) -> Path:

@@ -8,6 +8,12 @@ import pytest
 from epiclass.mains.epiatlas_training_no_valid import main as main_module
 from tests.epilap_test_data import FIXTURES_DIR, EpiAtlasTreatmentTestData
 
+# torch deprecates `isinstance(x, LeafSpec)`; lightning's _pytree helper still
+# uses it, so every Lightning training loop warns. Upstream on both sides.
+pytestmark = pytest.mark.filterwarnings(
+    r"ignore:.*isinstance\(treespec, LeafSpec\).*:FutureWarning"
+)
+
 
 @pytest.fixture(name="test_dir")
 def fixture_test_dir(mk_logdir) -> Path:
