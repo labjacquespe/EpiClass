@@ -38,7 +38,7 @@ def extract_saccer3_hdf5s() -> Path:
     if not extracted_dir.is_dir() or not any(extracted_dir.glob("*.hdf5")):
         print(f"Extracting {SACCER3_HDF5_ARCHIVE} ...")
         with tarfile.open(SACCER3_HDF5_ARCHIVE, "r:xz") as tar:
-            tar.extractall(path=SACCER3_HDF5_ARCHIVE.parent)
+            tar.extractall(path=SACCER3_HDF5_ARCHIVE.parent, filter="data")
     return extracted_dir
 
 

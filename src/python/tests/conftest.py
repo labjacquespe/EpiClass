@@ -251,7 +251,7 @@ def saccer3_extracted_hdf5_dir(tmp_path_factory) -> Iterator[Path]:
         extract_root.mkdir(parents=True, exist_ok=True)
 
         with tarfile.open(archive, "r:xz") as tar:
-            tar.extractall(path=extract_root)
+            tar.extractall(path=extract_root, filter="data")
 
     yield extracted_dir
 
