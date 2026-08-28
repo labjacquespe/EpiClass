@@ -16,5 +16,10 @@ def time_now_str() -> str:
 
 
 def seconds_to_str(seconds: int) -> str:
-    """Convert seconds to a string in the format HH:MM:SS"""
-    return str(datetime.fromtimestamp(seconds, tz=timezone.utc).strftime("%H:%M:%S"))
+    """Convert a duration in seconds to a string in the format HH:MM:SS
+
+    Hours are not capped at 24: a 25h duration is "25:00:00", not "01:00:00".
+    """
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
