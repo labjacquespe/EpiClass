@@ -5,8 +5,9 @@
 PYTEST ?= pytest
 SACCER3_HDF5_DIR := ./fixtures/saccer3/hdf5/saccer3_2016-07
 NUMBA_CACHE_DIR := ./.numba_cache
+ENVS_DIR := ./envs
 
-.PHONY: help test test-fast test-slow demo-test clean-saccer3 clean-numba-cache clean-all
+.PHONY: help test test-fast test-slow demo-test clean-saccer3 clean-numba-cache clean-envs clean-all
 
 help:
 	@echo ""
@@ -17,7 +18,8 @@ help:
 	@echo "  demo-test          Run demo training/predict using saccer3."
 	@echo "  clean-saccer3      Remove extracted saccer3 HDF5 files"
 	@echo "  clean-numba-cache  Remove cached numba kernels (forces recompile)"
-	@echo "  clean-all          Clean test data + pytest cache"
+	@echo "  clean-envs         Remove the per-version venvs built by the justfile"
+	@echo "  clean-all          Clean test data + venvs + pytest cache"
 	@echo "----------------------------------------"
 	@echo ""
 
@@ -69,7 +71,26 @@ clean-numba-cache:
 		echo "No numba cache found."; \
 	fi
 
-clean-all: clean-saccer3 clean-numba-cache
+# The justfile builds these; make only removes them. Refuses if one is active,
+# so `make clean-all` cannot delete the interpreter running the current shell.
+clean-envs:
+	@echo "Cleaning per-version test venvs..."
+	@envs=$$(cd $(ENVS_DIR) 2>/dev/null && pwd); \
+	if [ -n "$$envs" ] && [ -n "$$VIRTUAL_ENV" ] && \
+	   [ "$${VIRTUAL_ENV##$$envs}" != "$$VIRTUAL_ENV" ]; then \
+		echo "Refusing: the active venv lives in $(ENVS_DIR)"; \
+		echo "  $$VIRTUAL_ENV"; \
+		echo "Run 'deactivate' first."; \
+		exit 1; \
+	fi
+	@if [ -d "$(ENVS_DIR)" ]; then \
+		rm -rf "$(ENVS_DIR)"; \
+		echo "Removed $(ENVS_DIR)"; \
+	else \
+		echo "No test venvs found."; \
+	fi
+
+clean-all: clean-saccer3 clean-numba-cache clean-envs
 	@echo "Cleaning pytest cache..."
 	@rm -rf .pytest_cache
 	@echo "All clean."
