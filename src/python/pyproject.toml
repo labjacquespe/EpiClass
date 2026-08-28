@@ -198,5 +198,9 @@ filterwarnings = [
     "ignore:.*pkg_resources.declare_namespace.*:DeprecationWarning",
     "ignore:.*pkg_resources is deprecated as an API.*",
     "ignore:.*RequirementCache.*:DeprecationWarning",
+    # tests/numba_cache.py forces cache=True on every numba kernel; three
+    # pynndescent kernels use dynamic globals and cannot be cached (see
+    # tests/BENCHMARKS.md, Finding 8). Nothing to fix here, so drop the noise.
+    "ignore:.*Cannot cache compiled function.*:numba.core.errors.NumbaWarning",
     "error::FutureWarning:pandas.*", # treat pandas FutureWarnings as errors to ensure they are addressed promptly
 ]
