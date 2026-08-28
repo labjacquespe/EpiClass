@@ -194,6 +194,9 @@ filterwarnings = [
     # pytestmark is in effect. Everything raised while a test runs is silenced
     # in that test's own file, so the reason stays next to the code.
     "ignore:.*sentry_sdk.Hub.* is deprecated.*",
-    # treat pandas FutureWarnings as errors to ensure they are addressed promptly
-    "error::FutureWarning:pandas.*",
+    # Treat FutureWarnings as errors so pandas deprecations are addressed promptly.
+    # Not scoped to `:pandas.*`: the module field matches the module *raising the
+    # warning, so pandas' own stacklevel makes it point at our call site instead.
+    # Third-party FutureWarnings we cannot fix are ignored per test file.
+    "error::FutureWarning",
 ]
