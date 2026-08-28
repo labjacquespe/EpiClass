@@ -56,11 +56,11 @@ class TestSecondsToStr:
             (3599, "00:59:59"),
             (3600, "01:00:00"),
             (86399, "23:59:59"),
-            (
-                86400,
-                "00:00:00",
-            ),  # wraps at 24h -- it formats a UTC instant, not a duration
-            (90061, "01:01:01"),
+            # A duration, not a time of day: hours are uncapped, never wrapping to 0.
+            (86400, "24:00:00"),
+            (90000, "25:00:00"),
+            (90061, "25:01:01"),
+            (356400, "99:00:00"),
         ],
     )
     def test_known_values(self, seconds: int, expected: str):
