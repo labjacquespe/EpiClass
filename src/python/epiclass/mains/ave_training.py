@@ -6,6 +6,14 @@ each fold, validation samples are scored by reconstruction error and flagged as
 outliers against an adaptive threshold; per-sample scores are written to
 ``ave_validation_scores.csv``.
 
+Unlike the classifier mains, AVE folds train for a fixed epoch budget with no
+early stopping and no monitor-based checkpointing, so each fold keeps exactly
+one checkpoint (``last.ckpt``) that does not depend on the fold it scores. The
+validation curve is still watched -- ``ValidationTrendMonitor`` warns loudly and
+writes ``valid_trend_report.json`` if the loss stops descending (budget too
+long) or is still descending at the last epoch (budget too short). Any
+``early_stop_limit`` left in the hyperparameters file is ignored.
+
 The metadata `category` is still required: it drives the fold factory's
 stratification / UUID grouping. The AVE itself ignores labels in its loss.
 """
@@ -41,7 +49,7 @@ from epiclass.core.lazy.lazy_fold_factory import (
     LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
 )
 from epiclass.core.model_ave import LightningAVE
-from epiclass.core.trainer import MyTrainer, define_callbacks
+from epiclass.core.trainer import MyTrainer, ValidationTrendMonitor, define_callbacks
 from epiclass.utils import modify_metadata
 from epiclass.utils.check_dir import create_dirs
 from epiclass.utils.mmap_dir import resolve_mmap_dir
@@ -244,12 +252,37 @@ def do_one_experiment(
         print(f"GPU available: {gpu_available}")
 
         # --- TRAIN the model ---
+        # No early stopping, and no checkpoint selection on valid_loss. Since
+        # the loss fell every epoch, both picked the last epoch anyway -- which
+        # is why the "best" and "last" checkpoints came out byte-identical -- so
+        # dropping them changes the filenames, not the model. The point is to
+        # stop writing the same weights twice: pruning a finished fold down to
+        # last.ckpt used to leave best_checkpoint.list naming a file that was no
+        # longer on disk, which is a FileNotFoundError at restore time and a set
+        # of saved predictions with no model behind them. With one checkpoint
+        # there is nothing to prune and nothing left dangling. If the loss ever
+        # stops falling, the monitor below says so instead of quietly keeping a
+        # different epoch than the pruning expects.
+        if "early_stop_limit" in hparams:
+            print(
+                "Note: 'early_stop_limit' is ignored for AVE training. "
+                "The validation curve is reported by ValidationTrendMonitor "
+                "(see valid_trend_report.json) rather than acted upon."
+            )
         callbacks = define_callbacks(
-            early_stop_limit=hparams.get("early_stop_limit", 20),
+            early_stop_limit=None,
             show_summary=(split_nb == 0),
             show_progress_bar=not gpu_available,  # Show progress bar only on CPU
-            monitor="valid_loss",
-            mode="min",
+        )
+        callbacks.append(
+            ValidationTrendMonitor(
+                monitor="valid_loss",
+                mode="min",
+                patience=hparams.get("trend_warning_patience", 5),
+                window=hparams.get("trend_warning_window", 5),
+                min_rel_improvement=hparams.get("trend_min_rel_improvement", 0.01),
+                save_dir=logger.save_dir,  # type: ignore
+            )
         )
 
         # Always tee metrics to a local CSV under the logdir. Offline Comet
