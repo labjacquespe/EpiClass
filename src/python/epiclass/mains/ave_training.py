@@ -44,6 +44,7 @@ from epiclass.core.model_ave import LightningAVE
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils import modify_metadata
 from epiclass.utils.check_dir import create_dirs
+from epiclass.utils.mmap_dir import resolve_mmap_dir
 from epiclass.utils.my_logging import log_dset_composition, log_pre_training
 from epiclass.utils.time import time_now
 from epiclass.utils.torch_data import create_torch_datasets
@@ -95,8 +96,9 @@ def parse_arguments() -> argparse.Namespace:
     )
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
-        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
-             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+        help="Directory for the HDF5 mmap cache. Default: $SLURM_TMPDIR/mmap_cache "
+             "when $SLURM_TMPDIR is set, else a temporary directory removed at the "
+             "end of the run.",
     )
     # fmt: on
     return arg_parser.parse_args()
@@ -140,69 +142,67 @@ def main():
     restore_model = cli.restore
     n_fold = hparams.get("n_fold", 10)
 
-    mmap_dir = (
-        cli.mmap_dir if cli.mmap_dir is not None else Path(cli.logdir) / "mmap_cache"
-    )
-    ea_handler = EpiAtlasFoldFactory.from_datasource(
-        my_datasource,
-        category,
-        label_list,
-        n_fold=n_fold,
-        test_ratio=0,
-        min_class_size=min_class_size,
-        force_filter=True,
-        metadata=my_metadata,
-        mmap_dir=mmap_dir,
-    )
-    loading_time = time_now() - loading_begin
-
-    to_log = {
-        "loading_time": loading_time.total_seconds(),
-        "hdf5_resolution": str(hdf5_resolution),
-        "category": category,
-    }
-
-    min_split = int(os.getenv("MIN_SPLIT", "0"))
-    max_split = int(os.getenv("MAX_SPLIT", "42"))
-
-    time_before_split = time_now()
-    oversample = hparams.get("oversample", hparams.get("oversampling", True))
-    for i, my_data in enumerate(ea_handler.yield_split(oversample=oversample)):
-        # Skip if not in inclusive range
-        if not (min_split <= i <= max_split):  # pylint: disable=superfluous-parens
-            continue
-
-        split_time = time_now() - time_before_split
-        to_log.update({"split_time": split_time.total_seconds()})
-
-        # --- Startup LOGGER ---
-        is_online = not cli.offline  # additional logging fails when offline
-        logdir = Path(cli.logdir) / f"split{i}"
-        create_dirs(logdir)
-
-        exp_name = "-".join(cli.logdir.parts[-3:]) + f"_split{i}"
-        comet_logger = pl_loggers.CometLogger(
-            project="EpiClass",
-            name=exp_name,
-            offline_directory=logdir,  # type: ignore
-            online=is_online,
-            auto_metric_logging=False,
+    with resolve_mmap_dir(cli.mmap_dir) as mmap_dir:
+        ea_handler = EpiAtlasFoldFactory.from_datasource(
+            my_datasource,
+            category,
+            label_list,
+            n_fold=n_fold,
+            test_ratio=0,
+            min_class_size=min_class_size,
+            force_filter=True,
+            metadata=my_metadata,
+            mmap_dir=mmap_dir,
         )
+        loading_time = time_now() - loading_begin
 
-        comet_logger.experiment.add_tag("EpiAtlas")
-        comet_logger.experiment.add_tag("AVE")
-        log_pre_training(logger=comet_logger, to_log=to_log, step=i)
+        to_log = {
+            "loading_time": loading_time.total_seconds(),
+            "hdf5_resolution": str(hdf5_resolution),
+            "category": category,
+        }
 
-        # Everything happens in there
-        do_one_experiment(
-            split_nb=i,
-            my_data=my_data,
-            hparams=hparams,
-            logger=comet_logger,
-            restore=restore_model,
-        )
+        min_split = int(os.getenv("MIN_SPLIT", "0"))
+        max_split = int(os.getenv("MAX_SPLIT", "42"))
 
         time_before_split = time_now()
+        oversample = hparams.get("oversample", hparams.get("oversampling", True))
+        for i, my_data in enumerate(ea_handler.yield_split(oversample=oversample)):
+            # Skip if not in inclusive range
+            if not (min_split <= i <= max_split):  # pylint: disable=superfluous-parens
+                continue
+
+            split_time = time_now() - time_before_split
+            to_log.update({"split_time": split_time.total_seconds()})
+
+            # --- Startup LOGGER ---
+            is_online = not cli.offline  # additional logging fails when offline
+            logdir = Path(cli.logdir) / f"split{i}"
+            create_dirs(logdir)
+
+            exp_name = "-".join(cli.logdir.parts[-3:]) + f"_split{i}"
+            comet_logger = pl_loggers.CometLogger(
+                project="EpiClass",
+                name=exp_name,
+                offline_directory=logdir,  # type: ignore
+                online=is_online,
+                auto_metric_logging=False,
+            )
+
+            comet_logger.experiment.add_tag("EpiAtlas")
+            comet_logger.experiment.add_tag("AVE")
+            log_pre_training(logger=comet_logger, to_log=to_log, step=i)
+
+            # Everything happens in there
+            do_one_experiment(
+                split_nb=i,
+                my_data=my_data,
+                hparams=hparams,
+                logger=comet_logger,
+                restore=restore_model,
+            )
+
+            time_before_split = time_now()
 
 
 def do_one_experiment(

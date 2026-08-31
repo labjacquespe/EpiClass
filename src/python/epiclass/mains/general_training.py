@@ -3,7 +3,7 @@
 Does not require UUID-based metadata (unlike epiatlas_training.py).
 Designed for datasets like saccer3 where samples are independent.
 """
-# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-positional-arguments, duplicate-code
 from __future__ import annotations
 
 import argparse
@@ -29,6 +29,7 @@ from epiclass.core.lazy.general_fold_factory import GeneralFoldFactory
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils.check_dir import create_dirs
+from epiclass.utils.mmap_dir import resolve_mmap_dir
 from epiclass.utils.my_logging import log_dset_composition
 from epiclass.utils.time import time_now
 from epiclass.utils.torch_data import create_torch_datasets
@@ -75,8 +76,9 @@ def parse_arguments() -> argparse.Namespace:
     )
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
-        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
-             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+        help="Directory for the HDF5 mmap cache. Default: $SLURM_TMPDIR/mmap_cache "
+             "when $SLURM_TMPDIR is set, else a temporary directory removed at the "
+             "end of the run.",
     )
     arg_parser.add_argument(
         "--folds", type=Path, default=None,
@@ -250,44 +252,45 @@ def main():
 
     # Load data and create fold factory
     loading_begin = time_now()
-    fold_factory = GeneralFoldFactory(
-        datasource=datasource,
-        label_category=cli.category,
-        min_class_size=cli.min_class_size,
-        n_fold=cli.n_fold,
-        mmap_dir=cli.mmap_dir if cli.mmap_dir is not None else logdir / "mmap_cache",
-        fold_definitions=fold_definitions,
-    )
-    print(f"Loading time: {time_now() - loading_begin}")
-
-    # Cross-validation training
-    # Same MIN_SPLIT / MAX_SPLIT contract as epiatlas_training.py, ave_training.py and
-    # ave_general_training.py: an inclusive fold range, so a run can be split across jobs
-    # (or cut short to a single fold).
-    min_split = int(os.getenv("MIN_SPLIT", "0"))
-    max_split = int(os.getenv("MAX_SPLIT", "42"))
-
-    oversample = hparams.get("oversample", hparams.get("oversampling", True))
-
-    for i, my_data in enumerate(fold_factory.yield_split(oversample=oversample)):
-        # Skip if not in inclusive range
-        if not (min_split <= i <= max_split):  # pylint: disable=superfluous-parens
-            continue
-
-        print(f"\n{'='*60}")
-        print(f"FOLD {i+1}/{fold_factory.k}")
-        print(f"  Training:   {my_data.train.num_examples} samples")
-        print(f"  Validation: {my_data.validation.num_examples} samples")
-        print(f"{'='*60}\n")
-
-        do_one_experiment(
-            split_nb=i,
-            my_data=my_data,
-            hparams=hparams,
-            logdir=logdir,
-            hl_units=cli.hl_units,
-            nb_layers=cli.nb_layer,
+    with resolve_mmap_dir(cli.mmap_dir) as mmap_dir:
+        fold_factory = GeneralFoldFactory(
+            datasource=datasource,
+            label_category=cli.category,
+            min_class_size=cli.min_class_size,
+            n_fold=cli.n_fold,
+            mmap_dir=mmap_dir,
+            fold_definitions=fold_definitions,
         )
+        print(f"Loading time: {time_now() - loading_begin}")
+
+        # Cross-validation training
+        # Same MIN_SPLIT / MAX_SPLIT contract as epiatlas_training.py, ave_training.py
+        # and ave_general_training.py: an inclusive fold range, so a run can be split
+        # across jobs (or cut short to a single fold).
+        min_split = int(os.getenv("MIN_SPLIT", "0"))
+        max_split = int(os.getenv("MAX_SPLIT", "42"))
+
+        oversample = hparams.get("oversample", hparams.get("oversampling", True))
+
+        for i, my_data in enumerate(fold_factory.yield_split(oversample=oversample)):
+            # Skip if not in inclusive range
+            if not (min_split <= i <= max_split):  # pylint: disable=superfluous-parens
+                continue
+
+            print(f"\n{'='*60}")
+            print(f"FOLD {i+1}/{fold_factory.k}")
+            print(f"  Training:   {my_data.train.num_examples} samples")
+            print(f"  Validation: {my_data.validation.num_examples} samples")
+            print(f"{'='*60}\n")
+
+            do_one_experiment(
+                split_nb=i,
+                my_data=my_data,
+                hparams=hparams,
+                logdir=logdir,
+                hl_units=cli.hl_units,
+                nb_layers=cli.nb_layer,
+            )
 
     total_time = time_now() - begin
     print(f"\nTotal time: {total_time}")

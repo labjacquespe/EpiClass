@@ -35,6 +35,7 @@ from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.trainer import MyTrainer, define_callbacks
 from epiclass.utils import modify_metadata
 from epiclass.utils.check_dir import create_dirs
+from epiclass.utils.mmap_dir import resolve_mmap_dir
 from epiclass.utils.my_logging import log_dset_composition, log_pre_training
 from epiclass.utils.time import time_now
 
@@ -85,8 +86,9 @@ def parse_arguments() -> argparse.Namespace:
     )
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
-        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache). "
-             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+        help="Directory for the HDF5 mmap cache. Default: $SLURM_TMPDIR/mmap_cache "
+             "when $SLURM_TMPDIR is set, else a temporary directory removed at the "
+             "end of the run.",
     )
     # fmt: on
     return arg_parser.parse_args()
@@ -163,58 +165,56 @@ def main():
 
     restore_model = cli.restore
 
-    mmap_dir = (
-        cli.mmap_dir if cli.mmap_dir is not None else Path(cli.logdir) / "mmap_cache"
-    )
-    ea_handler = EpiAtlasFoldFactory.from_datasource(
-        my_datasource,
-        category,
-        label_list,
-        n_fold=2,  # minimum to avoid error, since class is made for cross-validation
-        test_ratio=0,
-        min_class_size=min_class_size,
-        signal_id_list=list(my_metadata.signal_ids),
-        force_filter=True,
-        mmap_dir=mmap_dir,
-    )
-    loading_time = time_now() - loading_begin
+    with resolve_mmap_dir(cli.mmap_dir) as mmap_dir:
+        ea_handler = EpiAtlasFoldFactory.from_datasource(
+            my_datasource,
+            category,
+            label_list,
+            n_fold=2,  # minimum to avoid error, since class is made for cross-validation
+            test_ratio=0,
+            min_class_size=min_class_size,
+            signal_id_list=list(my_metadata.signal_ids),
+            force_filter=True,
+            mmap_dir=mmap_dir,
+        )
+        loading_time = time_now() - loading_begin
 
-    to_log = {
-        "loading_time": loading_time.total_seconds(),
-        "hdf5_resolution": str(hdf5_resolution),
-        "category": category,
-    }
+        to_log = {
+            "loading_time": loading_time.total_seconds(),
+            "hdf5_resolution": str(hdf5_resolution),
+            "category": category,
+        }
 
-    # --- Startup LOGGER ---
-    # api key in config file
-    is_online = not cli.offline  # additional logging fails when offline
-    logdir = Path(cli.logdir)
-    create_dirs(logdir)
+        # --- Startup LOGGER ---
+        # api key in config file
+        is_online = not cli.offline  # additional logging fails when offline
+        logdir = Path(cli.logdir)
+        create_dirs(logdir)
 
-    exp_name = "-".join(cli.logdir.parts[-3:])
-    comet_logger = pl_loggers.CometLogger(
-        project="EpiClass",
-        name=exp_name,
-        offline_directory=logdir,  # type: ignore
-        online=is_online,
-        auto_metric_logging=False,
-    )
+        exp_name = "-".join(cli.logdir.parts[-3:])
+        comet_logger = pl_loggers.CometLogger(
+            project="EpiClass",
+            name=exp_name,
+            offline_directory=logdir,  # type: ignore
+            online=is_online,
+            auto_metric_logging=False,
+        )
 
-    comet_logger.experiment.add_tag("EpiAtlas")
-    log_pre_training(logger=comet_logger, to_log=to_log, step=None)
+        comet_logger.experiment.add_tag("EpiAtlas")
+        log_pre_training(logger=comet_logger, to_log=to_log, step=None)
 
-    oversample = hparams.get("oversample", hparams.get("oversampling", True))
-    my_data = ea_handler.create_total_data(oversample=oversample)
-    my_dataset = DataSet.empty_collection(data_class=LazyKnownData)
-    my_dataset.set_train(my_data)
+        oversample = hparams.get("oversample", hparams.get("oversampling", True))
+        my_data = ea_handler.create_total_data(oversample=oversample)
+        my_dataset = DataSet.empty_collection(data_class=LazyKnownData)
+        my_dataset.set_train(my_data)
 
-    # Everything happens in there
-    train_without_valid(
-        my_data=my_dataset,
-        hparams=hparams,
-        logger=comet_logger,
-        restore=restore_model,
-    )
+        # Everything happens in there
+        train_without_valid(
+            my_data=my_dataset,
+            hparams=hparams,
+            logger=comet_logger,
+            restore=restore_model,
+        )
 
 
 def train_without_valid(

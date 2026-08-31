@@ -1,5 +1,5 @@
 """Compute SHAP values of a model."""
-# pylint: disable=import-error, line-too-long
+# pylint: disable=import-error, line-too-long, duplicate-code
 from __future__ import annotations
 
 import argparse
@@ -25,6 +25,7 @@ from epiclass.core.lazy.lazy_data_classes import LazyUnknownData
 from epiclass.core.lazy.lazy_hdf5_loader import LazyHdf5Loader
 from epiclass.core.model_pytorch import LightningDenseClassifier
 from epiclass.core.shap_values import NN_SHAP_Handler
+from epiclass.utils.mmap_dir import resolve_mmap_dir
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -60,8 +61,9 @@ def parse_arguments() -> argparse.Namespace:
     )
     arg_parser.add_argument(
         "--mmap_dir", type=Path, default=None,
-        help="Directory for the HDF5 mmap cache (default: <logdir>/mmap_cache, or ./mmap_cache if no logdir). "
-             "On HPC set to $SLURM_TMPDIR for fast local-disk writes.",
+        help="Directory for the HDF5 mmap cache. Default: $SLURM_TMPDIR/mmap_cache "
+             "when $SLURM_TMPDIR is set, else a temporary directory removed at the "
+             "end of the run.",
     )
     # fmt: on
     return arg_parser.parse_args()
@@ -88,24 +90,19 @@ def compute_shap(
     output_name: str,
 ):
     """Compute SHAP values for the given NN handler."""
-    if cli.mmap_dir is not None:
-        base_mmap = cli.mmap_dir
-    elif cli.logdir is not None:
-        base_mmap = Path(cli.logdir) / "mmap_cache"
-    else:
-        base_mmap = Path("./mmap_cache")
-    background_set = _load_lazy(
-        cli.background_hdf5, cli.chromsize, base_mmap / "background"
-    )
-    explain_set = _load_lazy(cli.explain_hdf5, cli.chromsize, base_mmap / "explain")
+    with resolve_mmap_dir(cli.mmap_dir) as base_mmap:
+        background_set = _load_lazy(
+            cli.background_hdf5, cli.chromsize, base_mmap / "background"
+        )
+        explain_set = _load_lazy(cli.explain_hdf5, cli.chromsize, base_mmap / "explain")
 
-    shap_computer.compute_shaps(
-        background_dset=background_set,
-        evaluation_dset=explain_set,
-        save=True,
-        name=output_name,
-        num_workers=int(os.getenv("SLURM_CPUS_PER_TASK", "1")),
-    )
+        shap_computer.compute_shaps(
+            background_dset=background_set,
+            evaluation_dset=explain_set,
+            save=True,
+            name=output_name,
+            num_workers=int(os.getenv("SLURM_CPUS_PER_TASK", "1")),
+        )
 
 
 def main():
