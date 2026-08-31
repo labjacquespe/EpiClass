@@ -48,14 +48,14 @@ def main():
         faulty_path = dir_err.path
         if cli.exists:
             raise dir_err from None
-        else:
-            # Create missing dir
-            create_dirs(faulty_path)
 
-            print(f"Created missing logdir and needed parents : {faulty_path}")
+        # Create missing dir
+        create_dirs(faulty_path)
 
-            # Reverify everything was done properly
-            dir_checker(cli.dir)
+        print(f"Created missing logdir and needed parents : {faulty_path}")
+
+        # Reverify everything was done properly
+        dir_checker(cli.dir)
 
 
 if __name__ == "__main__":
