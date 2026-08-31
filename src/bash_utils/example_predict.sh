@@ -64,6 +64,21 @@ base_log="${output_path}/${release}/${assembly}_${basename}_pearson/${category}_
 model_dir="${base_log}/10fold/split0" # IMPORTANT
 log="${base_log}/predict_unknown" # IMPORTANT
 
+# --- Repair the checkpoint list if the model dir moved ---
+# best_checkpoint.list stores ABSOLUTE checkpoint paths, so copying or moving a model
+# directory (or reading it from a different mount point) leaves them stale, and passing
+# the directory to --model then fails to resolve the checkpoint.
+# rebase_checkpoint_list.py detects the new base -- the directory holding the list -- and
+# rewrites the stored paths in place, keeping a .bak copy.
+# --fallback-ckpt last.ckpt: when the recorded checkpoint is gone entirely (CV runs that
+# kept only last.ckpt and deleted the per-epoch best checkpoints), it appends a new line
+# pointing at the surviving last.ckpt, which restoration reads.
+# It is pure-stdlib, so it runs under the module python before any venv is activated.
+# Drop --yes and add --dry-run to preview the rewrite instead of applying it.
+printf '\n%s\n' "Rebasing checkpoint list onto current location (if needed)"
+python ${gen_program_path}/src/python/epiclass/utils/rebase_checkpoint_list.py \
+  "${model_dir}/best_checkpoint.list" --yes --fallback-ckpt last.ckpt
+
 # last model checkpoint file
 checkpoint_file=$(cat "${model_dir}/best_checkpoint.list" | tail -n1 | cut -f1 -d " ")
 
@@ -119,7 +134,8 @@ python ${program_path}/utils/check_dir.py --exists ${model_dir}
 # --model takes either a model directory (resolved via its best_checkpoint.list, as below)
 # or a direct .ckpt file. Use the direct file (e.g. --model "${checkpoint_file}") to load a
 # model off a mounted filesystem where the absolute paths inside best_checkpoint.list don't
-# resolve. --outdir defaults to a 'predictions' dir next to the checkpoint when omitted.
+# resolve and the rebase step above is not an option (e.g. a read-only mount).
+# --outdir defaults to a 'predictions' dir next to the checkpoint when omitted.
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/mains/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}"
 python ${program_path}/mains/predict.py --hdf5 ${hdf5_list} --model ${model_dir} --chromsize ${chromsizes} --outdir ${log} > ${out1} 2> ${out2}
