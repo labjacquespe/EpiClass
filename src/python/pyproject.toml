@@ -8,7 +8,7 @@ name = "EpiClass"
 dynamic = ["version", "dependencies"]
 description = "Apply machine learning to epigenomic data classification."
 authors = [{ name = "Joanny Raby", email = "Joanny.Raby@usherbrooke.ca" }]
-requires-python = ">=3.11, <3.13"
+requires-python = ">=3.11, <3.13"  # 3.10 dropped with scikit-learn >=1.8.0; originally developed on 3.8
 
 [tool.setuptools.dynamic]
 dependencies = { file = "requirements/req_core.in" }

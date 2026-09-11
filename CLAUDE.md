@@ -27,8 +27,8 @@ All Python commands should be run from `src/python/`.
 ### Installation
 
 ```bash
+python install.py          # from the repo root; auto-detects CPU/GPU for torch
 cd src/python
-python install.py          # auto-detects CPU/GPU for torch
 pip install -e .           # base install (editable)
 pip install -e .[test]     # install with test dependencies
 pip install -e .[dev]      # install with dev tools (black, isort, pylint, pre-commit)
@@ -68,8 +68,8 @@ collect from the whole repo with no config.
 Test markers (declared in `src/python/pyproject.toml`):
 
 - `slow`: integration / long-running tests. **Not** auto-skipped: a plain
-  `pytest tests` runs them (572 tests vs 550). Use `make test-fast` /
-  `-m "not slow"` to opt out.
+  `pytest tests` runs them. Use `-m "not slow"` (or `make test-fast` from
+  `src/python/tests/`) to opt out.
 - `embedding`: PCA / UMAP smoke tests (JIT-heavy, dominate suite time)
 
 **Before changing test scheduling, read `src/python/tests/BENCHMARKS.md`.**
@@ -84,7 +84,8 @@ collection order to share one process.
 `tests/numba_cache.py` injects `cache=True` into every numba declaration so
 compiled kernels persist in `tests/.numba_cache` (~16% off wall once warm;
 the populating run is ~20s slower). `EPICLASS_NO_NUMBA_CACHE=1` disables it,
-`EPICLASS_NUMBA_CACHE=<dir>` relocates it, `make clean-numba-cache` drops it.
+`EPICLASS_NUMBA_CACHE=<dir>` relocates it, `make clean-numba-cache` (from
+`src/python/tests/`) drops it.
 Always A/B **interleaved within one campaign** — wall times drift enough
 between campaigns to invert a 16% result.
 
@@ -137,8 +138,7 @@ having to actually attempt the commit.
 - **Import sorting**: isort (black-compatible profile, line length 90)
 - **Linter**: pylint (config in `pyproject.toml`)
 - Pre-commit hooks enforce formatting on both `.py` files and notebooks (via nbQA)
-- Python 3.11–3.12 supported (`requires-python = ">=3.11, <3.13"`); 3.10 dropped
-  with the scikit-learn >=1.8.0 upgrade. Originally developed with 3.8
+- Python 3.11–3.12 supported (`requires-python = ">=3.11, <3.13"`)
 
 ## Architecture Notes
 
