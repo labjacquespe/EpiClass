@@ -120,10 +120,12 @@ fi
 
 # --- Pre-checks ---
 
+# Create the folder if it does not exist
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/utils/check_dir.py ${log}"
 python ${program_path}/utils/check_dir.py ${log}
 
+# Fails on missing folder
 printf '\n%s\n' "Launching following command"
 printf '%s\n' "python ${program_path}/utils/check_dir.py --exists ${model_dir}"
 python ${program_path}/utils/check_dir.py --exists ${model_dir}
