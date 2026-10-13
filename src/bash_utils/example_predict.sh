@@ -112,7 +112,8 @@ if [[ -n "$SLURM_JOB_ID" ]]; then
   cd $SLURM_TMPDIR
   python -m venv epiclass_env
   source epiclass_env/bin/activate
-  python ${gen_program_path}/install.py &> job${SLURM_JOB_ID}_venv_setup.log
+  # Log next to the SLURM output (#SBATCH --output dir): $SLURM_TMPDIR is wiped at job end.
+  python ${gen_program_path}/install.py &> ${SLURM_SUBMIT_DIR}/slurm_files/venv_setup_${SLURM_JOB_NAME}-job${SLURM_JOB_ID}.log
 else
   source /path/to/preinstalled/venv/bin/activate # MODIFY
 fi

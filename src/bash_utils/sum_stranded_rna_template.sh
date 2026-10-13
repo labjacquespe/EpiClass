@@ -143,7 +143,7 @@ fi
 
 # --- use correct environment ---
 
-venv_log="${final_log_dir}/job${SLURM_JOB_ID}_venv_setup.log"
+venv_log="${final_log_dir}/venv_setup_${SLURM_JOB_NAME}-job${SLURM_JOB_ID}.log"
 log_time "Starting venv setup (log: ${venv_log})"
 cd $SLURM_TMPDIR
 python -m venv epiclass_env
