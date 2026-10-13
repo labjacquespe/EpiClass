@@ -7,9 +7,7 @@
 **/tests/**/*.ckpt
 **/tests/fixtures/
 mmap_cache
-
-# uv
-uv.lock
+src/python/epiclass/utils/benchmark/RESULTS.md
 
 # quarto website
 resources/
@@ -17,11 +15,22 @@ resources/
 
 # cluster files
 slurm_files/
+.cometml-runs/
+
+# CocoIndex Code (ccc) — local-only semantic search index
+/.cocoindex_code/
+
+# numba kernel cache written by the test suite (tests/numba_cache.py)
+src/python/tests/.numba_cache/
+
+# uv
+uv.lock
 
 # Dev environnement
 .vscode
 *.lprof
 .claude/
+CLAUDE.local.md
 
 # macOS
 .DS_Store
@@ -133,13 +142,3 @@ ty.toml
 
 # mypy
 .mypy_cache/
-
-.claude/
-
-src/python/epiclass/utils/benchmark/RESULTS.md
-# CocoIndex Code (ccc) — local-only semantic search index
-/.cocoindex_code/
-CLAUDE.local.md
-
-# numba kernel cache written by the test suite (tests/numba_cache.py)
-src/python/tests/.numba_cache/
