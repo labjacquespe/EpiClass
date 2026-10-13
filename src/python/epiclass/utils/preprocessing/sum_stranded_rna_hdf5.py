@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Sum stranded RNA-Seq HDF5 pairs into unstranded single-sample / chunked HDF5.
 
-Each biological RNA-Seq sample (one EpiRR) is stored as two stranded
-single-sample HDF5 files -- a ``plusRaw`` track and a ``minusRaw`` track --
-each with per-chromosome datasets under a single top-level group. This script
+Each RNA-Seq experiment (one uuid; an EpiRR can hold several, e.g. an rna_seq
+and an mrna_seq one) is stored as two stranded single-sample HDF5 files -- a
+``plusRaw`` track and a ``minusRaw`` track -- each with per-chromosome datasets
+under a single top-level group. make_rna_pair_list.py builds the pair list
+from a metadata JSON. This script
 reads a list of such pairs and produces the *unstranded* representation by
 adding the two strands element-wise (per chromosome), so the summed signal
 keeps the exact per-chromosome bin length and is directly predictable by the
