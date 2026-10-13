@@ -23,8 +23,18 @@ Two independent, complementary output modes (at least one is required):
     --per-pair   one summed single-sample HDF5 per pair (per-chromosome group
                  layout preserved), named ``<new_id>.hdf5``. Feed to predict.py
                  single-sample mode (with its own --chromsize). Always written
-                 RAW -- normalization happens at predict time, matching how the
-                 stranded inputs live on disk.
+                 raw (un-normalized). The output mirrors the source
+                 files' epigeec format, whichever version wrote them. Two are
+                 known, each represented by a test fixture (dates are the
+                 object creation times stored in the fixture files):
+                   - older (sacCer3 fixtures, created 2018-01): ``bin`` /
+                     ``chrom_sizes_hash`` / ``hash``, float32 sums;
+                   - newer (hg38 fixture, created 2020-12): ``bin`` /
+                     ``chrom_sizes_filename`` / ``signal_filename``, float64 sums.
+                 Every attribute keeps its exact HDF5 type, the ID
+                 attribute (``hash`` / ``signal_filename``) and the top-level
+                 group are named after the new ID, and each chromosome's
+                 ``sumX`` / ``sumXX`` are recomputed on the summed signal.
 
     --chunked    one chunked multi-sample HDF5 (chunk_NNNN.h5 with `signals` +
                  `sample_ids`), same format as hdf5_chunks_creation.py, sample
@@ -63,8 +73,9 @@ import hashlib
 import re
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import h5py
 import numpy as np
@@ -81,6 +92,32 @@ from epiclass.utils.preprocessing.hdf5_chunks_creation import (
 )
 
 MAPPING_COLUMNS = ("new_id", "file_a", "file_b", "id_a", "id_b", "per_pair_path")
+
+# File-level attributes both files of a pair must agree on (when both carry them).
+# Older epigeec writes chrom_sizes_hash, newer writes chrom_sizes_filename.
+SHARED_ROOT_ATTRS = ("bin", "chrom_sizes_hash", "chrom_sizes_filename")
+
+# File-level attributes holding the file's own ID (older / newer epigeec). Set to
+# the new ID in the output; epigeec names the top-level group after it too.
+ID_ROOT_ATTRS = ("hash", "signal_filename")
+
+# Per-chromosome attributes recomputed on the summed signal (used by epigeec
+# correlate to speed up large correlation matrices).
+SUM_ATTRS = ("sumX", "sumXX")
+
+# {name: (value, on-disk HDF5 type)}. The type is kept so attributes are rewritten
+# exactly as epigeec stored them (e.g. its strings are NUL-terminated, h5py's
+# default for bytes is NUL-padded).
+RootAttrs = Dict[str, Tuple[Any, h5py.h5t.TypeID]]
+
+
+@dataclass
+class SampleFormat:
+    """On-disk epigeec format details of a source file, reused to write the sum."""
+
+    root_attrs: RootAttrs = field(default_factory=dict)
+    # HDF5 type of each SUM_ATTRS attribute (float32 in older epigeec, float64 newer)
+    sum_attr_types: Dict[str, h5py.h5t.TypeID] = field(default_factory=dict)
 
 
 def load_chrom_names(chrom_file: Path) -> List[str]:
@@ -129,30 +166,63 @@ def derive_pair_id(path_a: Path, path_b: Path) -> str:
     return hashlib.md5(key.encode("utf-8")).hexdigest()
 
 
-def read_group(hdf5_path: Path) -> Tuple[str, Dict[str, np.ndarray]]:
-    """Return ``(group_name, {chrom: 1-D float32 array})`` for a single-sample file."""
+def _attr_type(obj: h5py.File | h5py.Group | h5py.Dataset, name: str) -> h5py.h5t.TypeID:
+    """On-disk HDF5 type of attribute ``name`` of ``obj``."""
+    return h5py.h5a.open(obj.id, name.encode()).get_type()
+
+
+def read_group(hdf5_path: Path) -> Tuple[str, Dict[str, np.ndarray], SampleFormat]:
+    """Return ``(group_name, {chrom: 1-D float32 array}, format)`` for a
+    single-sample file."""
     with h5py.File(hdf5_path, "r") as f:
+        root_attrs: RootAttrs = {
+            name: (f.attrs[name], _attr_type(f, name)) for name in f.attrs
+        }
         try:
             header = list(f.keys())[0]
         except IndexError as e:
             raise OSError(f"No groups found in {hdf5_path}") from e
-        group = f[header]
+        group: h5py.Group = f[header]  # type: ignore[assignment]
         datasets = {
             name: np.asarray(group[name][...], dtype=np.float32)  # type: ignore[index]
-            for name in group.keys()  # type: ignore[union-attr]
+            for name in group.keys()
         }
-    return header, datasets
+        sum_attr_types: Dict[str, h5py.h5t.TypeID] = {}
+        if datasets:
+            first: h5py.Dataset = group[next(iter(datasets))]  # type: ignore[assignment]
+            sum_attr_types = {
+                name: _attr_type(first, name) for name in SUM_ATTRS if name in first.attrs
+            }
+    return header, datasets, SampleFormat(root_attrs, sum_attr_types)
 
 
-def sum_pair(path_a: Path, path_b: Path) -> Tuple[str, Dict[str, np.ndarray]]:
-    """Element-wise sum the two files, returning ``(group_name, {chrom: sum})``.
+def sum_pair(path_a: Path, path_b: Path) -> Tuple[Dict[str, np.ndarray], SampleFormat]:
+    """Element-wise sum the two files, returning ``({chrom: sum}, format)``.
 
-    Validates that both files expose the same chromosome dataset names and
-    per-chromosome shapes before adding. The group name of the first file is
-    reused for the output. Summation is commutative, so file order is irrelevant.
+    Validates that both files have the same epigeec format (same file-level
+    attribute names), the same chromosome dataset names, per-chromosome shapes and
+    shared file-level attributes (``SHARED_ROOT_ATTRS``) before adding. The format
+    of the first file is returned for reuse in the output. Summation is
+    commutative, so file order is irrelevant.
     """
-    header_a, data_a = read_group(path_a)
-    _, data_b = read_group(path_b)
+    _, data_a, fmt_a = read_group(path_a)
+    _, data_b, fmt_b = read_group(path_b)
+    attrs_a, attrs_b = fmt_a.root_attrs, fmt_b.root_attrs
+
+    if attrs_a.keys() != attrs_b.keys():
+        raise ValueError(
+            f"file attributes differ between {path_a.name} and {path_b.name} "
+            f"(different epigeec formats?): {sorted(attrs_a)} vs {sorted(attrs_b)}"
+        )
+
+    for key in SHARED_ROOT_ATTRS:
+        if key in attrs_a and key in attrs_b:
+            value_a, value_b = attrs_a[key][0], attrs_b[key][0]
+            if not np.array_equal(value_a, value_b):
+                raise ValueError(
+                    f"attribute {key!r} differs between {path_a.name} "
+                    f"({value_a}) and {path_b.name} ({value_b})"
+                )
 
     if data_a.keys() != data_b.keys():
         raise ValueError(
@@ -169,17 +239,68 @@ def sum_pair(path_a: Path, path_b: Path) -> Tuple[str, Dict[str, np.ndarray]]:
                 f"({arr_a.shape}) and {path_b.name} ({arr_b.shape})"
             )
         summed[chrom] = arr_a + arr_b
-    return header_a, summed
+    return summed, fmt_a
+
+
+def _write_attr(
+    obj: h5py.File | h5py.Group | h5py.Dataset,
+    name: str,
+    value: Any,
+    h5_type: Optional[h5py.h5t.TypeID],
+) -> None:
+    """Write attribute ``name`` with the given HDF5 type (h5py's default if None).
+
+    Fixed-length strings keep their padding/charset but are resized to fit
+    ``value`` (+1 byte for the terminator of NUL-terminated strings).
+    """
+    if h5_type is None:
+        obj.attrs[name] = value
+        return
+    h5_type = h5_type.copy()
+    if h5_type.get_class() == h5py.h5t.STRING and not h5_type.is_variable_str():
+        raw = value if isinstance(value, bytes) else str(value).encode()
+        nul_term = h5_type.get_strpad() == h5py.h5t.STR_NULLTERM
+        h5_type.set_size(len(raw) + int(nul_term))
+        array = np.array(raw, dtype=f"S{h5_type.get_size()}")
+    else:
+        array = np.asarray(value, dtype=h5_type.dtype)
+    space = (
+        h5py.h5s.create(h5py.h5s.SCALAR)
+        if array.shape == ()
+        else h5py.h5s.create_simple(array.shape)
+    )
+    attr = h5py.h5a.create(obj.id, name.encode(), h5_type, space)
+    attr.write(array, mtype=h5_type)
 
 
 def write_single_sample(
-    out_path: Path, group_name: str, datasets: Dict[str, np.ndarray]
+    out_path: Path,
+    sample_id: str,
+    datasets: Dict[str, np.ndarray],
+    fmt: Optional[SampleFormat] = None,
 ) -> None:
-    """Write a summed single-sample HDF5, preserving the per-chromosome layout."""
+    """Write a summed single-sample HDF5 in the source files' epigeec format.
+
+    The top-level group is named ``sample_id``. File-level attributes from
+    ``fmt`` are written with their source HDF5 types, with the ID attribute
+    (``ID_ROOT_ATTRS``) set to ``sample_id``. Each chromosome dataset gets
+    ``sumX`` (sum of values) and ``sumXX`` (sum of squared values), accumulated in
+    float64 on the written signal -- the source strands' values do not carry over
+    to a sum -- and stored with the source's type (float64 if the source has none).
+    """
+    fmt = fmt or SampleFormat()
     with h5py.File(out_path, "w") as f:
-        group = f.create_group(group_name)
+        for key, (value, h5_type) in fmt.root_attrs.items():
+            if key in ID_ROOT_ATTRS:
+                value = sample_id
+            _write_attr(f, key, value, h5_type)
+        group = f.create_group(sample_id)
         for chrom, arr in datasets.items():
-            group.create_dataset(chrom, data=arr, dtype=np.float32)
+            dset = group.create_dataset(chrom, data=arr, dtype=np.float32)
+            arr64 = arr.astype(np.float64)
+            sums = {"sumX": arr64.sum(), "sumXX": np.dot(arr64, arr64)}
+            for name, value in sums.items():
+                _write_attr(dset, name, np.array([value]), fmt.sum_attr_types.get(name))
 
 
 def concat_signal(
@@ -269,7 +390,7 @@ def process(
             explicit_id if explicit_id is not None else derive_pair_id(path_a, path_b)
         )
         try:
-            group_name, summed = sum_pair(path_a, path_b)
+            summed, fmt = sum_pair(path_a, path_b)
         except (OSError, ValueError) as err:
             msg = f"pair {idx} ({new_id}): {err}"
             if strict:
@@ -285,7 +406,7 @@ def process(
             if out_path.exists():
                 print(f"  Skipping {out_path.name} (already exists)")
             else:
-                write_single_sample(out_path, group_name, summed)
+                write_single_sample(out_path, new_id, summed, fmt)
 
         if chunked:
             assert chroms is not None
