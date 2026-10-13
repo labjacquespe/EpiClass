@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import tarfile
 import uuid
 from pathlib import Path
 from typing import List
 
 import h5py
+import zstandard
 
 from epiclass.core.data_source import EpiDataSource
 from epiclass.core.lazy.lazy_fold_factory import (
@@ -36,6 +38,21 @@ SACCER3_DIR = FIXTURES_DIR / "saccer3"
 MODELS_DIR = FIXTURES_DIR / "models"
 SACCER3_MLP_DIR = MODELS_DIR / "saccer3_mlp"
 SACCER3_AVE_DIR = MODELS_DIR / "saccer3_ave"
+
+# zstd rather than xz: ~2.4x faster to extract (BENCHMARKS.md, Finding 10).
+SACCER3_HDF5_ARCHIVE = SACCER3_DIR / "hdf5" / "saccer3_2016-07.tar.zst"
+
+
+def extract_saccer3_archive(dest: Path) -> None:
+    """Extract the saccer3 HDF5 archive into dest (creates dest/saccer3_2016-07/).
+
+    tarfile cannot read zstd before Python 3.14, so decompression is streamed
+    through the zstandard package.
+    """
+    with open(SACCER3_HDF5_ARCHIVE, "rb") as fh:
+        with zstandard.ZstdDecompressor().stream_reader(fh) as reader:
+            with tarfile.open(fileobj=reader, mode="r|") as tar:
+                tar.extractall(path=dest, filter="data")
 
 
 class EpiAtlasTreatmentTestData:

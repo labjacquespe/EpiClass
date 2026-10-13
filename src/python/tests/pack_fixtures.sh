@@ -21,7 +21,7 @@ INDEX="${TAR}.index"
 # Generated at test time, never shipped:
 #  best_checkpoint.list  - written by pytest_sessionstart from best_checkpoint_template.list;
 #                          holds absolute paths, so a shipped copy is wrong on every other machine
-#  saccer3_2016-07/      - HDF5s extracted from saccer3_2016-07.tar.xz by the test fixtures
+#  saccer3_2016-07/      - HDF5s extracted from saccer3_2016-07.tar.zst by the test fixtures
 #  _smoke_hdf5.list      - scratch list written by smoke runs
 #  mmap_cache/, *.npy    - lazy-loader signal caches
 EXCLUDES=(

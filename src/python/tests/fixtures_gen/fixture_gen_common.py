@@ -3,7 +3,7 @@
 Both generators do the same three things around an otherwise ordinary short
 training run:
 
-1. materialize the saccer3 HDF5s (they ship as a tar.xz) and write a list file;
+1. materialize the saccer3 HDF5s (they ship as a tar.zst) and write a list file;
 2. copy the resulting checkpoint into ``fixtures/models/<name>/`` under a
    ``<logger>/<run-id>/checkpoints/`` path;
 3. write ``best_checkpoint_template.list`` with ``THIS_FOLDER`` placeholders,
@@ -18,18 +18,22 @@ provenance without a live comet-ml run.
 from __future__ import annotations
 
 import shutil
-import tarfile
 from datetime import datetime
 from pathlib import Path
 from typing import List
 
 import torch
 
-from tests.epilap_test_data import FIXTURES_DIR, MODELS_DIR, SACCER3_DIR
+from tests.epilap_test_data import (
+    FIXTURES_DIR,
+    MODELS_DIR,
+    SACCER3_DIR,
+    SACCER3_HDF5_ARCHIVE,
+    extract_saccer3_archive,
+)
 
 SACCER3_CHROMS = SACCER3_DIR / "saccer3.can.chrom.sizes"
 SACCER3_METADATA = SACCER3_DIR / "saccer3_2016-07_metadata.json"
-SACCER3_HDF5_ARCHIVE = SACCER3_DIR / "hdf5" / "saccer3_2016-07.tar.xz"
 
 
 def extract_saccer3_hdf5s() -> Path:
@@ -37,8 +41,7 @@ def extract_saccer3_hdf5s() -> Path:
     extracted_dir = SACCER3_HDF5_ARCHIVE.parent / "saccer3_2016-07"
     if not extracted_dir.is_dir() or not any(extracted_dir.glob("*.hdf5")):
         print(f"Extracting {SACCER3_HDF5_ARCHIVE} ...")
-        with tarfile.open(SACCER3_HDF5_ARCHIVE, "r:xz") as tar:
-            tar.extractall(path=SACCER3_HDF5_ARCHIVE.parent, filter="data")
+        extract_saccer3_archive(SACCER3_HDF5_ARCHIVE.parent)
     return extracted_dir
 
 

@@ -24,8 +24,8 @@ drwx------ rabj2301/domain^users       0 2026-08-25 14:49 fixtures/models/saccer
 drwx------ rabj2301/domain^users       0 2026-08-25 14:32 fixtures/saccer3/
 -rw------- rabj2301/domain^users     229 2025-07-04 18:29 fixtures/saccer3/saccer3.can.chrom.sizes
 -rw------- rabj2301/domain^users  686835 2025-07-04 18:29 fixtures/saccer3/saccer3_2016-07_metadata.json
-drwx------ rabj2301/domain^users       0 2026-08-25 14:46 fixtures/saccer3/hdf5/
--rw------- rabj2301/domain^users 4195852 2026-02-10 14:04 fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz
+drwx------ rabj2301/domain^users       0 2026-10-13 13:45 fixtures/saccer3/hdf5/
+-rw------- rabj2301/domain^users 4623022 2026-10-13 13:45 fixtures/saccer3/hdf5/saccer3_2016-07.tar.zst
 -rw------- rabj2301/domain^users    3597 2023-02-14 15:26 fixtures/test-epilap-empty-biotype-n40.md5
 -rw------- rabj2301/domain^users     264 2026-05-14 16:08 fixtures/test-epilap-empty-biotype-n8.md5
 -rw------- rabj2301/domain^users   18407 2026-05-14 16:10 fixtures/test-epilap-empty-biotype-n8-metadata.json

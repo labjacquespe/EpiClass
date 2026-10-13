@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import tarfile
 import uuid
 from pathlib import Path
 from typing import Iterator
@@ -23,6 +22,7 @@ from tests.epilap_test_data import (
     MODELS_DIR,
     SACCER3_DIR,
     EpiAtlasTreatmentTestData,
+    extract_saccer3_archive,
 )
 from tests.numba_cache import install as install_numba_cache
 
@@ -246,12 +246,8 @@ def saccer3_extracted_hdf5_dir(tmp_path_factory) -> Iterator[Path]:
     extracted_dir = extract_root / "saccer3_2016-07"
 
     if not extracted_dir.exists():
-        hdf5_dir = SACCER3_DIR / "hdf5"
-        archive = hdf5_dir / "saccer3_2016-07.tar.xz"
         extract_root.mkdir(parents=True, exist_ok=True)
-
-        with tarfile.open(archive, "r:xz") as tar:
-            tar.extractall(path=extract_root, filter="data")
+        extract_saccer3_archive(extract_root)
 
     yield extracted_dir
 

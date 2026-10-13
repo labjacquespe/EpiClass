@@ -222,7 +222,7 @@ Two things are not inherent:
 
 `TestLazyEpiAtlasMetadata`'s `test_data` fixture (`core/epiatlas_treatment_test.py:438`) is **function-scoped**, while the two sibling classes use `scope="class"` for the identical `EpiAtlasTreatmentTestData.test_data()` call. It rebuilds at ~4s per test. This looks like an oversight — but check it against the mutation caveat first: `core/metadata_test.py`'s `test_meta` fixture hands out `test_epiatlas_data_handler.epiatlas_dataset.metadata` and the `env_filtering` tests mutate it in place. That is presumably why several of these fixtures build private copies instead of sharing one, so "just make them all session-scoped" is **not** safe. Class-scoping this one fixture turned out to be safe, and was measured — Finding 9.
 
-`extracted_hdf5_dir` untars `fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz` into pytest's per-run `basetemp`, once per worker, every run. A stable lock-guarded cache would make that free after the first run — but **measure before building it**, because the extraction is cheap (2026-08-28):
+`extracted_hdf5_dir` untars `fixtures/saccer3/hdf5/saccer3_2016-07.tar.xz` (now `.tar.zst`, Finding 10) into pytest's per-run `basetemp`, once per worker, every run. A stable lock-guarded cache would make that free after the first run — but **measure before building it**, because the extraction is cheap (2026-08-28):
 
 | operation | time |
 | --- | --- |
@@ -290,6 +290,24 @@ Where the saving lands, from a timestamped worker map:
 - Worker spans in one run: gw0 72.6s, gw1 72.3s, gw2 76.1s, gw3 73.2s — a 3.8s spread. No worker is a clear long pole, so 0.6s removed from one of them mid-run is worth roughly 0.6/4 = 0.15s of makespan.
 
 That is a factor of 30 below the ~5s this machine can resolve, so no suite-level A/B was run: the null is guaranteed by construction, and measuring it would only produce noise. Keep the change for consistency with the sibling classes, not as a performance fix.
+
+## Finding 10: saccer3 archive xz -> zstd — 2.4x faster extraction, +10% size
+
+Finding 7 left the per-worker saccer3 extraction alone as cheap. It is cheap, but almost all of the codec part of it was xz: decoding the 16.7 MB tar stream alone takes 0.32s with `xz -dc` and 0.03s with `zstandard`. The archive is now `saccer3_2016-07.tar.zst`, read through the `zstandard` package (`tarfile` has no zstd before Python 3.14) by `extract_saccer3_archive` in `epilap_test_data.py`, shared by `conftest.py` and `fixtures_gen/`.
+
+Interleaved, 15 rounds, extract into a fresh dir with `filter="data"` as the fixture does (2026-10-13; this machine was slower than on 2026-08-28, hence 1.07s vs Finding 7's 0.58s for the same baseline):
+
+| archive | size | median extract | min |
+| --- | --- | --- | --- |
+| xz, as before (`tarfile` `r:xz`) | 4,195,852 | 1.070s | 0.958s |
+| zstd `-19`, original member order | 4,750,073 | 0.435s | 0.390s |
+| zstd `--ultra -22 --zstd=mml=4`, greedy member order (shipped) | 4,623,022 | 0.453s | 0.398s |
+
+Both zstd archives beat xz in every round, and their extracted trees (names, modes, bytes) are identical to the xz one. What remains of the ~0.4s is `tarfile`'s per-member overhead on 1055 files: shell `tar --zstd -xf` does the same in 0.07s, and `filter="fully_trusted"` saves another ~0.1-0.25s, kept as `"data"` anyway.
+
+**zstd cannot match xz on size here.** The best zstd is +10%. Tried and not enough: `--ultra -22` (larger than `-19`), `--long=27`, `tlen=999`, `strat=9` with max `wlog/clog/hlog/slog`, and `mml` 3/5/6 (`mml=4` was the only one that helped, ~1%). The residual gap is the entropy coder: LZMA's range coder is better than Huffman/FSE on the float literals inside the HDF5s. Reordering members so similar files sit together helps both codecs alike (xz -9e on the same order: 4,067,316), so it does not close the gap either.
+
+The shipped member order is a greedy nearest-neighbour chain over the first 14 KB of each file (L1 distance on raw bytes), with the original tar headers rewritten unchanged. Tests never depend on member order: every consumer sorts the globbed `*.hdf5` paths.
 
 ## Earlier investigation (2026-08-27)
 
