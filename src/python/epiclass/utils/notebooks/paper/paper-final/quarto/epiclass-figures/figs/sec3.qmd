@@ -853,6 +853,14 @@ print(f"CA: {df.shape[0]} total files")
 pred_dfs[f"{basename}_C-A"] = df
 ```
 
+Restrict ChIP-Atlas to the Fig 3B file set (46,018: no potential non-core, no EpiATLAS EpiRR)
+```{python}
+#| label: supp-fig9d-filter-CA
+fig3b_ca_ids = set(no_epiatlas_df["ID"])
+for key in [k for k in pred_dfs if k.endswith("_C-A")]:
+    pred_dfs[key] = pred_dfs[key][pred_dfs[key]["ID"].isin(fig3b_ca_ids)]
+```
+
 Compute accuracy per assay.
 
 ```{python}
