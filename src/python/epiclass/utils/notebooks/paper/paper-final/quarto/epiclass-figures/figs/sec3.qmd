@@ -970,9 +970,9 @@ for name in tick_group:
             x + jitter_offsets[i % len(jitter_offsets)] for i, x in enumerate(x_positions)
         ]
 
-        # sort x/y together
-        x_jittered, y_values, hover_texts = zip(
-            *sorted(zip(x_jittered, y_values, hover_texts))
+        # sort x/y together (colors included, so each point keeps its assay color)
+        x_jittered, y_values, hover_texts, colors = zip(
+            *sorted(zip(x_jittered, y_values, hover_texts, colors))
         )
         fig.add_trace(
             go.Scatter(
