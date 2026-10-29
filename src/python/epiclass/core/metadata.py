@@ -109,6 +109,11 @@ class Metadata:
         return self._metadata.keys()
 
     @property
+    def md5s(self) -> KeysView:
+        """Alias of `signal_ids`, the pre-rename name still used on master."""
+        return self.signal_ids
+
+    @property
     def datasets(self) -> ValuesView:
         """Return a datasets view (like dict.values())."""
         return self._metadata.values()
@@ -164,6 +169,10 @@ class Metadata:
             label = self[signal_id][label_category]
             data[label].append(signal_id)
         return data
+
+    def md5_per_class(self, label_category: str) -> Dict[str, List[str]]:
+        """Alias of `ids_per_class`, the pre-rename name still used on master."""
+        return self.ids_per_class(label_category)
 
     def remove_small_classes(
         self, min_class_size: int, label_category: str, verbose=True
@@ -372,6 +381,10 @@ class UUIDMetadata(Metadata):
             uuid = dset["uuid"]
             uuid_to_ids[uuid].update({dset["track_type"]: dset["md5sum"]})
         return uuid_to_ids
+
+    def uuid_to_md5(self) -> Dict[str, Dict[str, str]]:
+        """Alias of `uuid_to_signal_ids`, the pre-rename name still used on master."""
+        return self.uuid_to_signal_ids()
 
     def remove_small_classes(
         self,

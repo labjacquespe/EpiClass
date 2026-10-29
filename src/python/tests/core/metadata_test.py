@@ -87,3 +87,10 @@ def test_copy_independence(test_meta: UUIDMetadata):
     extra = next(iter(clone.signal_ids))
     del clone[extra]
     assert extra in test_meta
+
+
+def test_pre_rename_aliases(test_meta: UUIDMetadata):
+    """Old md5 names (still the only ones on master) return the signal_id results."""
+    assert test_meta.md5s == test_meta.signal_ids
+    assert test_meta.md5_per_class(ASSAY) == test_meta.ids_per_class(ASSAY)
+    assert test_meta.uuid_to_md5() == test_meta.uuid_to_signal_ids()
