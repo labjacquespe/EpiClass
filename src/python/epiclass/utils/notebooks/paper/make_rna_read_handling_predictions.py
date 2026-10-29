@@ -14,10 +14,6 @@ Quarto figure cannot reproduce it inline. Instead this module owns everything up
 "here are the validation-set model predictions" and writes a small, tidy long-form
 CSV; the Quarto doc reads it and scores Accuracy / macro-F1 in a few pandas lines.
 
-Because 5G plots only Accuracy and macro-F1 (no Brier), the artifact needs only the
-true label and the argmax predicted label per sample -- no per-class probability
-columns -- so a single combined table across all classifiers is enough.
-
 Each row also carries the **Comet experiment key** of the classifier that produced
 it (parsed from the prediction ``origin`` filename, see ``build_prediction_tag`` in
 ``core/prediction_files.py``) plus the model directory, so the exact models can be
@@ -220,7 +216,7 @@ def build_per_file_predictions(  # pylint: disable=too-many-branches
     metadata true label and the argmax predicted label. Both mappings are scored by
     the same fold model, so they share the fold's experiment key. Long-form rows:
     (model, model_dir, experiment_key, split, mapping, epirr, strand, true_class,
-    predicted_class).
+    predicted_class, pred_score).
     """
     rows = []
     for model_name, cv_root in models.items():
@@ -284,6 +280,7 @@ def build_per_file_predictions(  # pylint: disable=too-many-branches
                             "label_category": category,
                             "true_class": true_label,
                             "predicted_class": classes[int(np.argmax(prob))],
+                            "pred_score": float(np.max(prob)),
                         }
                     )
     return pd.DataFrame(rows)
@@ -358,6 +355,7 @@ def build_unstranded_predictions(  # pylint: disable=too-many-positional-argumen
                         "label_category": category,
                         "true_class": true_label,
                         "predicted_class": classes[int(np.argmax(s_prob))],
+                        "pred_score": float(np.max(s_prob)),
                     }
                 )
     return pd.DataFrame(rows)
@@ -461,8 +459,9 @@ def main(argv: Optional[List[str]] = None) -> None:
     header = (
         "# RNA read-handling predictions -- Supplementary Fig. 5G.\n"
         "# Produced by make_rna_read_handling_predictions.py (see that module).\n"
-        "# predicted_class is the classifier argmax; experiment_key / model_dir\n"
-        "#   identify the model (cross-check complete_epiclass_models_table_data.csv).\n"
+        "# predicted_class is the classifier argmax, pred_score its probability;\n"
+        "# experiment_key / model_dir identify the model\n"
+        "#   (cross-check complete_epiclass_models_table_data.csv).\n"
         f"# true_class = metadata[label_category], from: {args.metadata_json.name}\n"
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
