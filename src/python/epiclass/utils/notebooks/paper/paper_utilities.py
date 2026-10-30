@@ -1290,6 +1290,79 @@ def extract_experiment_keys_from_output_files(parent_folder: Path) -> Dict[str, 
     )
 
 
+def extract_experiment_info(line: str, verbose: bool = False) -> Tuple[str, str] | None:
+    """Extract split and experiment key from a checkpoint path line.
+
+    Line should contain a path ending with .../<split>/<project>/<exp_key>/checkpoints/...
+    where <split> is either a CV split (e.g. 'split0') or a training-mode name
+    for no-validation runs (e.g. 'complete_no_valid_oversample').
+    """
+    if "checkpoints" not in line:
+        return None
+
+    parts = line.strip().split("/")
+    try:
+        i = parts.index("checkpoints")
+    except ValueError:
+        return None
+    if i < 3:
+        return None
+
+    info = (parts[i - 3], parts[i - 1])
+    if verbose:
+        print(f"Extracted info from line: {info}")
+
+    return info
+
+
+def process_log_file(file_path: Path, verbose: bool = False) -> Set[Tuple[str, str]]:
+    """Process a single log file and extract experiment information."""
+    experiment_info = set()
+    if verbose:
+        print(f"Processing log file: {file_path}")
+    try:
+        with open(file_path, "r", encoding="utf8") as f:
+            for line in f:
+                if result := extract_experiment_info(line, verbose=verbose):
+                    experiment_info.add(result)
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        print(f"Error processing {file_path}: {e}")
+
+    if verbose:
+        print(
+            f"Extracted {len(experiment_info)} experiment info entries from {file_path}"
+        )
+
+    return experiment_info
+
+
+def collect_exp_keys(
+    folder: Path,
+    exclusion_pattern: str = "shap|predict",
+    verbose: bool = False,
+) -> Dict[str, Set[Tuple[str, str]]]:
+    """Collect experiment keys from log files (.o files), from a given folder.
+
+    Requires folder to be parent of *1l_3000n folder.
+    """
+    experiments_keys = defaultdict(set)
+
+    log_files = list(folder.glob("*1l_3000n/**/*.o"))
+    if verbose:
+        print(f"Found {len(list(log_files))} log files in {folder}")
+    for file in log_files:
+        if re.search(exclusion_pattern, str(file)):
+            if verbose:
+                print(f"Excluding file {file} due to pattern match")
+            continue
+        if experiment_info := process_log_file(file, verbose=verbose):
+            experiments_keys[file.parent].update(experiment_info)
+
+    if verbose:
+        print(f"Collected experiment keys for {len(experiments_keys)} folders")
+    return experiments_keys
+
+
 def add_second_highest_prediction(df: pd.DataFrame, pred_cols: List[str]) -> pd.DataFrame:
     """Return the DataFrame with a columns for the second highest prediction class.
 
