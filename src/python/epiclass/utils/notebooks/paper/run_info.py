@@ -204,22 +204,26 @@ def task_name_from_run_dir(relpath: Path, k: int = 10) -> str:
 
 
 def get_split_exp_keys(
-    feature_set_dir: Path, task_name: str, k: int = 10
+    feature_set_dir: Path, task_name: str, k: int = 10, oversampling: bool = True
 ) -> Dict[str, str]:
-    """Return {split: comet-ml experiment key} of the k-fold oversampled run of a task.
+    """Return {split: comet-ml experiment key} of the k-fold run of a task.
 
     Args:
         feature_set_dir: Feature set folder, parent of the task folders.
         task_name: Task name, as given by task_name_from_run_dir.
         k: Number of folds.
+        oversampling: Select the "<k>fold-oversampling" run folder, else the "<k>fold"
+            one. Only the folder name: some "<k>fold" runs were oversampled too (check
+            the split train sizes in the logs).
 
     Raises:
         ValueError: If any of the k splits does not have exactly one experiment key.
     """
+    run_dir_name = f"{k}fold-oversampling" if oversampling else f"{k}fold"
     split_keys = defaultdict(set)
     for run_dir, exp_info in collect_exp_keys(feature_set_dir).items():
         relpath = Path(run_dir).relative_to(feature_set_dir)
-        if relpath.name != f"{k}fold-oversampling":
+        if relpath.name != run_dir_name:
             continue
         if task_name_from_run_dir(relpath, k) != task_name:
             continue

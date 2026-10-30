@@ -298,6 +298,11 @@ class TestSplitExperimentKeys:
         split_keys = get_split_exp_keys(fs_dir, f"{ASSAY}_11c", k=self.K)
         assert split_keys == {f"split{i}": _key(i) for i in range(self.K)}
 
+        split_keys = get_split_exp_keys(
+            fs_dir, f"{ASSAY}_11c", k=self.K, oversampling=False
+        )
+        assert split_keys == {f"split{i}": _key(10 + i) for i in range(self.K)}
+
     def test_missing_split_raises(self, tmp_path):
         fs_dir = tmp_path / "fs"
         keys = self._keys(0)
