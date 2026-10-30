@@ -13,7 +13,7 @@ import warnings
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Tuple
 
 try:
     from IPython.display import display
@@ -26,6 +26,17 @@ from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
 from epiclass.core.metadata import Metadata
+
+# The extract_* functions moved to run_info, re-exported for existing notebooks
+# pylint: disable=unused-import
+from epiclass.utils.notebooks.paper.run_info import (
+    extract_experiment_keys_from_output_files,
+    extract_input_sizes_from_output_files,
+    parse_run_dir,
+    task_name_from_run_dir,
+)
+
+# pylint: enable=unused-import
 
 LOGGER = logging.getLogger(__name__)
 
@@ -936,7 +947,7 @@ class SplitResultsHandler:
             # Get the category + filter. Filter skips are one-per-task-folder (low
             # volume) and explain why a run was dropped, so they stay on verbose output.
             relpath = parent.relative_to(results_dir)
-            category = relpath.parts[0].replace("_1l_3000n", "")
+            category, name_parts = parse_run_dir(relpath, self.k)
             if include_categories is not None:
                 if not any(include_str in category for include_str in include_categories):
                     if verbose:
@@ -949,19 +960,8 @@ class SplitResultsHandler:
                     continue
 
             # Get the rest of the name, ignore certain runs
-            rest_of_name = list(relpath.parts[1:])
-            for dir_name in [f"{self.k}fold", f"{self.k}fold-oversampling"]:
-                try:
-                    rest_of_name.remove(dir_name)
-                except ValueError:
-                    pass
-
-            if len(rest_of_name) > 1:
-                raise ValueError(
-                    f"Too many parts in the name: {rest_of_name}. Path: {relpath}"
-                )
-            if rest_of_name:
-                rest_of_name = rest_of_name[0]
+            full_task_name = task_name_from_run_dir(relpath, self.k)
+            rest_of_name = name_parts[0] if name_parts else ""
 
             # Filter out certain runs
             if include_names is not None:
@@ -978,10 +978,6 @@ class SplitResultsHandler:
                             f"[skip] {category} {rest_of_name}: name in {exclude_names}"
                         )
                     continue
-
-            full_task_name = category
-            if rest_of_name:
-                full_task_name += f"_{rest_of_name}"
 
             # Get the split results
             split_results = split_results_handler.read_split_results(parent)
@@ -1201,166 +1197,6 @@ def create_mislabel_corrector(
     ].to_dict()
 
     return md5sum_to_epirr, epirr_to_corrections
-
-
-def extract_data_from_files(
-    parent_folder: Path,
-    file_pattern: str,
-    search_line: str,
-    extract_pattern: str,
-    type_cast: type = int,
-    unique: bool = True,
-) -> Dict[str, Set[Any]]:
-    """
-    Extracts data from files matching a specific pattern within each directory of a parent folder.
-
-    Args:
-        parent_folder (Path): The directory containing subdirectories to search.
-        file_pattern (str): Glob pattern for files to search within each subdirectory.
-        search_line (str): Line identifier to search for data extraction.
-        extract_pattern (str): Regex pattern to extract the desired data from the identified line.
-        type_cast (type): Type to cast the extracted data to.
-
-    Returns:
-        Dict[str, Set[type]]: A dictionary with subdirectory names as keys and sets of extracted data as values.
-    """
-    data = defaultdict(set)
-    for folder in parent_folder.iterdir():
-        if not folder.is_dir():
-            continue
-        for file in folder.rglob(file_pattern):
-            with open(file, "r", encoding="utf8") as f:
-                # print(f"Reading {file.name}")
-                lines = [l.rstrip() for l in f if search_line in l]
-
-            if not lines:
-                # print(f"Skipping {file.name}, no relevant data found.")
-                continue
-            if len(lines) > 1 and unique:
-                if len(set(lines)) == 1:
-                    pass
-                else:
-                    raise ValueError(
-                        f"Incorrect file reading, captured more than one unique line in {file.name}: {lines}"
-                    )
-            matches = [re.match(pattern=extract_pattern, string=line) for line in lines]
-            try:
-                extracted_data = [type_cast(match.group(1)) for match in matches]  # type: ignore
-                # print(f"Extracted data: {extracted_data}")
-            except AttributeError as err:
-                raise ValueError(
-                    f"Could not extract data from {file.name} using pattern {extract_pattern}."
-                ) from err
-            data[folder.name].update(extracted_data)
-    return dict(data)
-
-
-def extract_input_sizes_from_output_files(parent_folder: Path) -> Dict[str, Set[int]]:
-    """Extracts model input sizes from output (.o) files."""
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.o",
-        search_line="(1): Linear",
-        extract_pattern=r".*in_features=(\d+).*",
-        type_cast=int,
-    )
-
-
-def extract_node_jobs_from_error_files(parent_folder: Path) -> Dict[str, Set[int]]:
-    """Extracts SLURM job IDs from error (.e) files."""
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.e",
-        search_line="SLURM_JOB_ID",
-        extract_pattern=r".*SLURM_JOB_ID\s+: (\d+)$",
-        type_cast=int,
-    )
-
-
-def extract_experiment_keys_from_output_files(parent_folder: Path) -> Dict[str, Set[str]]:
-    """Extracts experiment keys from output (.o) files."""
-    search_line = "The current experiment key is"
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.o",
-        search_line=search_line,
-        extract_pattern=search_line + r" (\w{32})$",
-        type_cast=str,
-        unique=False,
-    )
-
-
-def extract_experiment_info(line: str, verbose: bool = False) -> Tuple[str, str] | None:
-    """Extract split and experiment key from a checkpoint path line.
-
-    Line should contain a path ending with .../<split>/<project>/<exp_key>/checkpoints/...
-    where <split> is either a CV split (e.g. 'split0') or a training-mode name
-    for no-validation runs (e.g. 'complete_no_valid_oversample').
-    """
-    if "checkpoints" not in line:
-        return None
-
-    parts = line.strip().split("/")
-    try:
-        i = parts.index("checkpoints")
-    except ValueError:
-        return None
-    if i < 3:
-        return None
-
-    info = (parts[i - 3], parts[i - 1])
-    if verbose:
-        print(f"Extracted info from line: {info}")
-
-    return info
-
-
-def process_log_file(file_path: Path, verbose: bool = False) -> Set[Tuple[str, str]]:
-    """Process a single log file and extract experiment information."""
-    experiment_info = set()
-    if verbose:
-        print(f"Processing log file: {file_path}")
-    try:
-        with open(file_path, "r", encoding="utf8") as f:
-            for line in f:
-                if result := extract_experiment_info(line, verbose=verbose):
-                    experiment_info.add(result)
-    except Exception as e:  # pylint: disable=broad-exception-caught
-        print(f"Error processing {file_path}: {e}")
-
-    if verbose:
-        print(
-            f"Extracted {len(experiment_info)} experiment info entries from {file_path}"
-        )
-
-    return experiment_info
-
-
-def collect_exp_keys(
-    folder: Path,
-    exclusion_pattern: str = "shap|predict",
-    verbose: bool = False,
-) -> Dict[str, Set[Tuple[str, str]]]:
-    """Collect experiment keys from log files (.o files), from a given folder.
-
-    Requires folder to be parent of *1l_3000n folder.
-    """
-    experiments_keys = defaultdict(set)
-
-    log_files = list(folder.glob("*1l_3000n/**/*.o"))
-    if verbose:
-        print(f"Found {len(list(log_files))} log files in {folder}")
-    for file in log_files:
-        if re.search(exclusion_pattern, str(file)):
-            if verbose:
-                print(f"Excluding file {file} due to pattern match")
-            continue
-        if experiment_info := process_log_file(file, verbose=verbose):
-            experiments_keys[file.parent].update(experiment_info)
-
-    if verbose:
-        print(f"Collected experiment keys for {len(experiments_keys)} folders")
-    return experiments_keys
 
 
 def add_second_highest_prediction(df: pd.DataFrame, pred_cols: List[str]) -> pd.DataFrame:
