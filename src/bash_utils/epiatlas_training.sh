@@ -64,6 +64,7 @@ category="assay_epiclass"
 
 export EXCLUDE_LIST='["other", "--", "NA", "", "unknown"]'
 export MIN_CLASS_SIZE="10" # IMPORTANT
+# export EPIRR_LABEL="EpiRR" # metadata field grouping folds by epigenome (default: epirr_id)
 
 hparams="human_longer_oversample" # IMPORTANT
 

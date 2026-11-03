@@ -7,6 +7,7 @@ these along.
 from __future__ import annotations
 
 import itertools
+import os
 
 TRACKS_MAPPING = {
     "raw": ["pval", "fc"],
@@ -22,4 +23,5 @@ ACCEPTED_TRACKS = list(TRACKS_MAPPING.keys()) + list(
 LEADER_TRACKS = frozenset(["raw", "Unique_plusRaw", "gembs_pos"])
 OTHER_TRACKS = frozenset(ACCEPTED_TRACKS) - LEADER_TRACKS
 
-EPIRR_LABEL = "epirr_id"
+# Metadata field used to group CV folds by epigenome; override with $EPIRR_LABEL.
+EPIRR_LABEL = os.getenv("EPIRR_LABEL") or "epirr_id"
