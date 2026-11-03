@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import itertools
+import os
 from typing import Any, Dict, Generator, List, Tuple
 
 import numpy as np
@@ -36,7 +37,8 @@ NDArray = npt.NDArray[Any]
 NDArrayInt = npt.NDArray[int]  # type: ignore # np.int_ is deprecated NumPy >= 1.20.0
 NDArrayBool = npt.NDArray[bool]  # type: ignore # np.bool_ is deprecated NumPy >= 1.20.0
 
-EPIRR_LABEL = "epirr_id"
+# Metadata field used to group CV folds by epigenome; override with $EPIRR_LABEL.
+EPIRR_LABEL = os.getenv("EPIRR_LABEL") or "epirr_id"
 
 
 class EpiAtlasDataset:
