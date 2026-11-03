@@ -16,6 +16,7 @@ from epiclass.core.epiatlas_constants import (
     LEADER_TRACKS,
     OTHER_TRACKS,
 )
+from epiclass.core.lazy import lazy_fold_factory
 from epiclass.core.lazy.lazy_fold_factory import (
     LazyEpiAtlasFoldFactory as EpiAtlasFoldFactory,
     LazyEpiAtlasMetadata,
@@ -414,6 +415,97 @@ class TestEpiAtlasFoldFactory:
                 assert (
                     len(set(counts)) == 1
                 ), f"UUID {uuid} siblings have inconsistent duplication: {sibling_counts}"
+
+
+class TestEpiRRGrouping:
+    """EpiRR fold grouping on real EpiAtlas v2 metadata.
+
+    The fixture holds every file of the 36 v2 epigenomes whose UUIDs carry two
+    `epirr_id` versions (`EpiRR` has one). The hg38_100kb_all_none_EpiRR_split
+    runs grouped folds by `epirr_id`, so these epigenomes formed two groups each
+    and some landed in both training and validation.
+    """
+
+    METADATA_PATH = FIXTURES_DIR / "epiatlas_v2_multiversion_epirr-metadata.json"
+
+    @pytest.fixture(name="metadata")
+    def fixture_metadata(self) -> UUIDMetadata:
+        """Fresh metadata, so tests may modify it."""
+        return UUIDMetadata(self.METADATA_PATH)
+
+    @classmethod
+    def make_handler(cls, metadata: UUIDMetadata) -> EpiAtlasFoldFactory:
+        """Metadata-only fold factory on assay labels.
+
+        4 folds: the smallest class (rna_seq) has 4 UUIDs.
+        """
+        datasource = EpiDataSource(
+            hdf5=FIXTURES_DIR / "test-epilap-empty-biotype-n8.md5",  # never read
+            chromsize=FIXTURES_DIR / "hg38.noy.chrom.sizes",
+            metadata=cls.METADATA_PATH,
+        )
+        dataset = LazyEpiAtlasMetadata(
+            datasource=datasource,
+            label_category="assay_epiclass",
+            min_class_size=1,
+            signal_id_list=list(metadata.signal_ids),
+            force_filter=False,
+            metadata=metadata,
+        )
+        return EpiAtlasFoldFactory(epiatlas_dataset=dataset, n_fold=4, test_ratio=0)
+
+    def test_fixture_epirr_columns(self, metadata: UUIDMetadata):
+        """One `epirr_id` per UUID, two per epigenome; one `EpiRR` per epigenome."""
+        df = metadata.to_df()
+        assert (df.groupby("uuid")["epirr_id"].nunique() == 1).all()
+        assert (df.groupby("epirr_id_without_version")["epirr_id"].nunique() == 2).all()
+        assert (df.groupby("epirr_id_without_version")["EpiRR"].nunique() == 1).all()
+        assert df["EpiRR"].nunique() == 36
+
+    @pytest.mark.parametrize("epirr_label", ["EpiRR", "epirr_id_without_version"])
+    def test_epigenome_grouping_has_no_leakage(
+        self, metadata: UUIDMetadata, monkeypatch, epirr_label: str
+    ):
+        """Grouping by a one-per-epigenome column keeps each epigenome in one fold."""
+        monkeypatch.setattr(lazy_fold_factory, "EPIRR_LABEL", epirr_label)
+        handler = self.make_handler(metadata)
+        for dset in handler.yield_split(oversample=True):
+            train = {metadata[sid]["epirr_id_without_version"] for sid in dset.train.ids}
+            valid = {
+                metadata[sid]["epirr_id_without_version"] for sid in dset.validation.ids
+            }
+            assert not train & valid, f"EpiRR leakage: {train & valid}"
+
+    def test_epirr_id_grouping_raises_before_split(
+        self, metadata: UUIDMetadata, monkeypatch
+    ):
+        """Grouping by `epirr_id` is refused before any fold is made."""
+        monkeypatch.setattr(lazy_fold_factory, "EPIRR_LABEL", "epirr_id")
+        handler = self.make_handler(metadata)
+        with pytest.raises(ValueError, match="36 epigenome"):
+            next(handler.yield_split())
+
+    def test_epirr_id_grouping_leaks(self, metadata: UUIDMetadata, monkeypatch):
+        """Without the pre-split check, `epirr_id` folds leak and the post-split check catches it."""
+        monkeypatch.setattr(lazy_fold_factory, "EPIRR_LABEL", "epirr_id")
+        monkeypatch.setattr(
+            EpiAtlasFoldFactory,
+            "_check_epirr_grouping",
+            classmethod(lambda cls, dset: None),
+        )
+        handler = self.make_handler(metadata)
+        with pytest.raises(ValueError, match="EpiRR leakage"):
+            for _ in handler.yield_split():
+                pass
+
+    def test_uuid_with_several_epirrs_raises(self, metadata: UUIDMetadata, monkeypatch):
+        """A UUID whose files disagree on EpiRR is refused."""
+        monkeypatch.setattr(lazy_fold_factory, "EPIRR_LABEL", "EpiRR")
+        sid = next(iter(metadata.signal_ids))
+        metadata[sid] = {**metadata[sid], "EpiRR": "IHECRE99999999.1"}
+        handler = self.make_handler(metadata)
+        with pytest.raises(ValueError, match="1 UUID"):
+            next(handler.yield_split())
 
 
 class TestLazyEpiAtlasMetadata:

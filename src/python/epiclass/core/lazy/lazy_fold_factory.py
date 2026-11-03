@@ -7,6 +7,7 @@ without loading signals into memory.
 from __future__ import annotations
 
 import copy
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Generator, List, Tuple
 
@@ -324,6 +325,49 @@ class LazyEpiAtlasFoldFactory:
         return epirr_inverse
 
     @staticmethod
+    def _epigenome_id(epirr: Any) -> str:
+        """Return the EpiRR without its version, which identifies the epigenome."""
+        return str(epirr).split(".", maxsplit=1)[0]
+
+    @classmethod
+    def _check_epirr_grouping(cls, dset: LazyKnownData) -> None:
+        """Raise if grouping by EPIRR_LABEL can split an epigenome across folds.
+
+        Each UUID and each epigenome (EpiRR without version) must have a single
+        EPIRR_LABEL value. EpiAtlas `epirr_id` fails the epigenome test: some
+        UUIDs carry an older version of their epigenome's EpiRR.
+        """
+        per_uuid: dict[str, set[str]] = defaultdict(set)
+        per_epigenome: dict[str, set[str]] = defaultdict(set)
+        for sid in dset.ids:
+            meta = dset.metadata[sid]
+            epirr = str(meta[EPIRR_LABEL])
+            per_uuid[meta["uuid"]].add(epirr)
+            per_epigenome[cls._epigenome_id(epirr)].add(epirr)
+
+        for unit, values in [("UUID", per_uuid), ("epigenome", per_epigenome)]:
+            conflicts = {key: sorted(val) for key, val in values.items() if len(val) > 1}
+            if conflicts:
+                key, val = next(iter(conflicts.items()))
+                raise ValueError(
+                    f"{len(conflicts)} {unit}(s) have several '{EPIRR_LABEL}' values "
+                    f"(e.g. {key}: {val}). Grouping folds by '{EPIRR_LABEL}' would "
+                    "split them across folds."
+                )
+
+    @staticmethod
+    def _check_no_epirr_leakage(
+        epigenomes: NDArray, train_idxs: NDArrayInt, valid_idxs: NDArrayInt
+    ) -> None:
+        """Raise if an epigenome has samples in both training and validation."""
+        shared = set(epigenomes[train_idxs]) & set(epigenomes[valid_idxs])
+        if shared:
+            raise ValueError(
+                f"EpiRR leakage: {len(shared)} epigenome(s) in both training and "
+                f"validation (e.g. {sorted(shared)[:3]})."
+            )
+
+    @staticmethod
     def _uuid_to_anchor_track(
         dset: LazyKnownData,
         uuids_unique: NDArray,
@@ -431,7 +475,9 @@ class LazyEpiAtlasFoldFactory:
 
         # Group unique UUIDs by their parent EpiRR so all tracks from the same
         # experiment land in the same fold.
+        self._check_epirr_grouping(dset)
         epirr_groups = self._uuid_to_epirr_groups(dset, uuids_unique)
+        epigenomes = np.array([self._epigenome_id(e) for e in self._label_epirr(dset)[0]])
 
         skf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
 
@@ -447,6 +493,7 @@ class LazyEpiAtlasFoldFactory:
             valid_idxs: NDArrayInt = np.concatenate(
                 [np.where(uuids_inverse == idx)[0] for idx in valid_idxs_unique]
             )
+            self._check_no_epirr_leakage(epigenomes, train_idxs, valid_idxs)
 
             if oversample:
                 # Oversample at UUID level (not sample level, not EpiRR level)

@@ -1,4 +1,4 @@
-drwx------ rabj2301/domain^users 0 2026-10-30 14:48 fixtures/
+drwx------ rabj2301/domain^users 0 2026-11-03 12:23 fixtures/
 -rw------- rabj2301/domain^users 47 2025-07-04 18:29 fixtures/test_feature_list.json
 drwx------ rabj2301/domain^users  0 2026-10-30 14:48 fixtures/run_info/
 -rw------- rabj2301/domain^users 5929 2026-10-30 14:48 fixtures/run_info/expected_node_jobs.tsv
@@ -630,4 +630,5 @@ drwx------ rabj2301/domain^users       0 2026-10-13 13:49 fixtures/saccer3/hdf5/
 -rw------- rabj2301/domain^users     264 2026-05-14 16:08 fixtures/test-epilap-empty-biotype-n8.md5
 -rw------- rabj2301/domain^users   18407 2026-05-14 16:10 fixtures/test-epilap-empty-biotype-n8-metadata.json
 -rw------- rabj2301/domain^users  133940 2025-07-04 18:29 fixtures/89a0dcb635f0e9740f587931437b69f1_100kb_all_none_value.hdf5
+-rw------- rabj2301/domain^users  268180 2026-11-03 12:23 fixtures/epiatlas_v2_multiversion_epirr-metadata.json
 -rw------- rabj2301/domain^users     508 2025-07-04 18:29 fixtures/other_estimators_hparams.json
