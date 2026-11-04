@@ -21,9 +21,10 @@ except ImportError:
     display = print
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_ind
+from scipy.stats import norm, ttest_ind
 from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from statsmodels.stats.meta_analysis import effectsize_smd
 
 from epiclass.core.metadata import Metadata
 
@@ -1727,6 +1728,30 @@ def save_figure(
     fig.write_image(logdir / f"{filename}.png", width=width, height=height, scale=scale)
 
 
+def hedges_g(
+    vals_a: List[float], vals_b: List[float], confidence: float = 0.95
+) -> Tuple[float, float, float]:
+    """Return Hedges' g of mean(vals_a) - mean(vals_b), and its confidence interval.
+
+    Computed by statsmodels' effectsize_smd: Cohen's d (difference of means over the
+    pooled standard deviation, ddof=1) times the small-sample correction
+    J = 1 - 3 / (4 * (n_a + n_b) - 9), with variance
+    (n_a + n_b) / (n_a * n_b) + g**2 / (2 * (n_a + n_b - 3.94)). The interval is
+    g +/- z * sqrt(variance). With equal group sizes, the pooled SD equals the
+    average-variance SD that pairs with Welch's t-test.
+    """
+    g, var_g = effectsize_smd(
+        np.mean(vals_a),
+        np.std(vals_a, ddof=1),
+        len(vals_a),
+        np.mean(vals_b),
+        np.std(vals_b, ddof=1),
+        len(vals_b),
+    )
+    margin = norm.ppf(0.5 + confidence / 2) * np.sqrt(var_g)
+    return g, g - margin, g + margin
+
+
 def pairwise_ttests(
     all_metrics,
     metrics_to_compare: List[str] | None = None,
@@ -1744,6 +1769,10 @@ def pairwise_ttests(
     alternative: passed to scipy.stats.ttest_ind ("two-sided", "less", "greater").
         Feature sets are paired in dict order, so for a pair (fs_a, fs_b),
         "greater" tests H1: mean(fs_a) > mean(fs_b).
+
+    Every directional value is for a - b: diff_a_minus_b and its 95% CI (Welch, follows
+    alternative), t_stat, and hedges_g with its 95% CI (see hedges_g). Standard
+    deviations use ddof=1; df is the Welch-Satterthwaite degrees of freedom.
     """
 
     def significance_symbol(p_value: float) -> str:
@@ -1779,9 +1808,9 @@ def pairwise_ttests(
                     all_metrics[fs_b][category][f"split{i}"][metric] for i in range(k)
                 ]
 
-                t_stat, p_val = ttest_ind(
-                    vals_a, vals_b, equal_var=False, alternative=alternative
-                )
+                test = ttest_ind(vals_a, vals_b, equal_var=False, alternative=alternative)
+                diff_ci = test.confidence_interval(confidence_level=0.95)
+                g, g_low, g_high = hedges_g(vals_a, vals_b)
 
                 results.append(
                     {
@@ -1789,11 +1818,21 @@ def pairwise_ttests(
                         "feature_set_a": fs_a,
                         "feature_set_b": fs_b,
                         "metric": metric,
+                        "n_per_group": k,
                         "mean_a": np.mean(vals_a),
+                        "std_a": np.std(vals_a, ddof=1),
                         "mean_b": np.mean(vals_b),
-                        "t_stat": t_stat,
-                        "p_value": p_val,
-                        "significance": significance_symbol(p_val),
+                        "std_b": np.std(vals_b, ddof=1),
+                        "diff_a_minus_b": np.mean(vals_a) - np.mean(vals_b),
+                        "diff_ci95_low": diff_ci.low,
+                        "diff_ci95_high": diff_ci.high,
+                        "t_stat": test.statistic,
+                        "df": test.df,
+                        "p_value": test.pvalue,
+                        "significance": significance_symbol(test.pvalue),
+                        "hedges_g": g,
+                        "hedges_g_ci95_low": g_low,
+                        "hedges_g_ci95_high": g_high,
                     }
                 )
 
