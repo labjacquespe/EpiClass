@@ -53,7 +53,7 @@ utils = [
     "tables>=3.8",
     "umap-learn>=0.5.8, <0.6",
     "UpSetPlot>=0.8, <0.9",
-    "statsmodels",
+    "statsmodels>=0.14, <0.15",
     "scp",
     "paramiko",
 ]
