@@ -34,7 +34,7 @@ Retrieves the neural network input size hyperparameter from Comet-ML experiment 
 Selectively collects metadata, metrics, and hyperparameters for a specific subset of Comet-ML experiments provided via a CSV list. Used for targeted re-analysis of particular runs.
 
 - **Input:** Comet-ML API, CSV of target experiment keys
-- **Output:** Filtered metrics/metadata CSV
+- **Output:** Filtered metrics/metadata CSV, and the same experiments in the "MLP training details" supplementary table format (`<output_name>_training_details.csv`)
 
 ### `comet/group_training_times.ipynb`
 

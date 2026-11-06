@@ -1715,6 +1715,44 @@ class PathChecker:
         PathChecker._validate_path(path, check_dir=True)
 
 
+def merge_renamed_columns(df: pd.DataFrame, renamed_cols: Dict[str, str]) -> pd.DataFrame:
+    """Merge columns renamed over time, either name can be absent from a given dataframe.
+
+    Args:
+        df (pd.DataFrame): dataframe to merge columns of
+        renamed_cols (Dict[str, str]): {old_name: new_name}. Existing new_name values
+            have priority over old_name values.
+    Returns:
+        pd.DataFrame: dataframe without the old_name columns
+    """
+    for old_name, new_name in renamed_cols.items():
+        if old_name in df.columns:
+            df[new_name] = (
+                df[new_name].fillna(df[old_name])
+                if new_name in df.columns
+                else df[old_name]
+            )
+            df = df.drop(columns=old_name)
+    return df
+
+
+def writable_path(path: Path | str, overwrite: bool = False) -> Path:
+    """Return path if it is safe to write to it, raise FileExistsError otherwise.
+
+    Args:
+        path (Path | str): file about to be written
+        overwrite (bool): explicitly allow replacing an existing file
+    Returns:
+        Path: the given path
+    """
+    path = Path(path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(
+            f"{path} already exists. Pass overwrite=True to replace it."
+        )
+    return path
+
+
 def save_figure(
     fig: Any,  # go.Figure, but avoid importing plotly here
     logdir: Path | str,
