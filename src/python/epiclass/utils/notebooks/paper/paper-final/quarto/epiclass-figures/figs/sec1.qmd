@@ -139,13 +139,13 @@ main_title_settings = {
 
 Performance of EpiClass Assay and Biospecimen classifiers.
 
-### A - EpiClass training overview
+### a - EpiClass training overview
 
 ![](../resources/fig1A.png){fig-align="center"}
 
-Fig. 1A: Overview of the EpiClass training process for various classifiers and their inference on external data. Each classifier is trained independently.
+Fig. 1a: Overview of the EpiClass training process for various classifiers and their inference on external data. Each classifier is trained independently.
 
-### B-C Prep
+### b,c Prep
 
 Path setup.
 
@@ -436,7 +436,7 @@ def graph_feature_set_metrics(
         category_fig.show()
 ```
 
-### B - Assay MLP performance
+### b - Assay MLP performance {#sec-1b}
 
 Graph 100kb resolution MLP metrics.
 
@@ -469,9 +469,9 @@ graph_feature_set_metrics(
 )
 ```
 
-Fig. 1B: Distribution of accuracy and F1-score for each of the ten training folds (dots) for the Assay and Biospecimen MLP classifiers.
+Fig. 1b: Distribution of accuracy and F1-score for each of the ten training folds (dots) for the Assay and Biospecimen source MLP classifiers. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
-### C - MLP performance at varying resolution
+### c - MLP performance at varying resolution
 
 Graph.
 
@@ -489,7 +489,7 @@ graph_feature_set_metrics(
 )
 ```
 
-Fig. 1C-alt: Distribution of accuracy per training fold for different bin resolutions for the Assay and Biospecimen classifiers.\
+Fig. 1c-alt: Distribution of accuracy per training fold for different bin resolutions for the Assay and Biospecimen source classifiers.\
 \
 \
 Define function `parse_bin_size` to extract a numerical bin size in base pairs.
@@ -852,9 +852,9 @@ for metric in ["Accuracy", "F1_macro"]:
     )
 ```
 
-Fig. 1C: Distribution of accuracy per training fold for different bin resolutions for the Assay and Biospecimen classifiers. The circles represent the means and the whiskers the min and max values of the ten training folds.
+Fig. 1c: Distribution of accuracy per training fold for different bin resolutions for the Assay and Biospecimen source classifiers. The circles represent the means and the whiskers the min and max values of the ten training folds (detailed view in [Extended Fig. 2a,b](./sec1.html#sec-ext2)). Covering the whole genome (filled circles) with non-overlapping bins of 10 Mb requires 315 regions (purple), while it requires 3,044 regions of 1 Mb (blue), 30,321 regions of 100 kb (turquoise), and 303,114 regions of 10 kb (green). To correctly isolate the impact of the bin size, smaller regions were randomly subsampled to match region numbers (open circles), including 1 kb bins (orange).
 
-### D - Confusion matrix
+### d - Confusion matrix
 
 Define function `create_confusion_matrix` to create and show a confusion matrix.
 
@@ -939,21 +939,21 @@ create_confusion_matrix(
 )
 ```
 
-Fig. 1D: Confusion matrix aggregating the cross-validation folds (therefore showing all files) without applying a prediction score threshold. RNA-seq and WGBS data were both separated according to two protocols during initial training (but combined thereafter to nine assays).
+Fig. 1d: Confusion matrix aggregating the cross-validation folds (therefore showing all files) without applying a prediction score threshold. RNA-seq and WGBS data were both separated according to two protocols during initial training (but combined thereafter to nine assays).
 
-### E - Mislabeled target assays
+### e - Mislabeled target assays
 
 ![](../resources/fig1E.png){fig-align="center"}
 
-Fig. 1E: Genome browser representation showing in black the datasets swap between H3K4me3 and H3K27ac for IHECRE00001897 in the metadata freeze v1.0, along with typical correct datasets over a representative region.
+Fig. 1e: Genome browser representation showing in black the datasets swap between H3K4me3 and H3K27ac for IHECRE00001897 in the metadata freeze v1.0, along with typical correct datasets over a representative region.
 
-## Supplementary Figure 1
+## Extended Figure 1 {#sec-ext1}
 
 More detailled performance of EpiClass Assay and Biospecimen classifiers.
 
-### A,B - All classifiers metrics on EpiAtlas
+### a,b - All classifiers metrics on EpiAtlas
 
-Fig. 1A,B data points are included in these two graphs (MLP data points).\
+[Fig. 1b](./sec1.html#sec-1b) data points are included in these two graphs (MLP data points).\
 \
 \
 
@@ -1067,13 +1067,12 @@ for label_category in [ASSAY, CELL_TYPE]:
     )
 ```
 
-Supplementary Figure 1A,B: Distribution of performance scores (accuracy, F1 as well as micro and macro AUROC) per training fold (dots) for each machine learning approach used for training on the Assay (A) and Biospecimen (B) metadata. Micro-averaging aggregates contributions from all classes (global true positive rate and false positive rate); macro-averaging averages the true positive rate from each class. Dashed lines represent means, solid lines the medians, boxes the quartiles, and
-whiskers the farthest points within 1.5× the interquartile range.\
+Extended Fig. 1a,b: Distribution of performance scores (accuracy, F1 as well as micro and macro AUROC) per training fold (dots) for each machine learning approach used for training on the Assay (a) and Biospecimen source (b) metadata. Micro-averaging aggregates contributions from all classes (global true positive rate and false positive rate); macro-averaging averages the true positive rate from each class. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.\
 \
 \
 **Going forward, all results are for MLP classifiers.**
 
-### C - ROC curves
+### c - ROC curves
 
 Define graphing function `plot_roc_curves`. Computes macro-average ROC curves manually.
 
@@ -1349,10 +1348,9 @@ plot_roc_curves(
 )
 ```
 
-Supplementary Figure 1C: ROC curves from aggregated cross-validation results for the Assay and Biospecimen classifiers. Curves for each class are
-computed in a one-vs-rest scheme.
+Extended Fig. 1c: ROC curves from aggregated cross-validation results for the Assay and Biospecimen source classifiers. Curves for each class are computed in a one-vs-rest scheme.
 
-### D - Alternative signal pre-processing
+### d - Alternative signal pre-processing
 
 Define graphing function `create_blklst_graphs`.
 
@@ -1498,9 +1496,9 @@ figs[0].show()
 figs[1].show()
 ```
 
-Supplementary Figure 1D: Distribution of accuracy and F1-score per training fold (dots) for the Assay and Biospecimen classifiers after removing signal from blacklisted regions and applying winsorization of 0.1%. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Extended Fig. 1d: Distribution of accuracy and F1-score per training fold (dots) for the Assay and Biospecimen source classifiers after removing signal from blacklisted regions and applying winsorization of 0.1%. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
-### E-G - Distribution of average prediction scores per assay
+### e-g - Distribution of average prediction scores per assay
 
 -   E: Assay training 10-fold cross-validation
 -   F: Assay complete training (mixed tracks), predictions on imputed data (all pval)
@@ -1622,9 +1620,9 @@ def plot_prediction_scores_distribution(
     fig.show()
 ```
 
-Supplementary Figure 1E-G: Distribution of average prediction score per file (dots) for the majority-vote class (up to three track type files) (E, F) or individual file (G), from the MLP approach for the Assay (E, G) and Biospecimen classifiers (F), using aggregated cross-validation results from observed data (E, F) or results from the classifier trained on all observed data and applied to imputed data from EpiATLAS (G). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range, with a violin representation on top.
+Extended Fig. 1e-g: Distribution of average prediction score per file (dots) for the majority-vote class (up to three track type files) (e, f) or individual file (g), from the MLP approach for the Assay (e, g) and Biospecimen source classifiers (f), using aggregated cross-validation results from observed data (e, f) or results from the classifier trained on all observed data and applied to imputed data from EpiATLAS (g). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range, with a violin representation on top.
 
-#### E - Assay
+#### e - Assay
 
 Gather prediction scores.
 
@@ -1658,7 +1656,7 @@ plot_prediction_scores_distribution(
 )
 ```
 
-#### F - Biospecimen
+#### f - Biospecimen
 
 Gather prediction scores.
 
@@ -1686,7 +1684,7 @@ plot_prediction_scores_distribution(
 )
 ```
 
-#### G - Assay imputed
+#### g - Assay imputed
 
 Gather imputed signal metadata.
 
@@ -1753,9 +1751,9 @@ plot_prediction_scores_distribution(
 )
 ```
 
-### H,I - Prediction score thresholds
+### h,i - Prediction score thresholds
 
-For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/ef1f5448b59a40d2b5e823e78d61ca5337b4d099/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 <iframe src="../resources/threshold_impact_graph_global_assay_epiclass_11c-11_classes_cdn.html"
         scrolling="no"
@@ -1767,13 +1765,13 @@ For the code that produced the figures, see `src/python/epiclass/utils/notebooks
         style="display: block; margin: 0 auto; width: 100%; max-width: 710px; aspect-ratio: 710 / 615; border: 0; overflow: hidden;">
 </iframe>
 
-Supplementary Figure 1H,I: Distribution of aggregated accuracy, F1-score and corresponding file subset size across varying prediction score thresholds, based on pooled predictions from all cross-validation folds for the Assay (H) and Biospecimen (I) classifiers.
+Extended Fig. 1h,i: Distribution of aggregated accuracy, F1-score and corresponding file subset size across varying prediction score thresholds, based on pooled predictions from all cross-validation folds for the Assay (h) and Biospecimen source (i) classifiers.
 
-## Supplementary Figure 2
+## Extended Figure 2 {#sec-ext2}
 
 Performance of EpiClass Assay and Biospecimen classifiers evaluated per training fold across various bin size resolutions and genomic feature sets.
 
-### A,B
+### a,b
 
 Graph assay/biospecimen metrics per 10fold, for reference (no assay breakdown)
 
@@ -1791,9 +1789,9 @@ graph_feature_set_metrics(
 )
 ```
 
-Supplementary Figure 2A,B: Distribution of accuracy over all files for the Assay (A) or Biospecimen (B) classifier.
+Extended Fig. 2a,b: Distribution of accuracy over all files for the Assay (a) or Biospecimen source (b) classifier.
 
-### C,D
+### c,d
 
 Define function to compute metrics per assay: `prepare_metric_sets_per_assay`
 
@@ -2098,20 +2096,20 @@ graph_feature_set_metrics_per_assay(
 )
 ```
 
-Supplementary Figure 2C,D: Distribution of accuracy calculated per assay for the Biospecimen classifier. Bin sizes include 10 Mb, 1 Mb, 100 kb, and 10 kb, corresponding to 315, 3,044, 30,321, and 303,114 non-overlapping regions covering the whole-genome, respectively. Various numbers of random 100 kb, 10 kb and 1 kb regions were also used. Gene-based features include 19,864 gene regions, while cis-regulatory elements and methylation regions each comprise 30,320 and 303,114 regions, respectively. Dashed lines represent means, solid lines the medians, boxes the quartiles, whiskers the farthest points within 1.5× the interquartile range, and dots are outliers.
+Extended Fig. 2c,d: Distribution of accuracy calculated per assay for the Biospecimen source classifier. Bin sizes include 10 Mb, 1 Mb, 100 kb, and 10 kb, corresponding to 315, 3,044, 30,321, and 303,114 non-overlapping regions covering the whole-genome, respectively. Various numbers of random 100 kb, 10 kb and 1 kb regions were also used. Gene-based features include 19,864 gene regions, while cis-regulatory elements and methylation regions each comprise 30,320 and 303,114 regions, respectively. Dashed lines represent means, solid lines the medians, boxes the quartiles, whiskers the farthest points within 1.5× the interquartile range, and dots are outliers.
 
-## Supplementary Figure 3
+## Extended Figure 3
 
 Mislabeled datasets identified with EpiClass.
 
 ![](../resources/Supp3.png){fig-align="center"}
 
-Supplementary Figure 3: Genome browser representation of the eight EpiATLAS originally mislabeled datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with representative correct datasets. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.
+Extended Fig. 3: Genome browser representation of the eight other EpiATLAS originally mislabeled datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with representative correct datasets. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.
 
-## Supplementary Figure 4
+## Extended Figure 4
 
 Example of bad quality datasets identified using EpiClass
 
 ![](../resources/Supp4.png){fig-align="center"}
 
-Supplementary Figure 4: Genome browser representation of some of the EpiATLAS bad quality datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with good quality ones from the same biospecimen. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.
+Extended Fig. 4: Genome browser representation of some of the EpiATLAS bad quality datasets identified by EpiClass in metadata freeze v1.0 that were discarded in following metadata freezes (purple), along with good quality ones from the same biospecimen source. The observed tracks are shown as positive signal, while imputed tracks (where available) are shown as negative signal.

@@ -1,5 +1,5 @@
 ---
-title: "Supplementary Figure 5 to 7"
+title: "Extended Figures 5 to 7"
 author: "Joanny Raby"
 resources:
     - "../resources/all_threshold_graphs.html"
@@ -20,7 +20,7 @@ execute:
   error: false
 ---
 
-Supplementary Figures 5 and 7 correspond to Section 2. Supplementary Figure 6 is first mentioned in the second results section of the paper, but its content primarily relates to Section 3.
+Extended Figures 5 and 7 correspond to Section 2. Extended Figure 6 is first mentioned in the second results section of the paper, but its content primarily relates to Section 3.
 
 These figures are separate for page size reason, to keep a reasonable loading time.
 
@@ -130,14 +130,14 @@ main_title_settings = {
 }
 ```
 
-## Supplementary Figure 5
+## Extended Figure 5
 
-### A - MLP AUROC on various classification tasks
+### a - MLP AUROC on various classification tasks
 
-For AUROC metrics, see [Figure 2A,B](./sec2.html#sec-2AB)
+Extended Fig. 5a: Distribution of AUROC scores evaluated per training fold (dots) for each metadata category, reported without applying a prediction score threshold. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range. For the AUROC graphs, see [Fig. 2a,b](./sec2.html#sec-2AB) section.
 
 
-### B - chrY signal per sex: Average EpiRR z-score per assay
+### b - chrY signal per sex: Average EpiRR z-score per assay
 
 Load 10-fold cross-validation results.
 
@@ -332,9 +332,9 @@ Graph zscore per assay.
 zscore_per_assay(cross_val_analysis)
 ```
 
-Supp. Fig. 5B: Distribution of average z-score signal of epigenomes (dots) over chrY per sex (female in red, male in blue) for each assay individually (showing only the fold change track type for the ChIP datasets, and the two types of WGBS and RNA-seq were merged). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Extended Fig. 5b: Distribution of average z-score signal of epigenomes (dots) over chrY per sex (female in red, male in blue) for each assay individually. Only the fold change track type is shown for the ChIP datasets. For WGBS and RNA-seq, forward and reverse tracks are shown separately, with both protocols for each assay presented together. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
-### C - Female/Male chrY signal z-score cluster separation
+### c - Female/Male chrY signal z-score cluster separation
 
 Define function `merged_assays_separation_distance` that computes and graphs the showing separation distance between male/female zscore clusters.
 
@@ -454,15 +454,15 @@ Graph.
 merged_assays_separation_distance(cross_val_analysis)
 ```
 
-Supp. Fig. 5C: Effect of a prediction score threshold on the aggregated mean (blue) and median (green) sex z-score male/female cluster distances, as well as and corresponding file subset size (red) of ChIP-related assays from panel B.
+Extended Fig. 5c: Effect of a prediction score threshold on the aggregated mean (blue) and median (green) sex z-score male/female cluster distances, as well as and corresponding file subset size (red) of ChIP-related assays from panel b.
 
 
-### D - GP-Age, all samples
+### d - GP-Age, all samples
 
-See [Figure 2F](./sec2.html/#sec-supp-5D) section.
+See [Extended Fig. 5d](./sec2.html#sec-ext5d) section (with Fig. 2f).
 
 
-### E - Epilogos sex genes chromatin states
+### e - Epilogos sex genes chromatin states
 
 Images extracted from Epilogos viewer, using specified coordinates (XIST and FIRRE positions), and:
 
@@ -473,19 +473,19 @@ Images extracted from Epilogos viewer, using specified coordinates (XIST and FIR
 
 ![](../resources/Supp5E.png){fig-align="center"}
 
-Supp. Fig. 5E: Epilogos pairwise comparisons of male (top) vs female (bottom) showing portions of important regions for the Sex classifier, including the XIST (left) and FIRRE (right) genes.
+Extended Fig. 5e: Epilogos pairwise comparisons of male (top) vs female (bottom) showing portions of important regions for the Sex classifier, including the XIST (left) and FIRRE (right) genes.
 
 See [Annex A](./sec2-supp.html#sec-annex-a) for a more detailled Epilogos color legend.
 
 
-### F - Genome browser for biospecimen important regions
+### f - Genome browser for biospecimen important regions
 
 ![](../resources/Supp5F.png){fig-align="center"}
 
-Supp. Fig. 5F: Genome browser representation of the important regions shown in [Figure 2I](./sec2.html#sec-2I).
+Extended Fig. 5f: Genome browser representation of the important regions shown in [Fig. 2i](./sec2.html#sec-2I).
 
 
-### G - RNA-Seq read handling: Unique vs UniqueMultiple vs Unstranded
+### g - RNA-Seq read handling: Unique vs UniqueMultiple vs Unstranded
 
 The RNA-Seq classifiers were trained on the **Unique** representation (multi-mapped reads excluded). This panel compares three read-handling variants of the same RNA samples on every non-assay task: **Unique**, **UniqueMultiple** (multi-mapped reads included) and **Unstranded (summed)** (the two Unique stranded tracks summed into one signal per EpiRR). Each fold's model is applied to its held-out RNA validation set for the three variants, so the comparison is on samples the model did not train on and whose true label is in the classifier's class space.
 
@@ -568,7 +568,7 @@ for col, metric in enumerate(["Accuracy", "F1_macro"], start=1):
                 boxmean=True,
                 boxpoints="all",
                 pointpos=0,
-                # Show the fold each point comes from on hover (as in Fig 2A,B).
+                # Show the fold each point comes from on hover (as in Fig. 2a,b).
                 hovertemplate="%{text}",
                 text=[
                     f"{split}: {value:.4f}"
@@ -595,12 +595,12 @@ fig.update_layout(
 fig.show()
 ```
 
-Supp. Fig. 5G: Accuracy and macro-F1 performance metrics using only RNA-seq datasets across three data types and five classifiers, which were trained exclusively on strand-specific signals. Each fold's trained model was applied to its own validation samples (Unique, blue), after summing forward and reverse tracks (Unstranded, green), and on a different version of the RNA-seq data downloaded from EpiATLAS where multi-mapped reads were retained (UniqueMultiple, orange) used only for this particular analysis. Changes in Unstranded and UniqueMultiple relative to Unique correspond to the impact of the data type on the inference since the same trained model was applied to all three data types. Each point is the score from one of the 10 cross-validation folds, computed across all signal files in that fold's validation set. Solid lines are medians, dashed lines means, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Extended Fig. 5g: Accuracy and macro-F1 performance metrics using only RNA-seq datasets across three data types and five classifiers, which were trained exclusively on strand-specific signals. Each fold's trained model was applied to its own validation samples (Unique, blue), after summing forward and reverse tracks (Unstranded, green), and on a different version of the RNA-seq data downloaded from EpiATLAS where multi-mapped reads were retained as for recount3 (UniqueMultiple, orange) used only for this particular analysis. Changes in Unstranded and UniqueMultiple relative to Unique correspond to the impact of the data type on the inference since the same trained model was applied to all three data types. Each point is the score from one of the 10 cross-validation folds, computed across all signal files in that fold's validation set. Solid lines are medians, dashed lines means, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
-## Supplementary Figure 6 - Prediction score threshold impact {#sec-supp6}
+## Extended Figure 6 - Prediction score threshold impact {#sec-ext6}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/ef1f5448b59a40d2b5e823e78d61ca5337b4d099/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 :::{.column-screen-inset}
 
@@ -611,21 +611,21 @@ For full code, since the processing is more complex, see `src/python/epiclass/ut
 
 :::
 
-Supplementary Figure 6: Impact of prediction score threshold on performance metrics. Impact of prediction score threshold on accuracy, F1-score and number of files for both EpiATLAS cross-validation performance and inference on datasets from other databases with provided or extracted labels. Performance for Assay, Sex, Cancer, Biomaterial type and Life stage classifiers are shown, for EpiATLAS, ENCODE core/non-core, ChIP-Atlas and Recount3 datasets. The number of classes (C) and the number of files analyzed (N) used to calculate the performances are shown at the bottom for each graph. The 11 classes of the Assay classifiers for EpiATLAS correspond to the six ChIP-Seq histone modifications, their control Input file, and two protocols of both RNA-Seq and WGBS, while for the 9 classes of ENCODE the two protocols were grouped, and indeed only the seven ChIP-related assays were used for ChIP-Atlas and RNA-Seq for Recount3. For the Sex classifier the third class corresponds to 'mixed', absent for ENCODE. The Cancer classifier is binary (where non-cancer is a mix of healthy and other diseases). For the Biomaterial classifier the 'primary cell culture' class is missing from all public sources (but 'primary cell', 'primary tissue' and 'cell line' are present), while the three classes (perinatal, pediatric, adult) were always used for the Life stage classifier.
+Extended Fig. 6: Impact of prediction score threshold on accuracy, F1-score and number of files for both EpiATLAS cross-validation performance and inference on datasets from other databases with provided or extracted labels. Performance for Assay, Sex, Cancer, Biomaterial type and Life stage classifiers are shown, for EpiATLAS (a), ENCODE core/non-core (b-c), ChIP-Atlas (d) and recount3 (e) datasets. The number of classes (C) and the number of files analyzed (n) used to calculate the performances are shown at the bottom for each graph. The 11 classes of the Assay classifiers for EpiATLAS correspond to the six ChIP-seq histone modifications, their control Input file, and two protocols of both RNA-seq and WGBS, while for the 9 classes of ENCODE the two protocols were grouped, and indeed only the seven ChIP-related assays were used for ChIP-Atlas and RNA-seq for recount3. For the Sex classifier the third class corresponds to 'mixed', absent for ENCODE. The Cancer classifier is binary (where non-cancer is a mix of healthy and other diseases). For the Biomaterial classifier the primary_cell_culture class is missing from all public sources (but primary_cell, primary_tissue and cell_line are present), while the three classes (perinatal, pediatric, adult) were always used for the Life stage classifier.
 
 
-## Supplementary Figure 7 - Biospecimen classifier - ChromScore for high-SHAP regions
+## Extended Figure 7 - Biospecimen classifier - ChromScore for high-SHAP regions
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/94e0f352ec631eeab203f28e885ecd9fc72b2acc/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/dde0ff56a5840936a1f853b867aae822e4db1259/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)).
 
-This is the breakdown per cell type of [Figure 2G](./sec2.html#sec-2G).
+This is the breakdown per cell type of [Fig. 2g](./sec2.html#sec-2G).
 
 <iframe src="../resources/16ct_chromscore.html"
         scrolling="no"
         style="display: block; margin: 0 auto; width: 100%; max-width: 1010px; aspect-ratio: 1010 / 910; border: 0; overflow: hidden;">
 </iframe>
 
-Supplementary Figure 7: Class-Specific ChromScore Distributions in Biospecimen Classifier Regions Identified by SHAP. Distribution of the average ChromScore values over the important Biospecimen classifier regions according to SHAP (blue) compared to the global distribution (pink), for each biospecimen class sorted according to the EpiATLAS order. The number of files and regions analyzed to calculate the p-values are shown. ChromScore values for each region are averaged over files of each class (one average value per feature). Statistical significance was assessed using a two-sided Welch's t-test where the number of regions was above 30, otherwise the reported p-value is the worst of Welch's t-test and non-parametric Brunner-Munzel. Dashed lines represent means, solid lines the medians, boxes the quartiles.
+Extended Fig. 7: Distribution of the average ChromScore values over the important Biospecimen source classifier regions according to SHAP (colored) compared to the global distribution (grey), for each biospecimen source class sorted according to the EpiATLAS order. The number of files and regions analyzed to calculate the p-values are shown. ChromScore values for each region are averaged over files of each class. Statistical significance was assessed using a two-sided Welch's t-test where the number of regions was above 30, otherwise the reported p-value is the worst of Welch's t-test and non-parametric Brunner-Munzel, divided by 16 (Bonferroni) (Supplementary Table 20). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range, with a violin representation on top.
 
 ## Annex A - Epilogos color legend {#sec-annex-a}
 

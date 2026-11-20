@@ -13,7 +13,7 @@ import warnings
 from collections import defaultdict
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Dict, List, Set, Tuple
+from typing import Any, Dict, List, Tuple
 
 try:
     from IPython.display import display
@@ -21,11 +21,25 @@ except ImportError:
     display = print
 import numpy as np
 import pandas as pd
-from scipy.stats import ttest_ind
+from scipy.stats import norm, ttest_ind
 from sklearn.exceptions import UndefinedMetricWarning
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
+from statsmodels.stats.meta_analysis import effectsize_smd
 
 from epiclass.core.metadata import Metadata
+
+# The extract_* functions moved to run_info, re-exported for existing notebooks
+# pylint: disable=unused-import
+from epiclass.utils.notebooks.paper.run_info import (
+    extract_experiment_keys_from_output_files,
+    extract_input_sizes_from_output_files,
+    parse_run_dir,
+    task_name_from_run_dir,
+)
+
+# pylint: enable=unused-import
+
+LOGGER = logging.getLogger(__name__)
 
 ASSAY: str = "assay_epiclass"
 CELL_TYPE: str = "harmonized_sample_ontology_intermediate"
@@ -917,75 +931,64 @@ class SplitResultsHandler:
         for parent, _, _ in os.walk(results_dir, followlinks=True):
             # Looking for oversampling only results
             parent = Path(parent)
+            # os.walk descends into every split*/EpiLaP/<hash>/checkpoints leaf, so the
+            # two "not a k-fold run" skips fire hundreds of times -- keep them at DEBUG
+            # (retrievable via the logger, but off the default/verbose output) so the
+            # selected-folder lines below are not drowned out.
             if f"{self.k}fold" not in parent.name:
-                if verbose:
-                    print(f"Skipping {parent}: not {self.k}fold")
+                LOGGER.debug("skip %s: not %sfold", parent, self.k)
                 continue
             if parent.name != f"{self.k}fold-oversampling" and oversampled_only:
-                if verbose:
-                    print(f"Skipping {parent}: not oversampled")
+                LOGGER.debug("skip %s: not oversampled", parent)
                 continue
 
-            if verbose:
-                print(f"Checking {parent}")
-
-            # Get the category + filter
+            # Get the category + filter. Filter skips are one-per-task-folder (low
+            # volume) and explain why a run was dropped, so they stay on verbose output.
             relpath = parent.relative_to(results_dir)
-            category = relpath.parts[0].replace("_1l_3000n", "")
-            if verbose:
-                print(f"Checking category: {category}")
+            category, name_parts = parse_run_dir(relpath, self.k)
             if include_categories is not None:
                 if not any(include_str in category for include_str in include_categories):
                     if verbose:
-                        print(f"Skipping {category}: not in {include_categories}")
+                        print(f"[skip] {category}: category not in {include_categories}")
                     continue
             if exclude_categories is not None:
                 if any(exclude_str in category for exclude_str in exclude_categories):
                     if verbose:
-                        print(f"Skipping {category}: in {exclude_categories}")
+                        print(f"[skip] {category}: category in {exclude_categories}")
                     continue
 
             # Get the rest of the name, ignore certain runs
-            rest_of_name = list(relpath.parts[1:])
-            for dir_name in [f"{self.k}fold", f"{self.k}fold-oversampling"]:
-                try:
-                    rest_of_name.remove(dir_name)
-                except ValueError:
-                    pass
-
-            if len(rest_of_name) > 1:
-                raise ValueError(
-                    f"Too many parts in the name: {rest_of_name}. Path: {relpath}"
-                )
-            if rest_of_name:
-                rest_of_name = rest_of_name[0]
-            if verbose:
-                print(f"Rest of name: {rest_of_name}")
+            full_task_name = task_name_from_run_dir(relpath, self.k)
+            rest_of_name = name_parts[0] if name_parts else ""
 
             # Filter out certain runs
             if include_names is not None:
                 if not any(name in rest_of_name for name in include_names):
                     if verbose:
                         print(
-                            f"Skipping {category} {rest_of_name}: not in {include_names}"
+                            f"[skip] {category} {rest_of_name}: name not in {include_names}"
                         )
                     continue
             if exclude_names is not None:
                 if any(name in rest_of_name for name in exclude_names):
                     if verbose:
-                        print(f"Skipping {category} {rest_of_name}: in {exclude_names}")
+                        print(
+                            f"[skip] {category} {rest_of_name}: name in {exclude_names}"
+                        )
                     continue
 
-            full_task_name = category
-            if rest_of_name:
-                full_task_name += f"_{rest_of_name}"
-
             # Get the split results
-            if verbose:
-                print(f"Getting split results for {full_task_name}")
             split_results = split_results_handler.read_split_results(parent)
             if not split_results:
                 raise ValueError(f"No split results found in {parent}")
+
+            # One consolidated line per accepted run: task, source folder and split
+            # count together, so provenance is greppable ([select]) without correlating
+            # separate "Checking <path>" / "Getting split results for <task>" lines.
+            if verbose:
+                print(
+                    f"[select] {full_task_name} <- {parent} ({len(split_results)} splits)"
+                )
 
             if (
                 ("sex" in full_task_name) or ("life_stage" in full_task_name)
@@ -1192,93 +1195,6 @@ def create_mislabel_corrector(
     ].to_dict()
 
     return md5sum_to_epirr, epirr_to_corrections
-
-
-def extract_data_from_files(
-    parent_folder: Path,
-    file_pattern: str,
-    search_line: str,
-    extract_pattern: str,
-    type_cast: type = int,
-    unique: bool = True,
-) -> Dict[str, Set[Any]]:
-    """
-    Extracts data from files matching a specific pattern within each directory of a parent folder.
-
-    Args:
-        parent_folder (Path): The directory containing subdirectories to search.
-        file_pattern (str): Glob pattern for files to search within each subdirectory.
-        search_line (str): Line identifier to search for data extraction.
-        extract_pattern (str): Regex pattern to extract the desired data from the identified line.
-        type_cast (type): Type to cast the extracted data to.
-
-    Returns:
-        Dict[str, Set[type]]: A dictionary with subdirectory names as keys and sets of extracted data as values.
-    """
-    data = defaultdict(set)
-    for folder in parent_folder.iterdir():
-        if not folder.is_dir():
-            continue
-        for file in folder.rglob(file_pattern):
-            with open(file, "r", encoding="utf8") as f:
-                # print(f"Reading {file.name}")
-                lines = [l.rstrip() for l in f if search_line in l]
-
-            if not lines:
-                # print(f"Skipping {file.name}, no relevant data found.")
-                continue
-            if len(lines) > 1 and unique:
-                if len(set(lines)) == 1:
-                    pass
-                else:
-                    raise ValueError(
-                        f"Incorrect file reading, captured more than one unique line in {file.name}: {lines}"
-                    )
-            matches = [re.match(pattern=extract_pattern, string=line) for line in lines]
-            try:
-                extracted_data = [type_cast(match.group(1)) for match in matches]  # type: ignore
-                # print(f"Extracted data: {extracted_data}")
-            except AttributeError as err:
-                raise ValueError(
-                    f"Could not extract data from {file.name} using pattern {extract_pattern}."
-                ) from err
-            data[folder.name].update(extracted_data)
-    return dict(data)
-
-
-def extract_input_sizes_from_output_files(parent_folder: Path) -> Dict[str, Set[int]]:
-    """Extracts model input sizes from output (.o) files."""
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.o",
-        search_line="(1): Linear",
-        extract_pattern=r".*in_features=(\d+).*",
-        type_cast=int,
-    )
-
-
-def extract_node_jobs_from_error_files(parent_folder: Path) -> Dict[str, Set[int]]:
-    """Extracts SLURM job IDs from error (.e) files."""
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.e",
-        search_line="SLURM_JOB_ID",
-        extract_pattern=r".*SLURM_JOB_ID\s+: (\d+)$",
-        type_cast=int,
-    )
-
-
-def extract_experiment_keys_from_output_files(parent_folder: Path) -> Dict[str, Set[str]]:
-    """Extracts experiment keys from output (.o) files."""
-    search_line = "The current experiment key is"
-    return extract_data_from_files(
-        parent_folder=parent_folder,
-        file_pattern="output_job*.o",
-        search_line=search_line,
-        extract_pattern=search_line + r" (\w{32})$",
-        type_cast=str,
-        unique=False,
-    )
 
 
 def add_second_highest_prediction(df: pd.DataFrame, pred_cols: List[str]) -> pd.DataFrame:
@@ -1795,6 +1711,44 @@ class PathChecker:
         PathChecker._validate_path(path, check_dir=True)
 
 
+def merge_renamed_columns(df: pd.DataFrame, renamed_cols: Dict[str, str]) -> pd.DataFrame:
+    """Merge columns renamed over time, either name can be absent from a given dataframe.
+
+    Args:
+        df (pd.DataFrame): dataframe to merge columns of
+        renamed_cols (Dict[str, str]): {old_name: new_name}. Existing new_name values
+            have priority over old_name values.
+    Returns:
+        pd.DataFrame: dataframe without the old_name columns
+    """
+    for old_name, new_name in renamed_cols.items():
+        if old_name in df.columns:
+            df[new_name] = (
+                df[new_name].fillna(df[old_name])
+                if new_name in df.columns
+                else df[old_name]
+            )
+            df = df.drop(columns=old_name)
+    return df
+
+
+def writable_path(path: Path | str, overwrite: bool = False) -> Path:
+    """Return path if it is safe to write to it, raise FileExistsError otherwise.
+
+    Args:
+        path (Path | str): file about to be written
+        overwrite (bool): explicitly allow replacing an existing file
+    Returns:
+        Path: the given path
+    """
+    path = Path(path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(
+            f"{path} already exists. Pass overwrite=True to replace it."
+        )
+    return path
+
+
 def save_figure(
     fig: Any,  # go.Figure, but avoid importing plotly here
     logdir: Path | str,
@@ -1810,6 +1764,30 @@ def save_figure(
     fig.write_html(logdir / f"{filename}.html")
     fig.write_image(logdir / f"{filename}.svg", width=width, height=height)
     fig.write_image(logdir / f"{filename}.png", width=width, height=height, scale=scale)
+
+
+def hedges_g(
+    vals_a: List[float], vals_b: List[float], confidence: float = 0.95
+) -> Tuple[float, float, float]:
+    """Return Hedges' g of mean(vals_a) - mean(vals_b), and its confidence interval.
+
+    Computed by statsmodels' effectsize_smd: Cohen's d (difference of means over the
+    pooled standard deviation, ddof=1) times the small-sample correction
+    J = 1 - 3 / (4 * (n_a + n_b) - 9), with variance
+    (n_a + n_b) / (n_a * n_b) + g**2 / (2 * (n_a + n_b - 3.94)). The interval is
+    g +/- z * sqrt(variance). With equal group sizes, the pooled SD equals the
+    average-variance SD that pairs with Welch's t-test.
+    """
+    g, var_g = effectsize_smd(
+        np.mean(vals_a),
+        np.std(vals_a, ddof=1),
+        len(vals_a),
+        np.mean(vals_b),
+        np.std(vals_b, ddof=1),
+        len(vals_b),
+    )
+    margin = norm.ppf(0.5 + confidence / 2) * np.sqrt(var_g)
+    return g, g - margin, g + margin
 
 
 def pairwise_ttests(
@@ -1829,6 +1807,10 @@ def pairwise_ttests(
     alternative: passed to scipy.stats.ttest_ind ("two-sided", "less", "greater").
         Feature sets are paired in dict order, so for a pair (fs_a, fs_b),
         "greater" tests H1: mean(fs_a) > mean(fs_b).
+
+    Every directional value is for a - b: diff_a_minus_b and its 95% CI (Welch, follows
+    alternative), t_stat, and hedges_g with its 95% CI (see hedges_g). Standard
+    deviations use ddof=1; df is the Welch-Satterthwaite degrees of freedom.
     """
 
     def significance_symbol(p_value: float) -> str:
@@ -1864,9 +1846,9 @@ def pairwise_ttests(
                     all_metrics[fs_b][category][f"split{i}"][metric] for i in range(k)
                 ]
 
-                t_stat, p_val = ttest_ind(
-                    vals_a, vals_b, equal_var=False, alternative=alternative
-                )
+                test = ttest_ind(vals_a, vals_b, equal_var=False, alternative=alternative)
+                diff_ci = test.confidence_interval(confidence_level=0.95)
+                g, g_low, g_high = hedges_g(vals_a, vals_b)
 
                 results.append(
                     {
@@ -1874,11 +1856,21 @@ def pairwise_ttests(
                         "feature_set_a": fs_a,
                         "feature_set_b": fs_b,
                         "metric": metric,
+                        "n_per_group": k,
                         "mean_a": np.mean(vals_a),
+                        "std_a": np.std(vals_a, ddof=1),
                         "mean_b": np.mean(vals_b),
-                        "t_stat": t_stat,
-                        "p_value": p_val,
-                        "significance": significance_symbol(p_val),
+                        "std_b": np.std(vals_b, ddof=1),
+                        "diff_a_minus_b": np.mean(vals_a) - np.mean(vals_b),
+                        "diff_ci95_low": diff_ci.low,
+                        "diff_ci95_high": diff_ci.high,
+                        "t_stat": test.statistic,
+                        "df": test.df,
+                        "p_value": test.pvalue,
+                        "significance": significance_symbol(test.pvalue),
+                        "hedges_g": g,
+                        "hedges_g_ci95_low": g_low,
+                        "hedges_g_ci95_high": g_high,
                     }
                 )
 

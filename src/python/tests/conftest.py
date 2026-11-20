@@ -63,14 +63,20 @@ def pytest_sessionstart(session):
             "Search for: fixtures.tar.zstd"
         )
         pytest.exit(reason=message, returncode=1)
+    # saccer3 ships a best_checkpoint_template.list with THIS_FOLDER placeholders;
+    # materialize the absolute-path best_checkpoint.list it needs.
+    # Rebuild it whenever it differs from the template: an existing copy can hold paths of
+    # another checkout (e.g. one packed into an older fixtures archive, or a moved clone).
     checkpoint_file = FIXTURES_DIR / "saccer3" / "best_checkpoint.list"
-    if not checkpoint_file.exists():
-        checkpoint_template = checkpoint_file.parent / "best_checkpoint_template.list"
-        lines = checkpoint_template.read_text().splitlines()
-        lines = [
-            re.sub(r"THIS_FOLDER", str(checkpoint_file.parent), line) for line in lines
-        ]
-        checkpoint_file.write_text("\n".join(lines))
+    checkpoint_template = checkpoint_file.parent / "best_checkpoint_template.list"
+    lines = checkpoint_template.read_text().splitlines()
+    lines = [re.sub(r"THIS_FOLDER", str(checkpoint_file.parent), line) for line in lines]
+    content = "\n".join(lines)
+    if not (checkpoint_file.is_file() and checkpoint_file.read_text() == content):
+        # Atomic replace: xdist workers run this hook too and may read the file meanwhile.
+        tmp_file = checkpoint_file.with_name(f"{checkpoint_file.name}.{os.getpid()}.tmp")
+        tmp_file.write_text(content)
+        tmp_file.replace(checkpoint_file)
 
 
 def pytest_sessionfinish(session, exitstatus):

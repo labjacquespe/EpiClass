@@ -5,6 +5,11 @@ import re
 from pathlib import Path
 from typing import Iterable, List
 
+# Signal-ID list files were historically suffixed `.md5` (the IDs were md5
+# hashes); the canonical form is now `_ids.list`. Readers should accept both
+# so old artifacts still load.
+SIGNAL_ID_LIST_SUFFIXES = ("_ids.list", ".md5")
+
 
 def write_hdf5_paths_to_file(
     md5s: Iterable[str], parent: str, suffix: str, filepath: str | Path
@@ -30,6 +35,19 @@ def write_md5s_to_file(md5s: Iterable[str], logdir: str | Path, name: str) -> Pa
         for md5 in md5s:
             f.write(f"{md5}\n")
     return filename
+
+
+def find_signal_id_lists(folder: Path, prefix_glob: str = "*") -> List[Path]:
+    """Find signal-ID list files in `folder` accepting either canonical suffix.
+
+    `prefix_glob` is everything before the suffix (default `*`). Both
+    `_ids.list` (current) and `.md5` (legacy) suffixes are searched; results
+    are concatenated, new-style first.
+    """
+    paths: List[Path] = []
+    for suffix in SIGNAL_ID_LIST_SUFFIXES:
+        paths.extend(folder.glob(f"{prefix_glob}{suffix}"))
+    return paths
 
 
 def get_valid_filename(name: str):

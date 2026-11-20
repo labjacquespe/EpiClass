@@ -128,7 +128,7 @@ main_title_settings = {
 
 ## Figure 2
 
-### A,B - MLP performance on various classification tasks (100kb resolution) {#sec-2AB}
+### a,b - MLP performance on various classification tasks (100kb resolution) {#sec-2AB}
 
 - 2A: Accuracy
 - 2B: F1-Score
@@ -310,10 +310,10 @@ sorted_task_names = NN_performance_across_classification_tasks(
 )
 ```
 
-Fig. 2A,B: Distribution of accuracy and F1-score evaluated per training fold (dots) for each metadata classifier. Performance metrics are reported without applying a prediction score threshold. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Fig. 2a,b: Distribution of accuracy and F1-score evaluated per training fold (dots) for each metadata classifier. Performance metrics are reported without applying a prediction score threshold. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
-### C - Class imbalance (Shannon Entropy)
+### c - Class imbalance (Shannon Entropy)
 
 Define function `compute_class_imbalance`.
 
@@ -427,10 +427,10 @@ plot_shannon_entropy(
     ordered_task_names=sorted_task_names,
     )
 ```
-Fig. 2C: Shannon entropy scores for each metadata category.
+Fig. 2c: Normalized Shannon entropy scores for each metadata category.
 
 
-### D - Donor Sex classification
+### d - Donor Sex classification
 
 `IHEC_sample_metadata_harmonization.v1.1.extended.csv` contains 314 EpiRRs with unknown sex. We applied a fully trained sex classifier on those.
 
@@ -517,7 +517,7 @@ concat_results_10fold = metadata_handler.join_metadata(concat_results_10fold, me
 
 #### Inner portion
 
-Fig. 2D: Proportion of donor sex metadata originally annotated (inner circle, metadata v1.1) and predicted with high-confidence (outer circle, metadata v2.0) for female (red) and male (blue) (mixed sex not shown).
+Fig. 2d: Proportion of donor sex metadata originally annotated (inner circle, metadata v1.1) and predicted with high-confidence (outer circle, metadata v2.0) for female (red) and male (blue) (mixed sex not shown).
 
 Compute values for the inner portion of the pie chart.
 
@@ -559,7 +559,7 @@ Work done in another script:
     - Outputs `chrXY_all.csv`
     - Outputs `chrY_zscores.csv`
 
-Fig. 2E is made by averaging for each EpiRR the z-score value in each assay distribution.
+Fig. 2e is made by averaging for each EpiRR the z-score value in each assay distribution.
 
 This data is needed for the full sex mislabel context table.
 \
@@ -756,7 +756,7 @@ display(pivot_table.head())
 ```
 
 
-### E - Average EpiRR z-score for 10fold
+### e - Average EpiRR z-score for 10fold
 
 Define function `zscore_merged_assays` that computes the chrY average signal metric.
 
@@ -946,10 +946,10 @@ zscore_merged_assays(
 )
 ```
 
-Fig 2E: Distribution of the average z-score signal of epigenomes (dots) over chrY, computed on the ChIP-Seq datasets (up to 7 assays per epigenome) using the fold change track type files for female (red) and male (blue). Originally mislabeled epigenomes are shown as big dots. Boxplot elements are as in [Fig. 2A](./sec2.html#sec-2AB).
+Fig. 2e: Distribution of the average z-score signal of epigenomes (dots) over chrY, computed on the ChIP-seq datasets (up to 7 assays per epigenome) using the fold change track type files for female (red) and male (blue). Originally mislabeled epigenomes are shown as big dots. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
-### F - Donor life stage and GP-Age
+### f - Donor life stage and GP-Age
 
 Load official IHEC sample metadata.
 
@@ -1167,9 +1167,9 @@ graph_gp_age(
 )
 ```
 
-Fig 2F: Distribution of the age prediction from GP-age for the WGBS datasets with an originally unknown life stage predicted by EpiClass (datasets related to blood biospecimen are in red, others in grey). Boxplot elements are as in [Fig. 2A](./sec2.html#sec-2AB).
+Fig. 2f: Distribution of the age prediction from GP-age for the WGBS datasets with an originally unknown life stage predicted by EpiClass (datasets related to blood biospecimen source are in red, others in grey). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
-#### Supplementary Figure 5D - GP-age {#sec-supp-5D}
+#### Extended Figure 5d - GP-age {#sec-ext5d}
 
 Considering all samples that had a conclusive epiclass prediction (or existing label and no conclusion)
 
@@ -1183,22 +1183,22 @@ graph_gp_age(
 )
 ```
 
-Supp. Fig. 5D: Distribution of the age prediction from GP-age for the 565 epigenomes (dots) with conclusive consensus predictions (epigenomes related to blood biospecimen are in red, others in grey). The perinatal category encompasses the original embryonic, fetal and newborn categories of metadata as they individually contain too few samples. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
+Extended Fig. 5d: Distribution of the age prediction from GP-age for the 565 epigenomes (dots) with conclusive consensus predictions (epigenomes related to blood biospecimen source are in red, others in grey). The perinatal category encompasses the original embryonic, fetal and newborn categories of metadata as they individually contain too few samples. Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
-### G - Biospecimen classifier - ChromScore for high-SHAP regions {#sec-2G}
+### g - Biospecimen classifier - ChromScore for high-SHAP regions {#sec-2G}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/dde0ff56a5840936a1f853b867aae822e4db1259/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)), particularly section "ChromScore hdf5 values".
 
 <iframe src="../resources/global_chromscore.html"
         scrolling="no"
         style="display: block; margin: 0 auto; width: 100%; max-width: 510px; aspect-ratio: 1 / 1; border: 0; overflow: hidden;">
 </iframe>
 
-Fig 2G: Distribution of the average ChromScore values over the important Biospecimen classifier regions according to SHAP (blue) compared to the global distribution (pink). Statistical significance was assessed using a two-sided Welch's t-test. Boxplot elements are as in [Fig. 2A](./sec2.html#sec-2AB), with a violin representation on top.
+Fig. 2g: Distribution of the average ChromScore values over the important Biospecimen source classifier regions according to SHAP (pink, n=2,994) compared to the global distribution (grey, n=30,321). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range, with a violin representation on top.
 
 
-### H - Gene Ontology and SHAP values {#sec-2H}
+### h - Gene Ontology and SHAP values {#sec-2H}
 
 See `src/python/epiclass/utils/notebooks/profile_bed.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/profile_bed.ipynb)) for creation of gene ontology files.
 The code compares important SHAP values regions of different cell types with gene gff (using the gProfiler module)
@@ -1387,7 +1387,7 @@ plot_go_heatmap(
 )
 ```
 
-Fig 2H: Top four gene ontology (GO) terms enriched by g:Profiler[35] for genes within important Biospecimen classifier regions according to SHAP values.
+Fig. 2h: Top four gene ontology (GO) terms from the biological process and cellular component categories, enriched for genes within important Biospecimen source classifier regions according to SHAP values by g:Profiler[PMC6602461].
 
 #### 5 top pval terms for each biospecimen label
 
@@ -1419,7 +1419,7 @@ plot_go_heatmap(
 ```
 
 
-### I - Biospecimen important regions chromatin states {#sec-2I}
+### i - Biospecimen important regions chromatin states {#sec-2I}
 
 Images extracted from Epilogos viewer, using:
 
@@ -1431,12 +1431,12 @@ Images extracted from Epilogos viewer, using:
 
 ![](../resources/fig2I.png){fig-align="center"}
 
-Fig. 2I: Epilogos visualization of one of the important Biospecimen classifier regions enriched in the `T cell receptor complex` GO term from [Fig. 2H](./sec2.html#sec-2H).
+Fig. 2i: Epilogos visualization of one of the important Biospecimen source classifier regions (chr11:118300000–118400000) enriched in the `T cell receptor complex` GO term from [Fig. 2h](./sec2.html#sec-2H).
 
 See [Annex A](./sec2.html#sec-annex-a) for a more detailled Epilogos color legend.
 
 
-### J - Copy Number Alteration (CNA) Signatures and SHAP values
+### j - Copy Number Alteration (CNA) Signatures and SHAP values
 
 Note: The code uses the acronym CNV (Copy Number Variant/Variation) instead of CNA.
 
@@ -1635,12 +1635,12 @@ Graph.
 plot_cnv_zscores_alt(cnv_df)
 ```
 
-Fig. 2J: Distribution of the z-score enrichment for copy number (CN) signatures (dots) in genomic regions identified as important by the Cancer status classifier compared to random control regions. CN signatures are grouped as being mostly associated with focal changes (CN9-12,17-21) or chromosomal ones (CN1-8,13-16). Boxplot elements are as in Fig 2A.
+Fig. 2j: Distribution of the z-score enrichment for copy number (CN) signatures (dots) in genomic regions identified as important by the Cancer status classifier compared to random control regions. CN signatures are grouped as being mostly associated with focal changes (CN9-12,17-21) or chromosomal ones (CN1-8,13-16). Dashed lines represent means, solid lines the medians, boxes the quartiles, and whiskers the farthest points within 1.5× the interquartile range.
 
 
-## Supplementary Figures 5 to 7
+## Extended Figures 5 to 7
 
-See the [Additional Supplementary Figures page](./sec2-supp.html) (separate to limit maximum website page size and loading times).
+See the [Additional Extended Figures page](./sec2-supp.html) (separate to limit maximum website page size and loading times).
 
 
 ## Annex A - Epilogos color legend {#sec-annex-a}
