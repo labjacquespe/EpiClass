@@ -1188,7 +1188,7 @@ Extended Fig. 5d: Distribution of the age prediction from GP-age for the 565 epi
 
 ### g - Biospecimen classifier - ChromScore for high-SHAP regions {#sec-2G}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/analyze_hdf5_vals.ipynb)), particularly section "ChromScore hdf5 values".
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/dde0ff56a5840936a1f853b867aae822e4db1259/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)), particularly section "ChromScore hdf5 values".
 
 <iframe src="../resources/global_chromscore.html"
         scrolling="no"
