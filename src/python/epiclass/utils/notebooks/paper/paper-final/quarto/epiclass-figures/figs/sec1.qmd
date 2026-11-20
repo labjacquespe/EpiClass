@@ -1753,7 +1753,7 @@ plot_prediction_scores_distribution(
 
 ### h,i - Prediction score thresholds
 
-For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For the code that produced the figures, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/ef1f5448b59a40d2b5e823e78d61ca5337b4d099/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 <iframe src="../resources/threshold_impact_graph_global_assay_epiclass_11c-11_classes_cdn.html"
         scrolling="no"

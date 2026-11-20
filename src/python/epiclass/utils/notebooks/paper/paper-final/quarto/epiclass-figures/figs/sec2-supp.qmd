@@ -600,7 +600,7 @@ Extended Fig. 5g: Accuracy and macro-F1 performance metrics using only RNA-seq d
 
 ## Extended Figure 6 - Prediction score threshold impact {#sec-ext6}
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/e87306bccecd3e35d9ffdbb5ddb29fcaa0800a35/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/ef1f5448b59a40d2b5e823e78d61ca5337b4d099/src/python/epiclass/utils/notebooks/paper/confidence_threshold.ipynb)).
 
 :::{.column-screen-inset}
 
@@ -616,7 +616,7 @@ Extended Fig. 6: Impact of prediction score threshold on accuracy, F1-score and 
 
 ## Extended Figure 7 - Biospecimen classifier - ChromScore for high-SHAP regions
 
-For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/94e0f352ec631eeab203f28e885ecd9fc72b2acc/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)).
+For full code, since the processing is more complex, see `src/python/epiclass/utils/notebooks/paper/chromscore.ipynb` ([permalink](https://github.com/labjacquespe/EpiClass/blob/dde0ff56a5840936a1f853b867aae822e4db1259/src/python/epiclass/utils/notebooks/paper/chromscore.ipynb)).
 
 This is the breakdown per cell type of [Fig. 2g](./sec2.html#sec-2G).
 
